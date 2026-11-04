@@ -36,3 +36,16 @@ export async function setOwnAvatar(file: File): Promise<string> {
 export async function removeOwnAvatar(): Promise<void> {
   await api.delete('/me/avatar')
 }
+
+/**
+ * A picture pasted into an item's detail field.
+ *
+ * Uploaded before the item exists, so it arrives unclaimed and is readable
+ * only by whoever uploaded it until the item is saved.
+ */
+export async function uploadDetailImage(file: File): Promise<string> {
+  const body = new FormData()
+  body.append('file', file)
+  const { data } = await api.post<{ id: string; url: string }>('/images', body)
+  return data.url
+}

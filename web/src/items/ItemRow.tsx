@@ -44,9 +44,21 @@ export function ItemRow({
           </Typography>
 
           {item.detailHtml && (
-            <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
-              {item.detailHtml}
-            </Typography>
+            <Box
+              // Safe because the server sanitized this on write and stores
+              // only what survived - the client deliberately does no
+              // filtering of its own, because a second implementation of that
+              // rule drifts from the first (adr/0018).
+              dangerouslySetInnerHTML={{ __html: item.detailHtml }}
+              sx={{
+                color: 'text.secondary',
+                fontSize: '0.875rem',
+                overflowWrap: 'anywhere',
+                '& p': { m: 0, mb: 0.5 },
+                '& ul, & ol': { pl: 3, m: 0, mb: 0.5 },
+                '& img': { maxWidth: '100%', borderRadius: 1, display: 'block', my: 1 },
+              }}
+            />
           )}
 
           <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: 'wrap', gap: 0.5 }}>

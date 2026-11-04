@@ -3,7 +3,21 @@ import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import type { ListField, ListMember } from '../api/lists'
+import { Suspense, lazy } from 'react'
+import Skeleton from '@mui/material/Skeleton'
 import type { ItemCostValue, SaveItem } from '../api/items'
+
+/**
+ * Loaded only when a list actually asks for a detail field.
+ *
+ * The editor drags ProseMirror behind it - well over a hundred kilobytes
+ * gzipped, on a product whose users are mostly holding a phone. Most lists
+ * never declare the field, and nobody should download an editor for a list
+ * that has no use for one.
+ */
+const DetailEditor = lazy(() =>
+  import('./DetailEditor').then((module) => ({ default: module.DetailEditor })),
+)
 
 /**
  * The inputs one list asks for, and no others.
@@ -56,15 +70,13 @@ export function ItemForm({
       />
 
       {detail && (
-        <TextField
-          label="Detail"
-          multiline
-          minRows={3}
-          required={detail.required}
-          value={value.detailHtml ?? ''}
-          onChange={(event) => onChange({ ...value, detailHtml: event.target.value })}
-          helperText="Steps, notes, anything else worth knowing."
-        />
+        <Suspense fallback={<Skeleton variant="rounded" height={180} />}>
+          <DetailEditor
+            value={value.detailHtml ?? ''}
+            required={detail.required}
+            onChange={(html) => onChange({ ...value, detailHtml: html })}
+          />
+        </Suspense>
       )}
 
       {assignee && (

@@ -11,19 +11,15 @@ Implemented: **accounts and administration (R8-R12)** — username identity, opt
 pick-a-user sign-in screen, and a single admin who adds and deletes users. **The PWA (R13, R14)** —
 installable as "List", with an Android share target. **The UI shell (R15-R17)** — now a sidebar rather
 than the original bottom bar, master-detail administration, and a sign-in roster that describes nobody.
-**R18-R35 are implemented, bar one field.** Material Design throughout; the list entity with per-list
-access grants, pins, recency and search; the per-list field configuration including named costs;
-profile pictures in object storage; and **items** — values for every declared field, assignment bounded
-by access, completion with points credited to whoever did the work, and a shared link becoming a real
-item.
+**R18-R35 are implemented.** Material Design throughout; the list entity with per-list access grants,
+pins, recency and search; the per-list field configuration including named costs; profile pictures in
+object storage; and items — values for every declared field, assignment bounded by access, completion
+with points credited to whoever did the work, the detail field's rich text and embedded pictures, and a
+shared link becoming a real item.
 
-The exception is **the detail field's rich text and its images (R21)**. A list can declare a detail
-field and an item can carry text in it, but it is stored and rendered as plain text, not HTML — so
-`docs/adr/0018`'s sanitizer is specified and not yet written, and nothing embeds a picture in an item
-yet. `todo_item.detail_html` is named for where it is going. Do not start storing HTML there without
-the sanitizer.
-
-`docs/design/0004` describes the whole feature and `docs/adr/0010`-`0021` record the decisions.
+`docs/design/0004` describes the whole feature and `docs/adr/0010`-`0021` record the decisions. The
+open questions left in `docs/requirements/0004` are genuinely open: where a completed item should go,
+whether earned points can be revoked, and whether a list should show who else has it open.
 
 Keep this file true: when a decision here turns out wrong, update it in the same change.
 
@@ -244,6 +240,18 @@ published through either HTTPS front door, so a presigned URL is unreachable fro
 as mixed content — and it is a capability that outlives a revoked grant. The type is decided by
 sniffing the bytes, never the filename or `Content-Type`; PNG, JPEG and WebP only, and **SVG is refused
 by name**, because an SVG served same-origin is script execution in our own security context.
+
+**Who may read an image depends on its purpose.** An `AVATAR` is readable by anyone, including
+anonymously, because the sign-in screen draws faces before there is a session (`adr/0019`). A `DETAIL`
+picture is claimed by the item whose detail refers to it, so the item's list decides — a private list's
+pictures are as private as the list. Only the member who uploaded a picture can claim it, and only
+while it is unclaimed: an id alone must never drag somebody else's picture onto a list they can see.
+
+**Detail HTML is sanitized server-side on write** (`com.hatodo.richtext.HtmlSanitizer`, `adr/0018`),
+and `<img src>` is restricted to our own `/api/images/{uuid}` paths — which is also what makes the
+claim check meaningful. The client renders the stored HTML with `dangerouslySetInnerHTML` and
+sanitizes nothing itself: a second implementation of that rule drifts from the first. The editor is
+`React.lazy`-loaded, because ProseMirror is ~130KB gzipped and most lists never ask for the field.
 
 **The frontend reaches the backend same-origin in every environment.** The SPA only ever uses relative
 `/api` paths - never an absolute API URL, never `VITE_API_URL`. nginx in the `web` image proxies `/api` and
