@@ -1,0 +1,92 @@
+package com.hatodo.config;
+
+import jakarta.servlet.DispatcherType;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.ProviderManager;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.security.web.authentication.session.ChangeSessionIdAuthenticationStrategy;
+import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
+
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public SecurityContextRepository securityContextRepository() {
+        return new HttpSessionSecurityContextRepository();
+    }
+
+    /**
+     * Rotates the session id on login to defeat session fixation. Safe when no
+     * session exists yet - it simply does nothing in that case.
+     */
+    @Bean
+    public SessionAuthenticationStrategy sessionAuthenticationStrategy() {
+        return new ChangeSessionIdAuthenticationStrategy();
+    }
+
+    @Bean
+    public AuthenticationManager authenticationManager(UserDetailsService userDetailsService,
+                                                       PasswordEncoder passwordEncoder) {
+        DaoAuthenticationProvider provider = new DaoAuthenticationProvider(userDetailsService);
+        provider.setPasswordEncoder(passwordEncoder);
+        return new ProviderManager(provider);
+    }
+
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http,
+                                                   SecurityContextRepository securityContextRepository)
+            throws Exception {
+        // Session cookie auth means CSRF protection stays on. The token goes in a
+        // readable cookie so the SPA can echo it back in X-XSRF-TOKEN, which is
+        // what axios does by default for same-origin requests.
+        CookieCsrfTokenRepository csrfTokenRepository = CookieCsrfTokenRepository.withHttpOnlyFalse();
+
+        http
+            .securityContext(context -> context.securityContextRepository(securityContextRepository))
+            .csrf(csrf -> csrf
+                .csrfTokenRepository(csrfTokenRepository)
+                .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler()))
+            .sessionManagement(session -> session
+                .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+            .authorizeHttpRequests(auth -> auth
+                // Without this, a 500 inside a controller is forwarded to /error,
+                // blocked by the rule below, and surfaces as a misleading 401.
+                .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                .requestMatchers("/api/auth/login", "/api/auth/csrf").permitAll()
+                .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
+                .anyRequest().authenticated())
+            .logout(logout -> logout
+                .logoutUrl("/api/auth/logout")
+                .deleteCookies("JSESSIONID")
+                .logoutSuccessHandler((request, response, authentication) ->
+                    response.setStatus(HttpStatus.NO_CONTENT.value())))
+            // An API returns 401 for anonymous callers; it never redirects to a login page.
+            .exceptionHandling(handling -> handling
+                .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+            .httpBasic(basic -> basic.disable())
+            .formLogin(form -> form.disable());
+
+        return http.build();
+    }
+}

@@ -1,0 +1,4 @@
+# Dev environment: provided Postgres, seeded demo accounts for the e2e suite.
+spring:
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed

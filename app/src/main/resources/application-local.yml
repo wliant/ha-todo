@@ -1,0 +1,15 @@
+# Local development against deployment/docker-compose.infra.yml.
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/hatodo}
+    username: ${DB_USERNAME:hatodo}
+    password: ${DB_PASSWORD:hatodo}
+  flyway:
+    # db/seed holds demo accounts so the login page and e2e suite have a way in.
+    locations: classpath:db/migration,classpath:db/seed
+  jpa:
+    show-sql: true
+
+logging:
+  level:
+    com.hatodo: DEBUG

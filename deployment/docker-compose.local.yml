@@ -1,0 +1,33 @@
+# Local development stack. Builds from source and depends on the infrastructure
+# in docker-compose.infra.yml, which must be up first (scripts/dev-up.sh does
+# both in order).
+name: ha-todo-local
+
+services:
+  app:
+    build:
+      context: ../app
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-hatodo}
+      DB_USERNAME: ${POSTGRES_USER:-hatodo}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-hatodo}
+      SESSION_COOKIE_SECURE: "false"
+    ports:
+      - "${APP_PORT:-8080}:8080"
+
+  web:
+    build:
+      context: ../web
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-5173}:80"
+
+networks:
+  default:
+    name: ha-todo-net
+    external: true

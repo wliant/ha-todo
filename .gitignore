@@ -1,0 +1,28 @@
+# ---- secrets / environment ----
+deployment/.env.*
+!deployment/.env.example
+
+# ---- java / gradle ----
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# ---- node ----
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# ---- python / e2e ----
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+e2e/test-results/
+e2e/playwright-report/
+
+# ---- editors / os ----
+.DS_Store
+.idea/
+*.iml
+.vscode/

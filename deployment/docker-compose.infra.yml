@@ -1,0 +1,58 @@
+# Throwaway local infrastructure ONLY.
+#
+# Dev and prod use provided Postgres (and Redis/MinIO if they are ever needed);
+# this file exists so a developer can run the stack without them. See
+# docs/adr/0003-defer-redis-and-minio.md for why Redis and MinIO are commented
+# out rather than wired in speculatively.
+name: ha-todo-infra
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hatodo}
+      POSTGRES_USER: ${POSTGRES_USER:-hatodo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hatodo}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hatodo} -d ${POSTGRES_DB:-hatodo}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Uncomment only alongside an ADR recording the concrete need.
+  #
+  # redis:
+  #   image: redis:7-alpine
+  #   restart: unless-stopped
+  #   ports:
+  #     - "${REDIS_PORT:-6379}:6379"
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 5s
+  #     retries: 20
+  #
+  # minio:
+  #   image: minio/minio:latest
+  #   command: server /data --console-address ":9001"
+  #   restart: unless-stopped
+  #   environment:
+  #     MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+  #     MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+  #   ports:
+  #     - "${MINIO_PORT:-9000}:9000"
+  #     - "${MINIO_CONSOLE_PORT:-9001}:9001"
+  #   volumes:
+  #     - minio-data:/data
+
+volumes:
+  postgres-data:
+  # minio-data:
+
+networks:
+  default:
+    name: ha-todo-net
