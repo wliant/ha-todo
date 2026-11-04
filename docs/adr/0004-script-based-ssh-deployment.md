@@ -41,12 +41,20 @@ Rules this encodes:
 - Rollback is `scripts/deploy.sh <env> <older-tag>`, which is why `IMAGE_TAG` is
   an explicit argument rather than always `latest`.
 
-## Open
+## Resolved details
 
-The registry address was given without a port. The scripts default to
-`192.168.1.248:5000`, the conventional Docker registry port; an insecure (non-TLS)
-registry must also be listed under `insecure-registries` in the Docker daemon
-config on both the developer machine and each target host. **Needs confirming.**
+Confirmed 2026-11-04:
+
+- Registry is `192.168.1.248:5000`, plain HTTP (`registry:3`). Both the developer
+  machine and the target already list it under `insecure-registries`.
+- Both environments deploy to `wliant@192.168.1.248` and **share**
+  `/home/wliant/myapps/ha-todo`. They stay separate because the compose files,
+  env files, project names (`ha-todo-dev` / `ha-todo-prod`) and published ports
+  all differ: dev `5987`, prod `5986`.
+- Compose must be invoked on the target with `--env-file .env.<env>`. The
+  `env_file:` key populates the container environment only; compose's own
+  `${...}` interpolation reads the shell environment and `--env-file`. Without
+  it the image name resolves to `/ha-todo-app:tag` and the pull fails.
 
 ## Alternatives considered
 

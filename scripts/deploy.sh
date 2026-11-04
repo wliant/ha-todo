@@ -32,10 +32,15 @@ ssh_run "mkdir -p '$DEPLOY_DIR'"
 scp_to_target "$DEPLOYMENT_DIR/$COMPOSE_FILE" "$ENV_FILE"
 
 log "[4/5] starting services on $DEPLOY_HOST"
+# --env-file is what makes ${REGISTRY} / ${WEB_PORT} interpolate in the compose
+# file. `env_file:` inside the file only populates the container environment, so
+# without this the image name resolves to "/ha-todo-app:tag" and the pull fails.
+# IMAGE_TAG is passed in the shell environment, which outranks the env file.
 # --remove-orphans so a renamed service does not linger from an older release.
+COMPOSE_CMD="docker compose --env-file '.env.$ENV_NAME' -f '$COMPOSE_FILE'"
 ssh_run "cd '$DEPLOY_DIR' \
-    && IMAGE_TAG='$IMAGE_TAG' docker compose -f '$COMPOSE_FILE' pull \
-    && IMAGE_TAG='$IMAGE_TAG' docker compose -f '$COMPOSE_FILE' up -d --remove-orphans"
+    && IMAGE_TAG='$IMAGE_TAG' $COMPOSE_CMD pull \
+    && IMAGE_TAG='$IMAGE_TAG' $COMPOSE_CMD up -d --remove-orphans"
 
 log "[5/5] waiting for health"
 # Polled through the web service, the same same-origin path a browser uses -
@@ -49,5 +54,5 @@ for attempt in $(seq 1 30); do
     sleep 5
 done
 
-ssh_run "cd '$DEPLOY_DIR' && docker compose -f '$COMPOSE_FILE' ps" || true
+ssh_run "cd '$DEPLOY_DIR' && $COMPOSE_CMD ps; $COMPOSE_CMD logs --tail=40 app" || true
 die "service did not report healthy within 150s - check the logs above"

@@ -142,10 +142,18 @@ Rules:
 - **Never open an interactive SSH session to a server to do deployment work by hand** — if a step is
   missing, add it to the script. All SSH goes through the single `ssh_run` helper in
   `scripts/lib/common.sh`. `deploy.sh prod` requires typing `deploy prod` to proceed.
-- Target hostnames, deploy folders and the registry live in uncommitted `deployment/.env.dev` /
-  `.env.prod`; `deployment/.env.example` documents every variable. **The real values are still TBD — ask
-  before filling them in.** `REGISTRY` defaults to `192.168.1.248:5000`; the port was never confirmed, and
-  a non-TLS registry also needs an `insecure-registries` entry on this machine and each target host.
+- Targets live in uncommitted `deployment/.env.dev` / `.env.prod`; `deployment/.env.example` documents
+  every variable. Both environments run on **`wliant@192.168.1.248`**, sharing
+  `/home/wliant/myapps/ha-todo` — the compose/env filenames and the project names (`ha-todo-dev`,
+  `ha-todo-prod`) keep them apart. **dev is port 5987, prod is 5986.**
+- The registry is `192.168.1.248:5000` over **insecure HTTP**; both this machine and the target already
+  list it under `insecure-registries`.
+- Each environment has its own Postgres role and database on `192.168.1.248:5432`: `hatodo_dev` and
+  `hatodo_prod`. Flyway creates every table, so the role only needs to own its database.
+- `SESSION_COOKIE_SECURE` must stay **false** while an environment is served over plain HTTP. A `Secure`
+  cookie is dropped by the browser on an `http://` origin and login breaks with no visible error.
+- Compose on the target is always invoked with `--env-file .env.<env>`. `env_file:` only populates the
+  container; without `--env-file`, `${REGISTRY}` and `${WEB_PORT}` interpolate to empty and the pull fails.
 - Rollback is `./scripts/deploy.sh <env> <older-tag>` — that is why `IMAGE_TAG` is an explicit argument.
 - Deploys are outward-facing and hard to reverse. Confirm with the user before running one, especially prod.
 
