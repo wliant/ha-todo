@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import Page, expect
 
-from conftest import DemoMember, TestData, api_csrf_header, ui_sign_in
+from conftest import DemoMember, TestData, api_csrf_header, profile_link, ui_sign_in
 
 
 def sign_out(page: Page, base_url: str) -> None:
@@ -41,11 +41,11 @@ def expect_signed_in(page: Page, member: DemoMember) -> None:
     survive a sign-in. The sidebar names the member on every signed-in screen,
     so that is the stable signal.
     """
-    expect(page.get_by_role("link", name=member.display_name)).to_be_visible()
+    expect(profile_link(page, member)).to_be_visible()
 
 
 @pytest.fixture
-def disposable_member(admin_api, test_data: TestData) -> DemoMember:
+def disposable_member(admin_api, cleanup_user, test_data: TestData) -> DemoMember:
     """A passwordless member this test may lock out and throw away."""
     username = test_data.username("profile")
     # The display name has to be unique too, not just the login name: these
@@ -61,13 +61,7 @@ def disposable_member(admin_api, test_data: TestData) -> DemoMember:
     )
     response.raise_for_status()
     created = response.json()
-
-    def remove() -> None:
-        admin_api.delete(
-            f"/api/admin/users/{created['id']}", headers=api_csrf_header(admin_api)
-        )
-
-    test_data.defer_cleanup(remove)
+    cleanup_user(username)
     return DemoMember(
         username=username, display_name=created["displayName"], password=None
     )

@@ -23,6 +23,14 @@ export function isUnauthorized(error: unknown): boolean {
   return axios.isAxiosError(error) && error.response?.status === 401
 }
 
+/**
+ * No such list - or none this caller may know about. The two are deliberately
+ * the same answer, so this cannot distinguish them either (docs/adr/0010).
+ */
+export function isNotFound(error: unknown): boolean {
+  return axios.isAxiosError(error) && error.response?.status === 404
+}
+
 /** A stale write. The caller's view was out of date; the server's state wins. */
 export function isConflict(error: unknown): boolean {
   return axios.isAxiosError(error) && error.response?.status === 409

@@ -5,6 +5,12 @@
 -- own terms: Flyway re-runs a repeatable migration whenever its checksum
 -- changes, not only on a fresh database.
 --
+-- The numeric prefix is load-bearing. Flyway orders repeatable migrations by
+-- description, so the unprefixed name sorted *before* the users seed and, on a
+-- fresh database, found nobody to own these lists - inserting nothing, without
+-- failing. The prefix makes the dependency on the users seed explicit and
+-- correct.
+--
 -- The point of the second list is that it is granted to Ana alone. Signing in
 -- as Ben and not seeing it is the access rule (R19) being visible from the
 -- first minute, rather than something only a test knows about.

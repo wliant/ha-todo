@@ -6,7 +6,7 @@ import httpx
 import pytest
 from playwright.sync_api import Page, expect
 
-from conftest import DemoMember, pick_user, ui_sign_in
+from conftest import DemoMember, pick_user, profile_link, ui_sign_in
 
 
 @pytest.mark.smoke
@@ -71,7 +71,7 @@ def test_member_with_a_password_is_asked_for_it(
     # R15: the navigation carries the member's identity. The sidebar names them
     # on the row that leads to their own profile, where the old top bar said
     # "Signed in as".
-    expect(page.get_by_role("link", name=demo_member.display_name)).to_be_visible()
+    expect(profile_link(page, demo_member)).to_be_visible()
 
 
 @pytest.mark.smoke

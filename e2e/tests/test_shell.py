@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import Page, expect
 
-from conftest import DemoMember, ui_sign_in
+from conftest import DemoMember, profile_link, ui_sign_in
 
 PHONE = {"width": 390, "height": 844}
 DESKTOP = {"width": 1280, "height": 900}
@@ -40,7 +40,7 @@ def test_on_a_phone_the_sidebar_opens_from_the_app_bar_and_closes_on_choosing(
     expect(page.get_by_role("link", name="Lists")).to_be_visible()
 
     # It must never be left covering the screen it navigated to.
-    page.get_by_role("link", name=passwordless_member.display_name).click()
+    profile_link(page, passwordless_member).click()
     expect(page.get_by_role("heading", name="Your profile")).to_be_visible()
     expect(page.get_by_role("link", name="Lists")).not_to_be_visible()
 

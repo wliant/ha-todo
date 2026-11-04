@@ -11,14 +11,15 @@ Implemented: **accounts and administration (R8-R12)** — username identity, opt
 pick-a-user sign-in screen, and a single admin who adds and deletes users. **The PWA (R13, R14)** —
 installable as "List", with an Android share target. **The UI shell (R15-R17)** — now a sidebar rather
 than the original bottom bar, master-detail administration, and a sign-in roster that describes nobody.
-**Phase 1 of R18-R35** — Material Design throughout, the current-user plumbing every access check will
-need, and a member's own colour scheme and password with an admin reset.
+**Phases 1-2 of R18-R35** — Material Design throughout, the current-user plumbing every access check
+needs, a member's own colour scheme and password with an admin reset, and **the list entity**: lists
+with a curated icon, per-list access grants, personal pins and recency, and search.
 
-Not implemented: **the list / item domain**. `/lists` is a placeholder page and a shared link is still
-parked on the device, because there is no item to make of it yet. That is phases 2-5 of
-`docs/requirements/0004` — the list entity and its access grants, the per-list field configuration,
-images on MinIO, then items with completion and points. `docs/design/0004` describes all of it and
-`docs/adr/0010`-`0020` record the decisions; read the design before writing any of it.
+Not implemented: **items**. A list is ready for them but carries none, `/share` still parks a link on
+the device, and nothing yet declares what shape an item takes. That is phases 3-5 of
+`docs/requirements/0004` — the per-list field configuration, images on MinIO, then items with
+completion and points. `docs/design/0004` describes all of it and `docs/adr/0010`-`0020` record the
+decisions; read the design before writing any of it.
 
 Keep this file true: when a decision here turns out wrong, update it in the same change.
 
@@ -109,7 +110,10 @@ profiles only. The admin is `admin` / `admin` locally, from `ADMIN_USERNAME` / `
 boundary, authorization) → domain → Spring Data JPA repositories against Postgres. Schema changes go
 through versioned migrations (Flyway); never rely on JPA auto-DDL outside tests.
 
-**Seed data is a repeatable migration (`db/seed/R__*.sql`), not a versioned one.** Flyway runs repeatable
+**Seed data is a repeatable migration (`db/seed/R__*.sql`), not a versioned one.** They are numbered
+(`R__seed_01_demo_users.sql`, `R__seed_02_demo_lists.sql`) because **Flyway orders repeatable
+migrations by description**: unprefixed, the lists seed sorted first and, on a fresh database, found no
+users to own the lists - inserting nothing and failing silently. Flyway runs repeatable
 migrations after every versioned one and re-runs them when their content changes, so demo data can be
 edited freely and can never sit in front of a schema change. The old versioned seed at `V900` is why the
 schema series resumes at **V901** — a lower version would be out of order on any database that applied it,

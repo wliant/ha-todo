@@ -12,6 +12,10 @@
 -- ('password123'), Ben needs none. The upsert is what makes that true on a
 -- database where V901 carried the old seed rows over - Ben arrived there with a
 -- hash and has to lose it.
+--
+-- Numbered so it runs before the lists seed, which needs these rows to exist:
+-- Flyway orders repeatable migrations by description.
+
 INSERT INTO app_user (username, display_name, password_hash, role)
 VALUES
     ('ana', 'Ana', '$2y$10$ca5oBvmXYQKrb9NIiHTdZOMdQE75fh/3/6A7RblMXxX9rRB038IYO', 'MEMBER'),
