@@ -107,6 +107,14 @@ a controller is forwarded to `/error`, blocked, and surfaces as a misleading 401
 ADR — see `docs/adr/0003-defer-redis-and-minio.md`. The likeliest triggers are a second backend instance
 (in-memory sessions break) and item attachments.
 
+**The frontend reaches the backend same-origin in every environment.** The SPA only ever uses relative
+`/api` paths - never an absolute API URL, never `VITE_API_URL`. nginx in the `web` image proxies `/api` and
+`/actuator/health` to `app:8080`, and the Vite dev server proxies the same paths, so cookies, `SameSite`
+and CSRF behave identically everywhere and CORS is never needed. In dev and prod the `app` service
+publishes **no** host port at all (`expose` only); locally it is bound to `127.0.0.1` purely so `pnpm dev`
+can proxy to it. Do not add a published app port or an absolute API base URL - that reintroduces a
+cross-origin path the session cookie is not configured for.
+
 **Frontend** is a React SPA consuming the REST API; keep server state in a query cache (React Query-style)
 so a list refetches cleanly after another member's change, and keep the list-grouping view model separate
 from the item components.

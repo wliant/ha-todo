@@ -38,8 +38,10 @@ ssh_run "cd '$DEPLOY_DIR' \
     && IMAGE_TAG='$IMAGE_TAG' docker compose -f '$COMPOSE_FILE' up -d --remove-orphans"
 
 log "[5/5] waiting for health"
+# Polled through the web service, the same same-origin path a browser uses -
+# the app publishes no port of its own.
 for attempt in $(seq 1 30); do
-    if ssh_run "curl -fsS http://localhost:${APP_PORT:-8080}/actuator/health" 2>/dev/null \
+    if ssh_run "curl -fsS http://localhost:${WEB_PORT:-80}/actuator/health" 2>/dev/null \
             | grep -q '"status":"UP"'; then
         log "deploy complete: $ENV_NAME is UP on tag $IMAGE_TAG"
         exit 0

@@ -23,9 +23,22 @@ browser ──> nginx (web image) ──┬── /            static SPA bundle
                                               provided Postgres
 ```
 
-Same-origin by design: nginx proxies `/api` so the session cookie and CSRF token
-work without CORS, and the Vite dev server proxies the same paths so development
-behaves identically to a deployed environment.
+Same-origin by design, in **every** environment: nginx proxies `/api` so the
+session cookie and CSRF token work without CORS, and the Vite dev server proxies
+the same paths so development behaves identically to a deployed environment. The
+SPA only ever issues relative `/api` requests.
+
+This is enforced by what is published, not just by convention:
+
+| | `app` published port | `web` published port | browser reaches API via |
+|---|---|---|---|
+| local (docker) | `127.0.0.1:8080` only | `5173` | `http://localhost:5173/api` |
+| local (`pnpm dev`) | `127.0.0.1:8080` only | `5173` (Vite) | Vite proxy to `/api` |
+| dev / prod | **none** (`expose` only) | `WEB_PORT` | nginx `/api` |
+
+Health checks follow the same path: `scripts/deploy.sh` polls
+`http://localhost:${WEB_PORT}/actuator/health` on the target rather than the
+app port, because there is no app port to poll.
 
 ## Request path in the backend
 

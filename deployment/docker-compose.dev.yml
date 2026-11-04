@@ -11,8 +11,11 @@ services:
       - .env.dev
     environment:
       SPRING_PROFILES_ACTIVE: dev
-    ports:
-      - "${APP_PORT:-8080}:8080"
+    # No published ports: the browser reaches the API same-origin through the
+    # web service's nginx at /api. Exposing 8080 here would create a second,
+    # cross-origin way in that cookies and CSRF are not configured for.
+    expose:
+      - "8080"
 
   web:
     image: ${REGISTRY}/ha-todo-web:${IMAGE_TAG}
