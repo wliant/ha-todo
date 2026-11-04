@@ -77,17 +77,22 @@ class LoginServiceTest {
     }
 
     @Test
-    void rosterReportsWhoNeedsAPasswordAndNeverAHash() {
+    void rosterSaysOnlyWhoExists() {
         when(users.findAllByEnabledTrueOrderByDisplayNameAsc()).thenReturn(List.of(
                 AppUser.member("ana", "Ana", "$2y$10$hash"),
                 AppUser.passwordlessMember("ben", "Ben")));
 
         List<LoginUserResponse> roster = loginService().roster();
 
-        assertThat(roster).extracting(LoginUserResponse::username, LoginUserResponse::passwordRequired)
+        assertThat(roster).extracting(LoginUserResponse::username, LoginUserResponse::displayName)
                 .containsExactly(
-                        org.assertj.core.groups.Tuple.tuple("ana", true),
-                        org.assertj.core.groups.Tuple.tuple("ben", false));
+                        org.assertj.core.groups.Tuple.tuple("ana", "Ana"),
+                        org.assertj.core.groups.Tuple.tuple("ben", "Ben"));
+        // Anyone who can reach the deployment reads this, so it must not say who
+        // is the admin, nor who needs no password (adr/0009).
+        assertThat(LoginUserResponse.class.getRecordComponents())
+                .extracting(java.lang.reflect.RecordComponent::getName)
+                .containsExactly("id", "username", "displayName");
         assertThat(roster.toString()).doesNotContain("$2y$10$hash");
     }
 }

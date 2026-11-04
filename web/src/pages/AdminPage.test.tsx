@@ -28,7 +28,9 @@ const ben: AdminUser = {
 }
 
 function renderAdminPage() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
@@ -50,6 +52,23 @@ describe('AdminPage', () => {
     vi.spyOn(client, 'fetchAdminUsers').mockResolvedValue([adminAccount, ben])
   })
 
+  it('opens on the household with nothing selected, and no form in the way', async () => {
+    renderAdminPage()
+
+    expect(await screen.findByRole('button', { name: /Ben/ })).toBeVisible()
+    expect(screen.getByText(/Pick someone to see their details/)).toBeVisible()
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument()
+  })
+
+  it('shows the selected person in the detail pane', async () => {
+    renderAdminPage()
+    await userEvent.click(await screen.findByRole('button', { name: /Ben/ }))
+
+    expect(screen.getByRole('heading', { name: 'Ben' })).toBeVisible()
+    expect(screen.getByText('Picked from the list, no password')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Remove Ben' })).toBeVisible()
+  })
+
   it('adds a user with no password when a password is not required', async () => {
     const create = vi.spyOn(client, 'createUser').mockResolvedValue({
       ...ben,
@@ -59,8 +78,9 @@ describe('AdminPage', () => {
     })
 
     renderAdminPage()
+    await userEvent.click(await screen.findByRole('button', { name: 'Add someone' }))
 
-    await userEvent.type(await screen.findByLabelText('Name'), 'Cara')
+    await userEvent.type(screen.getByLabelText('Name'), 'Cara')
     await userEvent.type(screen.getByLabelText('Login name'), 'cara')
     await userEvent.click(screen.getByRole('button', { name: 'Add user' }))
 
@@ -81,9 +101,10 @@ describe('AdminPage', () => {
     })
 
     renderAdminPage()
+    await userEvent.click(await screen.findByRole('button', { name: 'Add someone' }))
     expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
 
-    await userEvent.type(await screen.findByLabelText('Name'), 'Dan')
+    await userEvent.type(screen.getByLabelText('Name'), 'Dan')
     await userEvent.type(screen.getByLabelText('Login name'), 'dan')
     await userEvent.click(screen.getByLabelText('Require a password'))
     await userEvent.type(screen.getByLabelText('Password'), 'dans-password')
@@ -101,26 +122,36 @@ describe('AdminPage', () => {
     vi.spyOn(client, 'errorMessage').mockReturnValue('That login name is already taken.')
 
     renderAdminPage()
-    await userEvent.type(await screen.findByLabelText('Name'), 'Ben Again')
+    await userEvent.click(await screen.findByRole('button', { name: 'Add someone' }))
+    await userEvent.type(screen.getByLabelText('Name'), 'Ben Again')
     await userEvent.type(screen.getByLabelText('Login name'), 'ben')
     await userEvent.click(screen.getByRole('button', { name: 'Add user' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('That login name is already taken.')
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'That login name is already taken.',
+    )
   })
 
-  it('removes a member', async () => {
+  it('removes a member and closes the detail on them', async () => {
     const remove = vi.spyOn(client, 'deleteUser').mockResolvedValue()
+    const list = vi.spyOn(client, 'fetchAdminUsers')
 
     renderAdminPage()
-    await userEvent.click(await screen.findByRole('button', { name: 'Remove Ben' }))
+    await userEvent.click(await screen.findByRole('button', { name: /Ben/ }))
+    list.mockResolvedValue([adminAccount])
+    await userEvent.click(screen.getByRole('button', { name: 'Remove Ben' }))
 
     await waitFor(() => expect(remove).toHaveBeenCalledWith('id-ben'))
+    await waitFor(() =>
+      expect(screen.queryByRole('heading', { name: 'Ben' })).not.toBeInTheDocument(),
+    )
   })
 
   it('offers no way to remove the admin account', async () => {
     renderAdminPage()
+    await userEvent.click(await screen.findByRole('button', { name: /Admin/ }))
 
-    expect(await screen.findByRole('button', { name: 'Remove Ben' })).toBeVisible()
+    expect(screen.getByText(/cannot be removed/)).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Remove Admin' })).not.toBeInTheDocument()
   })
 })

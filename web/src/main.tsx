@@ -16,6 +16,14 @@ const queryClient = new QueryClient({
   },
 })
 
+// Registered for installability only - the worker caches nothing on purpose.
+// See docs/adr/0007-installable-pwa-without-offline-caching.md.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('/sw.js')
+  })
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>

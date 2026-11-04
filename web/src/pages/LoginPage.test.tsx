@@ -1,31 +1,30 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { AxiosError, type AxiosResponse } from 'axios'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { LoginPage } from './LoginPage'
 import * as client from '../api/client'
 import type { LoginUser } from '../api/client'
 
-const ana: LoginUser = {
-  id: 'id-ana',
-  username: 'ana',
-  displayName: 'Ana',
-  role: 'MEMBER',
-  passwordRequired: true,
-}
+const ana: LoginUser = { id: 'id-ana', username: 'ana', displayName: 'Ana' }
+const ben: LoginUser = { id: 'id-ben', username: 'ben', displayName: 'Ben' }
 
-const ben: LoginUser = {
-  id: 'id-ben',
-  username: 'ben',
-  displayName: 'Ben',
-  role: 'MEMBER',
-  passwordRequired: false,
+/** What the API returns for "that sign-in did not work", whatever the reason. */
+function unauthorized(): AxiosError {
+  return new AxiosError('Unauthorized', 'ERR_BAD_REQUEST', undefined, undefined, {
+    status: 401,
+    statusText: 'Unauthorized',
+    data: {},
+    headers: {},
+    config: { headers: {} },
+  } as unknown as AxiosResponse)
 }
 
 function renderLoginPage() {
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   return render(
     <QueryClientProvider client={queryClient}>
@@ -46,19 +45,23 @@ describe('LoginPage', () => {
   it('offers the household as a list to pick from instead of a login form', async () => {
     renderLoginPage()
 
-    expect(await screen.findByRole('button', { name: /Ana/ })).toBeVisible()
-    expect(screen.getByRole('button', { name: /Ben/ })).toBeVisible()
+    expect(await screen.findByRole('button', { name: 'Ana' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Ben' })).toBeVisible()
     expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
   })
 
-  it('says who needs a password and who does not', async () => {
+  it('says nothing about who is the admin or who needs a password (R17)', async () => {
     renderLoginPage()
+    await screen.findByRole('button', { name: 'Ana' })
 
-    expect(await screen.findByRole('button', { name: /Ana/ })).toHaveTextContent('Needs a password')
-    expect(screen.getByRole('button', { name: /Ben/ })).toHaveTextContent('Tap to sign in')
+    // The roster is public, so the screen drawn from it must not describe
+    // anyone - only name them.
+    expect(screen.queryByText(/password/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/admin/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/tap to sign in/i)).not.toBeInTheDocument()
   })
 
-  it('signs a passwordless member in on one click, asking for nothing', async () => {
+  it('signs a passwordless member in on one tap, asking for nothing', async () => {
     const login = vi.spyOn(client, 'login').mockResolvedValue({
       id: 'id-ben',
       username: 'ben',
@@ -67,64 +70,70 @@ describe('LoginPage', () => {
     })
 
     renderLoginPage()
-    await userEvent.click(await screen.findByRole('button', { name: /Ben/ }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Ben' }))
 
     expect(login).toHaveBeenCalledWith('ben', undefined)
     expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
   })
 
-  it('asks only the chosen member for their password', async () => {
-    const login = vi.spyOn(client, 'login').mockResolvedValue({
-      id: 'id-ana',
-      username: 'ana',
-      displayName: 'Ana',
-      role: 'MEMBER',
-    })
+  it('asks for a password only after the server refuses the attempt without one', async () => {
+    const login = vi
+      .spyOn(client, 'login')
+      .mockRejectedValueOnce(unauthorized())
+      .mockResolvedValueOnce({
+        id: 'id-ana',
+        username: 'ana',
+        displayName: 'Ana',
+        role: 'MEMBER',
+      })
 
     renderLoginPage()
-    await userEvent.click(await screen.findByRole('button', { name: /Ana/ }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Ana' }))
 
+    expect(login).toHaveBeenNthCalledWith(1, 'ana', undefined)
+    expect(await screen.findByLabelText('Password')).toBeVisible()
     expect(screen.getByText('Signing in as')).toBeVisible()
-    expect(login).not.toHaveBeenCalled()
 
     await userEvent.type(screen.getByLabelText('Password'), 'password123')
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
 
-    expect(login).toHaveBeenCalledWith('ana', 'password123')
+    expect(login).toHaveBeenNthCalledWith(2, 'ana', 'password123')
+    // The refusal that asked the question is not reported as a failure.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('reports a wrong password without saying which part was wrong', async () => {
+    vi.spyOn(client, 'login').mockRejectedValue(unauthorized())
+
+    renderLoginPage()
+    await userEvent.click(await screen.findByRole('button', { name: 'Ana' }))
+    await userEvent.type(await screen.findByLabelText('Password'), 'wrong')
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('did not work')
   })
 
   it('lets a member who picked the wrong name go back to the list', async () => {
+    vi.spyOn(client, 'login').mockRejectedValue(unauthorized())
+
     renderLoginPage()
-    await userEvent.click(await screen.findByRole('button', { name: /Ana/ }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Ana' }))
+    await screen.findByLabelText('Password')
 
     await userEvent.click(screen.getByRole('button', { name: 'Not Ana?' }))
 
-    expect(screen.getByRole('button', { name: /Ben/ })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Ben' })).toBeVisible()
     expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
   })
 
-  it('reports a failed sign-in without revealing which part was wrong', async () => {
-    vi.spyOn(client, 'login').mockRejectedValue(new Error('401'))
+  it('distinguishes a server that is down from a password that is needed', async () => {
+    vi.spyOn(client, 'login').mockRejectedValue(new Error('network down'))
 
     renderLoginPage()
-    await userEvent.click(await screen.findByRole('button', { name: /Ana/ }))
-    await userEvent.type(screen.getByLabelText('Password'), 'wrong')
-    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Ben' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('That password did not match.')
-  })
-
-  it('shows the admin in the list like anybody else', async () => {
-    vi.spyOn(client, 'fetchLoginUsers').mockResolvedValue([
-      { id: 'id-admin', username: 'admin', displayName: 'Admin', role: 'ADMIN', passwordRequired: true },
-      ben,
-    ])
-
-    renderLoginPage()
-
-    expect(await screen.findByRole('button', { name: /Admin/ })).toHaveTextContent(
-      'Admin · needs a password',
-    )
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not sign in')
+    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
   })
 
   it('says so when the household is empty rather than showing nothing', async () => {

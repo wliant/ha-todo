@@ -35,21 +35,36 @@ class AuthFlowIntegrationTest extends ApiIntegrationTest {
     }
 
     @Test
-    void rosterIsReadableAnonymouslyAndLeaksNoHashes() {
+    void rosterIsReadableAnonymouslyAndSaysOnlyWhoExists() {
         // The sign-in screen cannot be drawn without this, so it is public by
-        // necessity - which is exactly why its payload must stay minimal.
+        // necessity - which is exactly why its payload must stay minimal. No
+        // role, and no password expectation: see adr/0009.
         ResponseEntity<List> response = rest.getForEntity("/api/auth/users", List.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).hasSizeGreaterThanOrEqualTo(3);
         assertThat(response.getBody().toString())
                 .doesNotContain("passwordHash")
-                .doesNotContain("$2y$");
+                .doesNotContain("$2y$")
+                .doesNotContain("passwordRequired")
+                .doesNotContain("role")
+                .doesNotContain("ADMIN");
 
-        Map<String, Object> ana = userNamed(response.getBody(), "ana");
-        assertThat(ana).containsEntry("passwordRequired", true).containsEntry("role", "MEMBER");
-        assertThat(userNamed(response.getBody(), "ben")).containsEntry("passwordRequired", false);
-        assertThat(userNamed(response.getBody(), "admin")).containsEntry("role", "ADMIN");
+        assertThat(userNamed(response.getBody(), "ana"))
+                .containsOnlyKeys("id", "username", "displayName")
+                .containsEntry("displayName", "Ana");
+        assertThat(userNamed(response.getBody(), "admin")).containsOnlyKeys("id", "username", "displayName");
+    }
+
+    @Test
+    void postingNoPasswordForAnAccountThatNeedsOneIsRefused() {
+        // How the client discovers a password is needed, now that the roster no
+        // longer tells it: it tries without one and reads the 401 (adr/0009).
+        Csrf csrf = fetchCsrf();
+        ResponseEntity<Map> login = rest.exchange("/api/auth/login", HttpMethod.POST,
+                new HttpEntity<>("{\"username\":\"ana\"}", jsonHeaders(csrf)), Map.class);
+
+        assertThat(login.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
     @Test

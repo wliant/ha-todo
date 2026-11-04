@@ -4,11 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-**Skeleton plus accounts, as of 2026-11-04.** Build, local stack, deploy scripts and all three test
-harnesses are real and passing. **Accounts and administration (R8-R12) are implemented**: username
-identity, optional per-user passwords, a pick-a-user sign-in screen, and a single admin who adds and
-deletes users. The household / list / item domain (requirements R1-R6) is still **not** implemented —
-`/lists` is a placeholder page. Keep this file true: when a decision here turns out wrong, update it in
+**Skeleton, accounts and the app shell, as of 2026-11-04.** Build, local stack, deploy scripts and all
+three test harnesses are real and passing. **Accounts and administration (R8-R12) are implemented**:
+username identity, optional per-user passwords, a pick-a-user sign-in screen, and a single admin who
+adds and deletes users. **The PWA and UI shell (R13-R17) are implemented**: installable as "List",
+responsive with a navigation bar, master-detail administration, an Android share target, and a sign-in
+roster that describes nobody. The household / list / item domain (requirements R1-R6) is still **not**
+implemented — `/lists` is a placeholder page, and a shared link is parked on the device because there
+is no item to make of it yet. Keep this file true: when a decision here turns out wrong, update it in
 the same change.
 
 ## What this product is
@@ -59,6 +62,7 @@ pnpm test                             # unit tests (watch off in CI)
 pnpm test path/to/File.test.tsx       # single test file
 pnpm lint && pnpm typecheck           # oxlint, then tsc -b --noEmit
 pnpm build
+pnpm icons                            # redraw public/icons/*.png, then commit them
 ```
 
 `pnpm` enforces a 24h `minimumReleaseAge` on lockfile entries, so a just-published dependency fails
@@ -70,7 +74,7 @@ uv sync
 uv run playwright install chromium    # once, after install
 E2E_BASE_URL=http://localhost:5173 uv run pytest      # against the local stack
 E2E_BASE_URL=https://<dev-host> uv run pytest         # against dev (the intended target)
-uv run pytest tests/test_smoke.py::test_demo_member_can_sign_in
+uv run pytest tests/test_smoke.py::test_passwordless_member_signs_in_with_one_click
 uv run pytest -m smoke
 uv run pytest --headed --slowmo 300   # watch it run while debugging
 ```
@@ -119,17 +123,44 @@ disagrees with the hash is an auth bypass. `LoginService` branches on it: a stor
 bypass as one obvious `if`, not a custom `AuthenticationProvider`. See
 `docs/adr/0005-pick-a-user-login-with-optional-passwords.md`.
 
-**The sign-in roster is public, on purpose.** `GET /api/auth/users` is `permitAll` because the login screen
-is a list of people. It returns only what draws that screen — never add a field to it. Consequence: anyone
-who can reach the deployment can see the household and sign in as any passwordless member. That trade is
-recorded in `docs/requirements/0002-accounts-and-administration.md`; do not widen it, and keep both
-environments behind the HTTPS front door.
+**The sign-in roster is public, and says only who exists.** `GET /api/auth/users` is `permitAll` because the
+login screen is a list of people. It returns `id`, `username`, `displayName` and **nothing else**: no role,
+no `passwordRequired` — publishing which account is the admin and which have no secret is a list of free
+passes sorted by name. Never add a field to it. The client therefore cannot know whether a password is
+needed and finds out by posting the login without one and reading the **401**, so a deliberate 401 is part
+of a successful sign-in and must not be read as an attack on its own. See
+`docs/adr/0009-opaque-sign-in-roster.md`. The older consequence is unchanged: anyone who can reach the
+deployment can see the household and sign in as any passwordless member
+(`docs/requirements/0002-accounts-and-administration.md`); do not widen it, and keep both environments
+behind the HTTPS front door.
 
 **One admin, from the environment.** `role` is `ADMIN` | `MEMBER`, and a partial unique index makes a
 second admin unrepresentable. `AdminAccountInitializer` reconciles the admin row from `ADMIN_USERNAME` /
 `ADMIN_PASSWORD` on every startup and **fails startup** if no password is set; that is also the rotation
 path. `/api/admin/**` is `hasRole("ADMIN")`, and the service refuses to delete the admin row regardless of
 caller. See `docs/adr/0006-admin-account-from-environment.md`.
+
+**The app is an installable PWA whose service worker caches nothing.** `web/public/manifest.webmanifest`
+(name "List", standalone, `start_url: /lists`), the iOS-only meta tags in `index.html`, and
+`public/sw.js`, which exists solely to satisfy the install criteria. Offline use is out of scope, and a
+precaching worker would serve a stale `index.html` behind nginx's `no-store` — so do not add caching to
+it without replacing `docs/adr/0007-installable-pwa-without-offline-caching.md`. Icons are drawn by
+`web/scripts/generate-icons.mjs` (`pnpm icons`, no dependencies) and the PNGs are committed.
+
+**Receiving a shared link is Android-only, and the link is parked.** The manifest declares a **GET**
+share target at `/share?title=&text=&url=`; `SharePage` normalises it (Chrome often puts the URL in
+`text`, not `url`) and, because items do not exist yet, holds it in `localStorage` per user via
+`src/share/parkedLinks.ts`, shown on `/lists` as waiting. iOS Safari does not implement Web Share
+Target, so an installed iPhone app cannot appear in the share sheet — a platform limit, not a gap to
+work around. When R1-R5 land, the `park()` call becomes the create-item mutation and that module is
+deleted. See `docs/adr/0008-share-target-for-links.md`.
+
+**The signed-in UI is one shell with one breakpoint.** Every authenticated route renders inside
+`AppLayout`, so the navigation bar mounts once. The breakpoint is `48rem` and lives in CSS only: below
+it navigation is a bottom bar and master-detail shows one pane at a time, above it navigation sits in
+the top bar and both panes are columns. There is no viewport hook and no JS layout state; adding one is
+how the two layouts start to drift. Colours come from the tokens in `index.css`, which honour
+`prefers-color-scheme`; components own none.
 
 **Redis and MinIO are deferred, not optional-and-maybe-present.** Neither is wired in; both sit commented out in
 `deployment/docker-compose.infra.yml` and `.env.example`. Adding either requires a concrete need and a new

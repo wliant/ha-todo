@@ -21,16 +21,24 @@ export interface CurrentUser {
   role: UserRole
 }
 
-/** One entry on the pick-a-user sign-in screen. */
+/**
+ * One entry on the pick-a-user sign-in screen. Says only that this person
+ * exists: the roster is readable by anyone who can reach the deployment, so it
+ * carries no role and no password expectation (docs/adr/0009).
+ */
 export interface LoginUser {
+  id: string
+  username: string
+  displayName: string
+}
+
+/** The admin's view of a user. Admin-only, so it may describe them fully. */
+export interface AdminUser {
   id: string
   username: string
   displayName: string
   role: UserRole
   passwordRequired: boolean
-}
-
-export interface AdminUser extends LoginUser {
   enabled: boolean
   createdAt: string
 }
@@ -40,6 +48,11 @@ export interface NewUser {
   displayName: string
   /** Omitted or blank means this user signs in by being picked. */
   password?: string
+}
+
+/** A refused sign-in: with no password sent, it means one is required. */
+export function isUnauthorized(error: unknown): boolean {
+  return axios.isAxiosError(error) && error.response?.status === 401
 }
 
 /** Resolving the token server-side is what sets the XSRF-TOKEN cookie. */
@@ -59,7 +72,10 @@ export async function fetchCurrentUser(): Promise<CurrentUser | null> {
   }
 }
 
-/** The sign-in roster. Public by necessity - the screen is a list of people. */
+/**
+ * The sign-in roster. Public by necessity - the screen is a list of people -
+ * and therefore says nothing about any of them beyond their name.
+ */
 export async function fetchLoginUsers(): Promise<LoginUser[]> {
   const { data } = await api.get<LoginUser[]>('/auth/users')
   return data
