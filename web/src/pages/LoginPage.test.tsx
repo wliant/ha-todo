@@ -5,8 +5,8 @@ import { AxiosError, type AxiosResponse } from 'axios'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { LoginPage } from './LoginPage'
-import * as client from '../api/client'
-import type { LoginUser } from '../api/client'
+import * as client from '../api/auth'
+import type { LoginUser } from '../api/auth'
 
 const ana: LoginUser = { id: 'id-ana', username: 'ana', displayName: 'Ana' }
 const ben: LoginUser = { id: 'id-ben', username: 'ben', displayName: 'Ben' }
@@ -47,7 +47,7 @@ describe('LoginPage', () => {
 
     expect(await screen.findByRole('button', { name: 'Ana' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Ben' })).toBeVisible()
-    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/^Password/)).not.toBeInTheDocument()
   })
 
   it('says nothing about who is the admin or who needs a password (R17)', async () => {
@@ -59,6 +59,17 @@ describe('LoginPage', () => {
     expect(screen.queryByText(/password/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/admin/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/tap to sign in/i)).not.toBeInTheDocument()
+  })
+
+  it('shows a roster row whose whole text is the name, nothing decorating it', async () => {
+    renderLoginPage()
+
+    // Not just the accessible name - the visible text too. An avatar or an
+    // initial here reads as "A Ana", which is a row describing someone rather
+    // than naming them, and the e2e suite asserts on this text as well.
+    expect(await screen.findByRole('button', { name: 'Ana' })).toHaveTextContent(
+      /^Ana$/,
+    )
   })
 
   it('signs a passwordless member in on one tap, asking for nothing', async () => {
@@ -73,7 +84,7 @@ describe('LoginPage', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Ben' }))
 
     expect(login).toHaveBeenCalledWith('ben', undefined)
-    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/^Password/)).not.toBeInTheDocument()
   })
 
   it('asks for a password only after the server refuses the attempt without one', async () => {
@@ -91,10 +102,10 @@ describe('LoginPage', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Ana' }))
 
     expect(login).toHaveBeenNthCalledWith(1, 'ana', undefined)
-    expect(await screen.findByLabelText('Password')).toBeVisible()
+    expect(await screen.findByLabelText(/^Password/)).toBeVisible()
     expect(screen.getByText('Signing in as')).toBeVisible()
 
-    await userEvent.type(screen.getByLabelText('Password'), 'password123')
+    await userEvent.type(screen.getByLabelText(/^Password/), 'password123')
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
 
     expect(login).toHaveBeenNthCalledWith(2, 'ana', 'password123')
@@ -107,7 +118,7 @@ describe('LoginPage', () => {
 
     renderLoginPage()
     await userEvent.click(await screen.findByRole('button', { name: 'Ana' }))
-    await userEvent.type(await screen.findByLabelText('Password'), 'wrong')
+    await userEvent.type(await screen.findByLabelText(/^Password/), 'wrong')
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('did not work')
@@ -118,12 +129,12 @@ describe('LoginPage', () => {
 
     renderLoginPage()
     await userEvent.click(await screen.findByRole('button', { name: 'Ana' }))
-    await screen.findByLabelText('Password')
+    await screen.findByLabelText(/^Password/)
 
     await userEvent.click(screen.getByRole('button', { name: 'Not Ana?' }))
 
     expect(screen.getByRole('button', { name: 'Ben' })).toBeVisible()
-    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/^Password/)).not.toBeInTheDocument()
   })
 
   it('distinguishes a server that is down from a password that is needed', async () => {
@@ -133,7 +144,7 @@ describe('LoginPage', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Ben' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not sign in')
-    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/^Password/)).not.toBeInTheDocument()
   })
 
   it('says so when the household is empty rather than showing nothing', async () => {

@@ -4,30 +4,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-**Skeleton, accounts and the app shell, as of 2026-11-04.** Build, local stack, deploy scripts and all
-three test harnesses are real and passing. **Accounts and administration (R8-R12) are implemented**:
-username identity, optional per-user passwords, a pick-a-user sign-in screen, and a single admin who
-adds and deletes users. **The PWA and UI shell (R13-R17) are implemented**: installable as "List",
-responsive with a navigation bar, master-detail administration, an Android share target, and a sign-in
-roster that describes nobody. The list / item domain (requirements R1-R6) is still **not**
-implemented — `/lists` is a placeholder page, and a shared link is parked on the device because there
-is no item to make of it yet.
+**Accounts, the app shell and Material Design, as of 2026-11-05.** Build, local stack, deploy scripts and
+all three test harnesses are real and passing.
 
-**Lists, items and personal settings (R18-R35) are specified, not built, as of 2026-11-05.**
-`docs/requirements/0004` and `docs/design/0004` describe the whole feature and `docs/adr/0010`-`0019`
-record its decisions; delivery is phased, one PR per phase, and only phase 0 (the specification) has
-landed. Read design/0004 before writing any of it. Keep this file true: when a decision here turns out
-wrong, update it in the same change.
+Implemented: **accounts and administration (R8-R12)** — username identity, optional per-user passwords, a
+pick-a-user sign-in screen, and a single admin who adds and deletes users. **The PWA (R13, R14)** —
+installable as "List", with an Android share target. **The UI shell (R15-R17)** — now a sidebar rather
+than the original bottom bar, master-detail administration, and a sign-in roster that describes nobody.
+**Phase 1 of R18-R35** — Material Design throughout, the current-user plumbing every access check will
+need, and a member's own colour scheme and password with an admin reset.
+
+Not implemented: **the list / item domain**. `/lists` is a placeholder page and a shared link is still
+parked on the device, because there is no item to make of it yet. That is phases 2-5 of
+`docs/requirements/0004` — the list entity and its access grants, the per-list field configuration,
+images on MinIO, then items with completion and points. `docs/design/0004` describes all of it and
+`docs/adr/0010`-`0020` record the decisions; read the design before writing any of it.
+
+Keep this file true: when a decision here turns out wrong, update it in the same change.
 
 ## What this product is
 
-`ha-todo` is a shared household todo list. **The deployment is the household** — there is one, every
-user belongs to it, and there is no household entity (`docs/adr/0010`). A household has many **lists**
-(grouping is a core feature, not a label); each list is seen by the people its creator grants access
-to, so a shared grocery list and a private workout log are both ordinary. Members add **items** to a
-list, items can be **assigned** to a member, and any member with access can mark any of that list's
-items complete. Design every API and UI around "multiple people touching the same list concurrently",
-not around a single-user todo app.
+`ha-todo` is a shared household todo list. **The deployment is the household** — there is one, every user
+belongs to it, and there is no household entity (`docs/adr/0010`). A household has many **lists**
+(grouping is a core feature, not a label); each list is seen by the people its creator grants access to, so
+a shared grocery list and a private workout log are both ordinary. Members add **items** to a list, items
+can be **assigned** to a member, and any member with access can mark any of that list's items complete.
+Design every API and UI around "multiple people touching the same list concurrently", not around a
+single-user todo app.
 
 ## Monorepo layout
 
@@ -73,8 +76,12 @@ pnpm build
 pnpm icons                            # redraw public/icons/*.png, then commit them
 ```
 
-`pnpm` enforces a 24h `minimumReleaseAge` on lockfile entries, so a just-published dependency fails
-`--frozen-lockfile` inside the Docker build. Pin to an aged release rather than waiting it out.
+**Pin new dependencies to an exact, aged version.** A `minimumReleaseAge` would make a just-published
+dependency fail `--frozen-lockfile` *inside the Docker build* while succeeding on the host — the worst
+place to find out. It is **not** configured today (`pnpm config get minimumReleaseAge` is `undefined` on
+pnpm 10.30.3), so the hazard is latent rather than active; pinning exactly is cheap insurance either way,
+and a caret range on a shared lockfile invites drift onto a fresh release. Verify any dependency change
+with a real `docker build web/` before opening the PR.
 
 E2E (`e2e/`) — pytest driving a real browser via Playwright:
 ```bash
@@ -168,12 +175,25 @@ Target, so an installed iPhone app cannot appear in the share sheet — a platfo
 work around. When R1-R5 land, the `park()` call becomes the create-item mutation and that module is
 deleted. See `docs/adr/0008-share-target-for-links.md`.
 
-**The signed-in UI is one shell with one breakpoint.** Every authenticated route renders inside
-`AppLayout`, so the navigation bar mounts once. The breakpoint is `48rem` and lives in CSS only: below
-it navigation is a bottom bar and master-detail shows one pane at a time, above it navigation sits in
-the top bar and both panes are columns. There is no viewport hook and no JS layout state; adding one is
-how the two layouts start to drift. Colours come from the tokens in `index.css`, which honour
-`prefers-color-scheme`; components own none.
+**The signed-in UI is one shell with one sidebar.** Every authenticated route renders inside
+`AppShell`, so `SideNav` mounts once. The breakpoint is `48rem`, named as `sm` in the MUI theme
+(`breakpoints.values.sm = 768`) so it is one number in one place. Above it the sidebar is a permanent
+`Drawer`; below it a temporary one behind a hamburger.
+
+`AppShell` owns the **only** piece of layout state in the app and makes the **only** `useMediaQuery`
+call. A drawer opens and closes, which is behaviour rather than placement, so the old CSS-only rule
+could not express it — see `docs/adr/0015`. The rule is narrowed, not dropped: nothing else may acquire
+layout state, and everything else responsive stays CSS. The drawer's open state is *derived* from the
+pathname (`openedOver === pathname`), so a navigation closes it by construction, back button included.
+The bottom bar is gone; a second navigation surface is how two layouts start to drift.
+
+**Styling is the MUI theme, and nothing else.** `web/src/theme/theme.ts` is the single source of truth
+for colour, radius and type; `index.css` is ~30 lines of box model, iOS text inflation, and the
+safe-area and `dvh` units a theme cannot express. The old `:root` token block and every component class
+were **deleted, not mapped** — two names for one colour is how the old one quietly survives. From here
+on no component introduces a global class: use `sx`, a styled component, or a theme override. Icons are
+imported one per path (`@mui/icons-material/ChecklistRounded`), never from the barrel, which is ~11,000
+modules. See `docs/adr/0014`.
 
 **Redis and MinIO are deferred, not optional-and-maybe-present.** Neither is wired in; both sit commented out in
 `deployment/docker-compose.infra.yml` and `.env.example`. Adding either requires a concrete need and a new
@@ -188,9 +208,19 @@ publishes **no** host port at all (`expose` only); locally it is bound to `127.0
 can proxy to it. Do not add a published app port or an absolute API base URL - that reintroduces a
 cross-origin path the session cookie is not configured for.
 
-**Frontend** is a React SPA consuming the REST API; keep server state in a query cache (React Query-style)
-so a list refetches cleanly after another member's change, and keep the list-grouping view model separate
-from the item components.
+**Frontend** is a React SPA consuming the REST API; keep server state in TanStack Query so a list
+refetches cleanly after another member's change, and keep the list-grouping view model separate from the
+item components.
+
+**`api/client.ts` is split per feature** — `api/http.ts` holds the axios instance and the error helpers
+(`isUnauthorized`, `isConflict`, `errorMessage`); `auth.ts` / `admin.ts` / `profile.ts` hold their own DTOs
+and calls. There is deliberately **no barrel re-exporting them**: tests spy by module namespace
+(`import * as authApi; vi.spyOn(authApi, 'fetchCurrentUser')`), and a re-exported live binding is exactly
+what `vi.spyOn` cannot intercept. Add a feature's module; never add an index.
+
+**Only the caller's own routes take no id.** `/api/me/*` acts on the session's principal, so there is no
+user id in the path to tamper with. Services reach the caller through `CurrentUserProvider`, never a
+threaded username — see `docs/adr/0016`.
 
 ## Environments
 

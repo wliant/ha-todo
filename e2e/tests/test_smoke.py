@@ -68,7 +68,10 @@ def test_member_with_a_password_is_asked_for_it(
     page.get_by_role("button", name="Sign in", exact=True).click()
 
     expect(page.get_by_role("heading", name="Lists")).to_be_visible()
-    expect(page.get_by_text("Signed in as")).to_be_visible()
+    # R15: the navigation carries the member's identity. The sidebar names them
+    # on the row that leads to their own profile, where the old top bar said
+    # "Signed in as".
+    expect(page.get_by_role("link", name=demo_member.display_name)).to_be_visible()
 
 
 @pytest.mark.smoke

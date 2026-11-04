@@ -1,18 +1,42 @@
 import { useState } from 'react'
-import { errorMessage, type AdminUser } from '../api/client'
-import { useAdminUsers, useCreateUser, useDeleteUser } from '../auth/useAdminUsers'
+import Alert from '@mui/material/Alert'
+import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
+import Checkbox from '@mui/material/Checkbox'
+import Divider from '@mui/material/Divider'
+import FormControlLabel from '@mui/material/FormControlLabel'
+import List from '@mui/material/List'
+import ListItemButton from '@mui/material/ListItemButton'
+import ListItemText from '@mui/material/ListItemText'
+import Paper from '@mui/material/Paper'
+import Stack from '@mui/material/Stack'
+import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
+import ArrowBackRounded from '@mui/icons-material/ArrowBackRounded'
+import { errorMessage } from '../api/http'
+import type { AdminUser } from '../api/admin'
+import {
+  useAdminUsers,
+  useCreateUser,
+  useDeleteUser,
+  useSetUserPassword,
+} from '../auth/useAdminUsers'
 import { useCurrentUser } from '../auth/useCurrentUser'
 
 /**
- * The admin's only job: add people and remove them (requirements/0002 R9),
- * presented as master-detail (R16) - the household on one side, the selected
- * person or the add form on the other.
+ * The admin's job: add people, remove them, and reset a password
+ * (requirements/0002 R9, requirements/0004 R33), presented as master-detail
+ * (R16) - the household on one side, the selected person or the add form on the
+ * other.
  *
- * Which pane is visible is CSS: below 48rem the detail replaces the list and
- * offers a way back, above it both are columns. The component tree is the same
- * either way, so there is no viewport state to keep in sync.
+ * Which pane is visible below the breakpoint is a responsive `display` driven by
+ * the selection the component already holds, so there is still no viewport hook
+ * and no second source of layout truth.
  */
 type Selection = { kind: 'user'; id: string } | { kind: 'new' } | null
+
+/** Shown only on the pane that is hidden at this width. */
+const PHONE_ONLY = { xs: 'block', sm: 'none' } as const
 
 export function AdminPage() {
   const { data: admin } = useCurrentUser()
@@ -21,65 +45,84 @@ export function AdminPage() {
   const [selection, setSelection] = useState<Selection>(null)
 
   const selected =
-    selection?.kind === 'user'
-      ? users?.find((user) => user.id === selection.id)
-      : undefined
+    selection?.kind === 'user' ? users?.find((user) => user.id === selection.id) : undefined
 
   // The selected person may have been removed, by this admin or by a concurrent
   // one, so the detail pane cannot outlive its subject. Derived rather than
   // corrected in an effect: the stale pane must never render even once.
-  const shown: Selection =
-    selection?.kind === 'user' && users && !selected ? null : selection
+  const shown: Selection = selection?.kind === 'user' && users && !selected ? null : selection
+
+  const detailOpen = shown !== null
 
   return (
-    <section className="master-detail" data-detail-open={shown !== null}>
-      <div className="master">
-        <header className="master-header">
-          <h1>Users</h1>
-          <button
-            type="button"
-            className="primary"
-            onClick={() => setSelection({ kind: 'new' })}
-          >
+    <Box
+      sx={{
+        display: 'grid',
+        gap: 3,
+        alignItems: 'start',
+        gridTemplateColumns: { sm: 'minmax(16rem, 22rem) 1fr' },
+      }}
+    >
+      <Stack
+        spacing={1.5}
+        sx={{ display: detailOpen ? { xs: 'none', sm: 'flex' } : 'flex' }}
+      >
+        <Stack
+          direction="row"
+          spacing={1}
+          sx={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}
+        >
+          <Typography component="h1" variant="h5">
+            Users
+          </Typography>
+          <Button variant="contained" onClick={() => setSelection({ kind: 'new' })}>
             Add someone
-          </button>
-        </header>
+          </Button>
+        </Stack>
 
-        {isPending && <p role="status">Loading users…</p>}
-        {isError && <p role="alert">Could not load the users.</p>}
+        {isPending && <Typography role="status">Loading users…</Typography>}
+        {isError && <Alert severity="error">Could not load the users.</Alert>}
 
         {users && (
-          <ul className="user-list" aria-label="Household">
+          <List aria-label="Household" disablePadding>
             {users.map((user) => (
-              <li key={user.id}>
-                <button
-                  type="button"
-                  className="user-choice"
-                  aria-current={shown?.kind === 'user' && shown.id === user.id}
-                  onClick={() => setSelection({ kind: 'user', id: user.id })}
-                >
-                  <span className="user-name">{user.displayName}</span>
-                  <span className="user-hint">{user.username}</span>
-                </button>
-              </li>
+              <ListItemButton
+                key={user.id}
+                aria-current={shown?.kind === 'user' && shown.id === user.id}
+                selected={shown?.kind === 'user' && shown.id === user.id}
+                onClick={() => setSelection({ kind: 'user', id: user.id })}
+              >
+                <ListItemText primary={user.displayName} secondary={user.username} />
+              </ListItemButton>
             ))}
-          </ul>
+          </List>
         )}
-      </div>
+      </Stack>
 
-      <div className="detail">
-        <button
-          type="button"
-          className="link detail-back"
+      <Paper
+        elevation={0}
+        sx={{
+          display: detailOpen ? 'block' : { xs: 'none', sm: 'block' },
+          p: { sm: 2.5 },
+          border: { sm: 1 },
+          borderColor: { sm: 'divider' },
+          minHeight: { sm: '12rem' },
+          bgcolor: { xs: 'transparent', sm: 'background.paper' },
+        }}
+      >
+        <Button
+          size="small"
+          startIcon={<ArrowBackRounded />}
           onClick={() => setSelection(null)}
+          sx={{ display: PHONE_ONLY, mb: 1 }}
         >
-          ← Household
-        </button>
+          Household
+        </Button>
 
         {shown === null && (
-          <p className="muted detail-empty">
+          <Typography color="text.secondary">
             Pick someone to see their details, or add someone new.
-          </p>
+          </Typography>
         )}
 
         {shown?.kind === 'new' && (
@@ -87,10 +130,23 @@ export function AdminPage() {
         )}
 
         {selected && (
-          <article className="stack">
-            <h2>{selected.displayName}</h2>
+          <Stack component="article" spacing={2}>
+            <Typography component="h2" variant="h6">
+              {selected.displayName}
+            </Typography>
 
-            <dl className="facts">
+            <Box
+              component="dl"
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: 'auto 1fr',
+                columnGap: 2,
+                rowGap: 0.75,
+                m: 0,
+                '& dt': { color: 'text.secondary' },
+                '& dd': { m: 0 },
+              }}
+            >
               <dt>Login name</dt>
               <dd>{selected.username}</dd>
 
@@ -106,39 +162,124 @@ export function AdminPage() {
 
               <dt>Added</dt>
               <dd>{new Date(selected.createdAt).toLocaleDateString()}</dd>
-            </dl>
+            </Box>
 
             {/* R12: the admin account is undeletable, so it is not offered. */}
             {selected.role === 'ADMIN' ? (
-              <p className="muted">
+              <Typography color="text.secondary">
                 {selected.id === admin?.id
-                  ? 'This is you. The admin account cannot be removed.'
+                  ? 'This is you. The admin account cannot be removed, and its password comes from the deployment configuration.'
                   : 'The admin account cannot be removed.'}
-              </p>
+              </Typography>
             ) : (
-              <button
-                type="button"
-                className="danger"
-                disabled={deleteMutation.isPending}
-                onClick={() =>
-                  deleteMutation.mutate(selected.id, {
-                    onSuccess: () => setSelection(null),
-                  })
-                }
-              >
-                Remove {selected.displayName}
-              </button>
+              <>
+                <Divider />
+                <ResetPassword user={selected} />
+                <Divider />
+                <Button
+                  color="error"
+                  variant="outlined"
+                  disabled={deleteMutation.isPending}
+                  sx={{ alignSelf: 'flex-start' }}
+                  onClick={() =>
+                    deleteMutation.mutate(selected.id, {
+                      onSuccess: () => setSelection(null),
+                    })
+                  }
+                >
+                  Remove {selected.displayName}
+                </Button>
+              </>
             )}
 
             {deleteMutation.isError && (
-              <p role="alert">
+              <Alert severity="error">
                 {errorMessage(deleteMutation.error, 'Could not remove that user.')}
-              </p>
+              </Alert>
             )}
-          </article>
+          </Stack>
         )}
-      </div>
-    </section>
+      </Paper>
+    </Box>
+  )
+}
+
+/**
+ * The recovery path for R33. A member can set their own password with no old
+ * password, so a forgotten one - or a sibling's prank - needs an admin who can
+ * clear it again.
+ */
+function ResetPassword({ user }: { user: AdminUser }) {
+  const setPassword = useSetUserPassword()
+  const [value, setValue] = useState('')
+  const [done, setDone] = useState<string | null>(null)
+
+  function submit(password: string | null) {
+    setDone(null)
+    setPassword.mutate(
+      { id: user.id, password },
+      {
+        onSuccess: () => {
+          setValue('')
+          setDone(
+            password === null
+              ? `${user.displayName} can now sign in with one tap.`
+              : `${user.displayName}'s password has been set.`,
+          )
+        },
+      },
+    )
+  }
+
+  return (
+    <Stack
+      component="form"
+      spacing={1.5}
+      onSubmit={(event) => {
+        event.preventDefault()
+        submit(value)
+      }}
+    >
+      <Typography component="h3" variant="subtitle1">
+        Password
+      </Typography>
+
+      <TextField
+        id={`reset-password-${user.id}`}
+        label="Set a new password"
+        type="password"
+        autoComplete="new-password"
+        size="small"
+        required
+        slotProps={{ htmlInput: { maxLength: 100 } }}
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        helperText="They are not asked for their old one."
+      />
+
+      <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
+        <Button type="submit" variant="outlined" disabled={setPassword.isPending}>
+          Set password
+        </Button>
+        {user.passwordRequired && (
+          <Button
+            type="button"
+            variant="text"
+            disabled={setPassword.isPending}
+            onClick={() => submit(null)}
+          >
+            Remove password
+          </Button>
+        )}
+      </Stack>
+
+      {done && <Alert severity="success">{done}</Alert>}
+      {setPassword.isError && (
+        <Alert severity="error">
+          {errorMessage(setPassword.error, 'Could not change that password.')}
+        </Alert>
+      )}
+    </Stack>
   )
 }
 
@@ -150,8 +291,9 @@ function AddSomeone({ onAdded }: { onAdded: (user: AdminUser) => void }) {
   const [password, setPassword] = useState('')
 
   return (
-    <form
-      className="stack"
+    <Stack
+      component="form"
+      spacing={2}
       onSubmit={(event) => {
         event.preventDefault()
         createMutation.mutate(
@@ -164,65 +306,70 @@ function AddSomeone({ onAdded }: { onAdded: (user: AdminUser) => void }) {
         )
       }}
     >
-      <h2>Add someone</h2>
+      <Typography component="h2" variant="h6">
+        Add someone
+      </Typography>
 
-      <label htmlFor="displayName">Name</label>
-      <input
+      <TextField
         id="displayName"
         name="displayName"
+        label="Name"
         required
-        maxLength={100}
+        slotProps={{ htmlInput: { maxLength: 100 } }}
         value={displayName}
         onChange={(event) => setDisplayName(event.target.value)}
       />
 
-      <label htmlFor="username">Login name</label>
-      <input
+      <TextField
         id="username"
         name="username"
+        label="Login name"
         required
-        maxLength={50}
-        pattern="[A-Za-z0-9._\-]+"
+        slotProps={{ htmlInput: { maxLength: 50, pattern: '[A-Za-z0-9._\\-]+' } }}
         autoCapitalize="none"
         autoCorrect="off"
         value={username}
         onChange={(event) => setUsername(event.target.value)}
       />
 
-      <label className="checkbox">
-        <input
-          type="checkbox"
-          checked={passwordRequired}
-          onChange={(event) => setPasswordRequired(event.target.checked)}
-        />
-        Require a password
-      </label>
+      <FormControlLabel
+        control={
+          <Checkbox
+            checked={passwordRequired}
+            onChange={(event) => setPasswordRequired(event.target.checked)}
+          />
+        }
+        label="Require a password"
+      />
 
       {passwordRequired && (
-        <>
-          <label htmlFor="newPassword">Password</label>
-          <input
-            id="newPassword"
-            name="newPassword"
-            type="password"
-            autoComplete="new-password"
-            required
-            maxLength={100}
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
-        </>
+        <TextField
+          id="newPassword"
+          name="newPassword"
+          label="Password"
+          type="password"
+          autoComplete="new-password"
+          required
+          slotProps={{ htmlInput: { maxLength: 100 } }}
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+        />
       )}
 
-      <button type="submit" className="primary" disabled={createMutation.isPending}>
+      <Button
+        type="submit"
+        variant="contained"
+        disabled={createMutation.isPending}
+        sx={{ alignSelf: 'flex-start' }}
+      >
         {createMutation.isPending ? 'Adding…' : 'Add user'}
-      </button>
+      </Button>
 
       {createMutation.isError && (
-        <p role="alert">
+        <Alert severity="error">
           {errorMessage(createMutation.error, 'Could not add that user.')}
-        </p>
+        </Alert>
       )}
-    </form>
+    </Stack>
   )
 }

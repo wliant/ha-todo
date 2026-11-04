@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { SharePage } from './SharePage'
-import * as client from '../api/client'
+import * as client from '../api/auth'
 import { parkedLinks } from '../share/parkedLinks'
 
 function renderShare(query: string) {

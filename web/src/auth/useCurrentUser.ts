@@ -6,7 +6,7 @@ import {
   logout,
   type CurrentUser,
   type LoginUser,
-} from '../api/client'
+} from '../api/auth'
 
 export const currentUserKey = ['currentUser'] as const
 export const loginUsersKey = ['loginUsers'] as const

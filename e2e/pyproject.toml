@@ -15,4 +15,6 @@ testpaths = ["tests"]
 addopts = "-ra --strict-markers"
 markers = [
     "smoke: minimal checks that the environment is alive and sign-in works",
+    "profile: a member's own settings - their password and their colour scheme",
+    "shell: the signed-in navigation shell, including the phone-width drawer",
 ]

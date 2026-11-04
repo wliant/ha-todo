@@ -94,8 +94,8 @@ def test_added_passwordless_member_appears_and_can_sign_in(
     ui_sign_in(page, base_url, admin_member)
     page.goto(f"{base_url}/admin")
     page.get_by_role("button", name="Add someone").click()
-    page.get_by_label("Name", exact=True).fill(display_name)
-    page.get_by_label("Login name").fill(username)
+    page.get_by_role("textbox", name="Name", exact=True).fill(display_name)
+    page.get_by_role("textbox", name="Login name").fill(username)
     page.get_by_role("button", name="Add user").click()
 
     expect(page.get_by_text(username).first).to_be_visible()
@@ -127,10 +127,10 @@ def test_added_member_with_a_password_must_type_it(
     ui_sign_in(page, base_url, admin_member)
     page.goto(f"{base_url}/admin")
     page.get_by_role("button", name="Add someone").click()
-    page.get_by_label("Name", exact=True).fill(display_name)
-    page.get_by_label("Login name").fill(username)
+    page.get_by_role("textbox", name="Name", exact=True).fill(display_name)
+    page.get_by_role("textbox", name="Login name").fill(username)
     page.get_by_label("Require a password").check()
-    page.get_by_label("Password", exact=True).fill(password)
+    page.get_by_role("textbox", name="Password", exact=True).fill(password)
     page.get_by_role("button", name="Add user").click()
 
     expect(page.get_by_text(username).first).to_be_visible()
@@ -164,8 +164,8 @@ def test_removed_member_disappears_from_the_sign_in_screen(
     ui_sign_in(page, base_url, admin_member)
     page.goto(f"{base_url}/admin")
     page.get_by_role("button", name="Add someone").click()
-    page.get_by_label("Name", exact=True).fill(display_name)
-    page.get_by_label("Login name").fill(username)
+    page.get_by_role("textbox", name="Name", exact=True).fill(display_name)
+    page.get_by_role("textbox", name="Login name").fill(username)
     page.get_by_role("button", name="Add user").click()
     expect(page.get_by_text(username).first).to_be_visible()
 
@@ -188,8 +188,8 @@ def test_duplicate_login_name_is_refused_with_an_explanation(
     page.goto(f"{base_url}/admin")
     page.get_by_role("button", name="Add someone").click()
 
-    page.get_by_label("Name", exact=True).fill(test_data.name("Clash"))
-    page.get_by_label("Login name").fill(demo_member.username)
+    page.get_by_role("textbox", name="Name", exact=True).fill(test_data.name("Clash"))
+    page.get_by_role("textbox", name="Login name").fill(demo_member.username)
     page.get_by_role("button", name="Add user").click()
 
     expect(page.get_by_role("alert")).to_contain_text("already taken")

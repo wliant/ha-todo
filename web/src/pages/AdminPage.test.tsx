@@ -4,8 +4,10 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AdminPage } from './AdminPage'
-import * as client from '../api/client'
-import type { AdminUser } from '../api/client'
+import * as adminApi from '../api/admin'
+import * as authApi from '../api/auth'
+import * as http from '../api/http'
+import type { AdminUser } from '../api/admin'
 
 const adminAccount: AdminUser = {
   id: 'id-admin',
@@ -43,13 +45,13 @@ function renderAdminPage() {
 describe('AdminPage', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
-    vi.spyOn(client, 'fetchCurrentUser').mockResolvedValue({
+    vi.spyOn(authApi, 'fetchCurrentUser').mockResolvedValue({
       id: 'id-admin',
       username: 'admin',
       displayName: 'Admin',
       role: 'ADMIN',
     })
-    vi.spyOn(client, 'fetchAdminUsers').mockResolvedValue([adminAccount, ben])
+    vi.spyOn(adminApi, 'fetchAdminUsers').mockResolvedValue([adminAccount, ben])
   })
 
   it('opens on the household with nothing selected, and no form in the way', async () => {
@@ -57,7 +59,7 @@ describe('AdminPage', () => {
 
     expect(await screen.findByRole('button', { name: /Ben/ })).toBeVisible()
     expect(screen.getByText(/Pick someone to see their details/)).toBeVisible()
-    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Name' })).not.toBeInTheDocument()
   })
 
   it('shows the selected person in the detail pane', async () => {
@@ -70,7 +72,7 @@ describe('AdminPage', () => {
   })
 
   it('adds a user with no password when a password is not required', async () => {
-    const create = vi.spyOn(client, 'createUser').mockResolvedValue({
+    const create = vi.spyOn(adminApi, 'createUser').mockResolvedValue({
       ...ben,
       id: 'id-cara',
       username: 'cara',
@@ -80,8 +82,8 @@ describe('AdminPage', () => {
     renderAdminPage()
     await userEvent.click(await screen.findByRole('button', { name: 'Add someone' }))
 
-    await userEvent.type(screen.getByLabelText('Name'), 'Cara')
-    await userEvent.type(screen.getByLabelText('Login name'), 'cara')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'Cara')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Login name' }), 'cara')
     await userEvent.click(screen.getByRole('button', { name: 'Add user' }))
 
     expect(create).toHaveBeenCalledWith({
@@ -92,7 +94,7 @@ describe('AdminPage', () => {
   })
 
   it('only asks for a password once the admin says one is required', async () => {
-    const create = vi.spyOn(client, 'createUser').mockResolvedValue({
+    const create = vi.spyOn(adminApi, 'createUser').mockResolvedValue({
       ...ben,
       id: 'id-dan',
       username: 'dan',
@@ -102,12 +104,12 @@ describe('AdminPage', () => {
 
     renderAdminPage()
     await userEvent.click(await screen.findByRole('button', { name: 'Add someone' }))
-    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/^Password/)).not.toBeInTheDocument()
 
-    await userEvent.type(screen.getByLabelText('Name'), 'Dan')
-    await userEvent.type(screen.getByLabelText('Login name'), 'dan')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'Dan')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Login name' }), 'dan')
     await userEvent.click(screen.getByLabelText('Require a password'))
-    await userEvent.type(screen.getByLabelText('Password'), 'dans-password')
+    await userEvent.type(screen.getByLabelText(/^Password/), 'dans-password')
     await userEvent.click(screen.getByRole('button', { name: 'Add user' }))
 
     expect(create).toHaveBeenCalledWith({
@@ -118,13 +120,13 @@ describe('AdminPage', () => {
   })
 
   it('surfaces the server wording when the login name is taken', async () => {
-    vi.spyOn(client, 'createUser').mockRejectedValue(new Error('409'))
-    vi.spyOn(client, 'errorMessage').mockReturnValue('That login name is already taken.')
+    vi.spyOn(adminApi, 'createUser').mockRejectedValue(new Error('409'))
+    vi.spyOn(http, 'errorMessage').mockReturnValue('That login name is already taken.')
 
     renderAdminPage()
     await userEvent.click(await screen.findByRole('button', { name: 'Add someone' }))
-    await userEvent.type(screen.getByLabelText('Name'), 'Ben Again')
-    await userEvent.type(screen.getByLabelText('Login name'), 'ben')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'Ben Again')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Login name' }), 'ben')
     await userEvent.click(screen.getByRole('button', { name: 'Add user' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
@@ -133,8 +135,8 @@ describe('AdminPage', () => {
   })
 
   it('removes a member and closes the detail on them', async () => {
-    const remove = vi.spyOn(client, 'deleteUser').mockResolvedValue()
-    const list = vi.spyOn(client, 'fetchAdminUsers')
+    const remove = vi.spyOn(adminApi, 'deleteUser').mockResolvedValue()
+    const list = vi.spyOn(adminApi, 'fetchAdminUsers')
 
     renderAdminPage()
     await userEvent.click(await screen.findByRole('button', { name: /Ben/ }))

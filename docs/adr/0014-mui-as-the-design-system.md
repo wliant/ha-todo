@@ -55,12 +55,14 @@ padding helpers the app bar and drawer need, and the `100dvh` shell height.
 component, or a theme override. This is the rule that replaces "components own no
 colours", and it is the thing that keeps the stylesheet from growing back.
 
-**Icons are imported by name from the package root** - `import { Checklist } from
-'@mui/icons-material'` - in exactly one module, `web/src/lists/listIcons.tsx`,
-which holds a static token-to-component map. `@mui/icons-material` is roughly
-11,000 modules; Vite tree-shakes named imports from the ESM build correctly, but a
-namespace import or a dynamic lookup by string defeats it and pulls the whole
-package into the bundle.
+**Icons are imported one per path** - `import ChecklistRounded from
+'@mui/icons-material/ChecklistRounded'` - never from the package root and never
+through a namespace import or a lookup by string. `@mui/icons-material` is roughly
+11,000 modules, so the barrel is the one import in this project that can put
+megabytes into a bundle served to phones. Per-path imports cannot, whatever the
+bundler does. When the curated list icons arrive they live in one static
+token-to-component map (`web/src/lists/listIcons.tsx`) built from such imports,
+so the mapping is explicit and statically analysable.
 
 ## Consequences
 
