@@ -10,14 +10,16 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import SettingsRounded from '@mui/icons-material/SettingsRounded'
 import { isNotFound } from '../api/http'
+import { summarise } from '../lists/fieldConfig'
 import { ListIcon } from '../lists/listIcons'
 import { PinButton } from '../lists/PinButton'
-import { useList, useTouchList } from '../lists/queries'
+import { useList, useListFields, useTouchList } from '../lists/queries'
 
 /** One list: who it is for, and - once items exist - what is on it. */
 export function ListDetailPage() {
   const { listId } = useParams()
   const { data: list, isPending, error } = useList(listId)
+  const { data: fields } = useListFields(listId)
   const touch = useTouchList()
 
   useEffect(() => {
@@ -106,6 +108,27 @@ export function ListDetailPage() {
                 key={member.id}
                 label={member.owner ? `${member.displayName} (owner)` : member.displayName}
                 variant={member.owner ? 'filled' : 'outlined'}
+              />
+            ))}
+          </Stack>
+        </Stack>
+      </Paper>
+
+      <Paper
+        component="section"
+        elevation={0}
+        sx={{ p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider' }}
+      >
+        <Stack spacing={1.5}>
+          <Typography component="h2" variant="h6">
+            What an item looks like
+          </Typography>
+          <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
+            {(fields ?? []).map((field) => (
+              <Chip
+                key={field.id ?? field.kind}
+                label={field.required ? `${summarise(field)} (required)` : summarise(field)}
+                variant={field.required ? 'filled' : 'outlined'}
               />
             ))}
           </Stack>

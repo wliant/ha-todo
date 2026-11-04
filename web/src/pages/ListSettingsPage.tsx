@@ -11,14 +11,18 @@ import Divider from '@mui/material/Divider'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import type { ListDetail } from '../api/lists'
+import { fetchList, type ListDetail, type ListField } from '../api/lists'
 import { errorMessage, isConflict, isNotFound } from '../api/http'
 import { useCurrentUser } from '../auth/useCurrentUser'
+import { describeProblem } from '../lists/fieldConfig'
+import { FieldConfigEditor } from '../lists/FieldConfigEditor'
 import { ListForm, type ListFormValue } from '../lists/ListForm'
 import {
   useDeleteList,
   useList,
+  useListFields,
   useMembers,
+  useSaveListFields,
   useUpdateList,
   useUpdateListAccess,
 } from '../lists/queries'
@@ -27,13 +31,14 @@ import {
 export function ListSettingsPage() {
   const { listId } = useParams()
   const { data: list, isPending, error, refetch } = useList(listId)
+  const { data: fields, isPending: fieldsPending } = useListFields(listId)
   // Bumped only when the member asks to reload after a conflict. Keying the
   // form on the list's *version* instead would remount it on every save -
   // saving invalidates, which refetches a new version - and the remount
   // interrupts the save it was triggered by.
   const [reloads, setReloads] = useState(0)
 
-  if (isPending) {
+  if (isPending || fieldsPending) {
     return <Typography role="status">Loading…</Typography>
   }
 
@@ -70,6 +75,7 @@ export function ListSettingsPage() {
     <Settings
       key={`${list.id}:${reloads}`}
       list={list}
+      initialFields={fields ?? []}
       onReload={() => {
         setReloads((count) => count + 1)
         void refetch()
@@ -78,12 +84,21 @@ export function ListSettingsPage() {
   )
 }
 
-function Settings({ list, onReload }: { list: ListDetail; onReload: () => void }) {
+function Settings({
+  list,
+  initialFields,
+  onReload,
+}: {
+  list: ListDetail
+  initialFields: ListField[]
+  onReload: () => void
+}) {
   const navigate = useNavigate()
   const { data: user } = useCurrentUser()
   const { data: members } = useMembers()
   const update = useUpdateList(list.id)
   const updateAccess = useUpdateListAccess(list.id)
+  const saveFields = useSaveListFields()
   const remove = useDeleteList()
 
   const [value, setValue] = useState<ListFormValue>(() => ({
@@ -92,9 +107,15 @@ function Settings({ list, onReload }: { list: ListDetail; onReload: () => void }
     icon: list.icon,
     memberIds: list.members.filter((member) => !member.owner).map((member) => member.id),
   }))
+  // Only the optional fields are editable; the description is not a choice.
+  const [fields, setFields] = useState<ListField[]>(() =>
+    initialFields.filter((field) => field.kind !== 'DESCRIPTION'),
+  )
   const [confirmDelete, setConfirmDelete] = useState(false)
 
-  const stale = isConflict(update.error) || isConflict(updateAccess.error)
+  const problem = describeProblem(fields)
+  const stale =
+    isConflict(update.error) || isConflict(updateAccess.error) || isConflict(saveFields.error)
   const others = (members ?? []).filter((member) => member.id !== user?.id)
 
   async function save() {
@@ -112,6 +133,16 @@ function Settings({ list, onReload }: { list: ListDetail; onReload: () => void }
       await updateAccess.mutateAsync({
         version: updated.version,
         memberIds: value.memberIds,
+      })
+      // Every write moves the version, and only the first of the three returns
+      // it. Re-reading is a round trip the alternative - teaching two more
+      // endpoints to report a version their own payload has no use for - does
+      // not obviously beat at this scale.
+      const current = await fetchList(updated.id)
+      await saveFields.mutateAsync({
+        listId: updated.id,
+        version: current.version,
+        fields,
       })
       navigate(`/lists/${updated.id}`)
     } catch {
@@ -135,6 +166,7 @@ function Settings({ list, onReload }: { list: ListDetail; onReload: () => void }
               onClick={() => {
                 update.reset()
                 updateAccess.reset()
+                saveFields.reset()
                 onReload()
               }}
             >
@@ -159,9 +191,18 @@ function Settings({ list, onReload }: { list: ListDetail; onReload: () => void }
         <Stack spacing={2.5}>
           <ListForm value={value} onChange={setValue} members={others} ownerName="You" />
 
-          {!stale && (update.isError || updateAccess.isError) && (
+          <Divider />
+
+          <FieldConfigEditor fields={fields} onChange={setFields} />
+
+          {problem && <Alert severity="warning">{problem}</Alert>}
+
+          {!stale && (update.isError || updateAccess.isError || saveFields.isError) && (
             <Alert severity="error">
-              {errorMessage(update.error ?? updateAccess.error, 'Could not save that.')}
+              {errorMessage(
+                update.error ?? updateAccess.error ?? saveFields.error,
+                'Could not save that.',
+              )}
             </Alert>
           )}
 
@@ -169,7 +210,13 @@ function Settings({ list, onReload }: { list: ListDetail; onReload: () => void }
             <Button
               type="submit"
               variant="contained"
-              disabled={update.isPending || updateAccess.isPending || !value.name.trim()}
+              disabled={
+                update.isPending ||
+                updateAccess.isPending ||
+                saveFields.isPending ||
+                !value.name.trim() ||
+                problem !== null
+              }
             >
               Save changes
             </Button>

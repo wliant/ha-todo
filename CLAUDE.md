@@ -11,13 +11,13 @@ Implemented: **accounts and administration (R8-R12)** — username identity, opt
 pick-a-user sign-in screen, and a single admin who adds and deletes users. **The PWA (R13, R14)** —
 installable as "List", with an Android share target. **The UI shell (R15-R17)** — now a sidebar rather
 than the original bottom bar, master-detail administration, and a sign-in roster that describes nobody.
-**Phases 1-2 of R18-R35** — Material Design throughout, the current-user plumbing every access check
-needs, a member's own colour scheme and password with an admin reset, and **the list entity**: lists
-with a curated icon, per-list access grants, personal pins and recency, and search.
+**Phases 1-3 of R18-R35** — Material Design throughout, the current-user plumbing every access check
+needs, a member's own colour scheme and password with an admin reset, **the list entity** (curated
+icon, per-list access grants, personal pins and recency, search), and **the field configuration**: a
+list declares what shape its items take, including any number of named costs with their points rules.
 
-Not implemented: **items**. A list is ready for them but carries none, `/share` still parks a link on
-the device, and nothing yet declares what shape an item takes. That is phases 3-5 of
-`docs/requirements/0004` — the per-list field configuration, images on MinIO, then items with
+Not implemented: **items**. A list is fully specified but carries none, and `/share` still parks a link
+on the device. That is phases 4-5 of `docs/requirements/0004` — images on MinIO, then items with
 completion and points. `docs/design/0004` describes all of it and `docs/adr/0010`-`0020` record the
 decisions; read the design before writing any of it.
 
@@ -131,7 +131,24 @@ fetching and filtering in Java. See `docs/adr/0010-per-list-access-instead-of-ho
 
 **Item completion and assignment are the contended writes.** Two members may complete or reassign the same
 item at once; use optimistic locking (`@Version`) and return a conflict the frontend can reconcile rather
-than silently last-write-wins.
+than silently last-write-wins. `TodoList` already works this way: a write carries the version its view
+was drawn from, checked *before* anything is mutated so the 409 is deterministic rather than dependent
+on flush timing. Changing a list's children - its grants, its fields - calls
+`TodoListService.markChanged`, because Hibernate will not dirty-check a parent whose own columns are
+untouched and a second editor would otherwise never be told.
+
+**A list's field configuration is typed rows, replaced by merging on id.** `list_field` (+
+`list_field_choice`) rather than JSONB: the kinds are closed, and item values will reference a field and
+a choice by foreign key. The `PUT` sends existing ids back and the service matches on them - recreating
+the rows would orphan every item's costs, silently. Singleton kinds match by *kind* instead, because
+there can only be one. Position uniqueness is `DEFERRABLE INITIALLY DEFERRED` so a reorder can rewrite
+every position in one statement; partial unique indexes cannot be deferred, which is why those are
+table constraints. See `docs/adr/0011` and `docs/adr/0012`.
+
+**Boxed types in request records.** Jackson rejects a *missing* primitive in a record, so optional
+`boolean`/`int` components are `Boolean`/`Integer` with a defaulting accessor (`isRequired()`,
+`pointsOrZero()`). In a request that replaces a configuration, "not mentioned" is genuinely different
+from "false" anyway.
 
 **Authentication is session-based.** `POST /api/auth/login` takes JSON, rotates the session id, and stores
 the context in the HTTP session. Anonymous API calls get **401**, never a redirect. CSRF stays on (the

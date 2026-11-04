@@ -5,11 +5,14 @@ import {
   fetchList,
   fetchLists,
   fetchMembers,
+  fetchListFields,
   fetchSidebar,
   setPinned,
   touchList,
   updateList,
   updateListAccess,
+  updateListFields,
+  type ListField,
   type ListFilters,
 } from '../api/lists'
 
@@ -24,6 +27,7 @@ export const listKeys = {
   sidebar: ['lists', 'sidebar'] as const,
   search: (filters: ListFilters) => ['lists', 'search', filters] as const,
   detail: (id: string) => ['lists', 'detail', id] as const,
+  fields: (id: string) => ['lists', 'detail', id, 'fields'] as const,
 }
 
 export const membersKey = ['members'] as const
@@ -43,6 +47,14 @@ export function useList(id: string | undefined) {
   return useQuery({
     queryKey: listKeys.detail(id ?? 'none'),
     queryFn: () => fetchList(id!),
+    enabled: Boolean(id),
+  })
+}
+
+export function useListFields(id: string | undefined) {
+  return useQuery({
+    queryKey: listKeys.fields(id ?? 'none'),
+    queryFn: () => fetchListFields(id!),
     enabled: Boolean(id),
   })
 }
@@ -87,6 +99,27 @@ export function useUpdateListAccess(id: string) {
   const invalidate = useListInvalidation()
   return useMutation({
     mutationFn: (update: Parameters<typeof updateListAccess>[1]) => updateListAccess(id, update),
+    onSuccess: () => void invalidate(),
+  })
+}
+
+/**
+ * Takes the list id per call rather than binding it. Creating a list saves its
+ * configuration in a second write, and the id does not exist until the first
+ * one has returned - a hook bound at render time would still be holding the
+ * empty string.
+ */
+export function useSaveListFields() {
+  const invalidate = useListInvalidation()
+  return useMutation({
+    mutationFn: ({
+      listId,
+      ...update
+    }: {
+      listId: string
+      version: number
+      fields: ListField[]
+    }) => updateListFields(listId, update),
     onSuccess: () => void invalidate(),
   })
 }

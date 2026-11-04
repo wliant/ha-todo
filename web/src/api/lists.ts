@@ -45,6 +45,29 @@ export interface ListDetail extends Omit<ListSummary, 'memberCount'> {
   createdAt: string
 }
 
+export type FieldKind = 'DESCRIPTION' | 'DETAIL' | 'ASSIGNEE' | 'DUE_AT' | 'COST'
+
+export type CostMode = 'FIXED' | 'NUMERIC'
+
+export interface CostChoice {
+  /** Null for a choice that has not been saved yet. */
+  id: string | null
+  label: string
+  points: number
+}
+
+export interface ListField {
+  id: string | null
+  kind: FieldKind
+  /** Required for COST, null for the kinds there can only be one of. */
+  label: string | null
+  required: boolean
+  costMode: CostMode | null
+  costUnitLabel: string | null
+  pointsPerUnit: number | null
+  choices: CostChoice[]
+}
+
 export interface Sidebar {
   pinned: ListSummary[]
   recent: ListSummary[]
@@ -141,5 +164,23 @@ export interface Member {
  */
 export async function fetchMembers(): Promise<Member[]> {
   const { data } = await api.get<Member[]>('/users')
+  return data
+}
+
+export async function fetchListFields(id: string): Promise<ListField[]> {
+  const { data } = await api.get<ListField[]>(`/lists/${id}/fields`)
+  return data
+}
+
+/**
+ * Replaces the whole configuration. Existing ids must be sent back: the server
+ * merges on them rather than recreating rows, because item values will point at
+ * these ids.
+ */
+export async function updateListFields(
+  id: string,
+  update: { version: number; fields: ListField[] },
+): Promise<ListField[]> {
+  const { data } = await api.put<ListField[]>(`/lists/${id}/fields`, update)
   return data
 }
