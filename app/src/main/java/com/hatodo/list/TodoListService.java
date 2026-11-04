@@ -148,7 +148,11 @@ public class TodoListService {
     @Transactional
     public void delete(UUID listId) {
         UUID me = currentUser.requireUserId();
-        lists.delete(managed(listId, me));
+        TodoList list = managed(listId, me);
+        // Announced before the rows go: the cascade takes the pictures' rows
+        // with them, and after that nothing remembers the bytes exist.
+        events.publishEvent(new ListDeletedEvent(listId));
+        lists.delete(list);
     }
 
     @Transactional(readOnly = true)

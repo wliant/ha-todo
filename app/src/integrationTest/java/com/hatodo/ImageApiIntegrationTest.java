@@ -30,6 +30,34 @@ import org.springframework.util.MultiValueMap;
 @SuppressWarnings({"unchecked", "rawtypes"})
 class ImageApiIntegrationTest extends ApiIntegrationTest {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.hatodo.images.StoredImageRepository storedImages;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.hatodo.images.ImageStorage storage;
+
+    /**
+     * Whether the bytes are still in the store.
+     *
+     * <p>The API cannot answer this: deleting an item cascade-deletes the
+     * image's row, so {@code GET /api/images/{id}} answers 404 whether or not
+     * the object behind it was ever removed. Captured before the delete,
+     * because afterwards nothing knows the key.
+     */
+    private boolean objectExists(String objectKey) {
+        try (java.io.InputStream stream = storage.open(objectKey)) {
+            return stream.read() != -1 || true;
+        } catch (Exception gone) {
+            return false;
+        }
+    }
+
+    private String objectKeyOf(String imageId) {
+        return storedImages.findById(UUID.fromString(imageId))
+                .orElseThrow(() -> new AssertionError("no image " + imageId))
+                .getObjectKey();
+    }
+
     private record Member(String username, UUID id, Session session) {}
 
     private Member givenMember(String label) {
@@ -302,6 +330,46 @@ class ImageApiIntegrationTest extends ApiIntegrationTest {
 
         String stored = (String) item.getBody().get("detailHtml");
         assertThat(stored).contains("ok").doesNotContain("script").doesNotContain("onerror");
+    }
+
+    @Test
+    void deletingAnItemTakesItsPicturesWithIt() throws IOException {
+        // The cascade removes the row and leaves the bytes - after which
+        // nothing knows the bytes are there at all, so not even a sweeper
+        // could find them later.
+        Member ana = givenMember("item-deleter");
+        String listId = newList(ana);
+        String imageId = (String) uploadDetail(ana.session(), png()).getBody().get("id");
+        Map item = rest.exchange("/api/lists/" + listId + "/items", HttpMethod.POST,
+                new HttpEntity<>(
+                        "{\"description\":\"Doomed\",\"detailHtml\":\"<img src=\\\"/api/images/%s\\\">\"}"
+                                .formatted(imageId), headersFor(ana.session())), Map.class).getBody();
+        String objectKey = objectKeyOf(imageId);
+        assertThat(objectExists(objectKey)).isTrue();
+
+        rest.exchange("/api/items/%s?version=%d".formatted(item.get("id"), item.get("version")),
+                HttpMethod.DELETE, new HttpEntity<>(headersFor(ana.session())), Void.class);
+
+        assertThat(objectExists(objectKey))
+                .as("the bytes, not just the row the cascade would take anyway")
+                .isFalse();
+    }
+
+    @Test
+    void deletingAListTakesEveryPictureOnItToo() throws IOException {
+        Member ana = givenMember("list-deleter");
+        String listId = newList(ana);
+        String imageId = (String) uploadDetail(ana.session(), png()).getBody().get("id");
+        rest.exchange("/api/lists/" + listId + "/items", HttpMethod.POST, new HttpEntity<>(
+                "{\"description\":\"Doomed too\",\"detailHtml\":\"<img src=\\\"/api/images/%s\\\">\"}"
+                        .formatted(imageId), headersFor(ana.session())), Map.class);
+
+        String objectKey = objectKeyOf(imageId);
+
+        rest.exchange("/api/lists/" + listId, HttpMethod.DELETE,
+                new HttpEntity<>(headersFor(ana.session())), Void.class);
+
+        assertThat(objectExists(objectKey)).isFalse();
     }
 
     @Test

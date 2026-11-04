@@ -10,6 +10,7 @@ import com.hatodo.list.TodoList;
 import com.hatodo.list.TodoListService;
 import com.hatodo.user.AppUser;
 import com.hatodo.user.AppUserRepository;
+import com.hatodo.images.ImageService;
 import com.hatodo.images.StoredImage;
 import com.hatodo.images.StoredImageRepository;
 import com.hatodo.richtext.HtmlSanitizer;
@@ -44,6 +45,7 @@ public class TodoItemService {
     private final CurrentUserProvider currentUser;
     private final HtmlSanitizer sanitizer;
     private final StoredImageRepository storedImages;
+    private final ImageService images;
 
     /** Matches exactly what the sanitizer is willing to keep in an {@code img}. */
     private static final Pattern DETAIL_IMAGE =
@@ -52,7 +54,8 @@ public class TodoItemService {
     public TodoItemService(TodoItemRepository items, ListFieldRepository fields,
                            ListAccessRepository access, AppUserRepository users,
                            TodoListService lists, CurrentUserProvider currentUser,
-                           HtmlSanitizer sanitizer, StoredImageRepository storedImages) {
+                           HtmlSanitizer sanitizer, StoredImageRepository storedImages,
+                           ImageService images) {
         this.items = items;
         this.fields = fields;
         this.access = access;
@@ -61,6 +64,7 @@ public class TodoItemService {
         this.currentUser = currentUser;
         this.sanitizer = sanitizer;
         this.storedImages = storedImages;
+        this.images = images;
     }
 
     @Transactional(readOnly = true)
@@ -109,7 +113,21 @@ public class TodoItemService {
     public void delete(UUID itemId, Long version) {
         TodoItem item = readable(itemId);
         requireFreshView(item, version);
+        // Its pictures go too. The foreign key cascade would remove their rows
+        // and leave the bytes, after which nothing knows the bytes are there.
+        forgetPicturesOf(itemId);
         items.delete(item);
+    }
+
+    /** Called when an item - or the whole list it is on - is going away. */
+    @Transactional
+    public void forgetPicturesOf(UUID itemId) {
+        storedImages.findForItem(itemId).forEach(images::forget);
+    }
+
+    @Transactional
+    public void forgetPicturesOnList(UUID listId) {
+        storedImages.findForList(listId).forEach(images::forget);
     }
 
     /**
