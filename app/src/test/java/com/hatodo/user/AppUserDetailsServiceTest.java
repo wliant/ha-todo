@@ -10,10 +10,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 
+/**
+ * The lookup itself. How a stored user maps onto an authenticated principal is
+ * {@link AppUserPrincipalTest}'s subject.
+ */
 @ExtendWith(MockitoExtension.class)
 class AppUserDetailsServiceTest {
 
@@ -21,39 +23,17 @@ class AppUserDetailsServiceTest {
     private AppUserRepository users;
 
     @Test
-    void mapsStoredUserOntoUserDetails() {
+    void mapsStoredUserOntoTheAuthenticatedPrincipal() {
         when(users.findByUsernameIgnoreCase("ana"))
                 .thenReturn(Optional.of(AppUser.member("ana", "Ana", "$2y$10$hash")));
 
-        UserDetails details = new AppUserDetailsService(users).loadUserByUsername("ana");
+        AppUserPrincipal details = new AppUserDetailsService(users).loadUserByUsername("ana");
 
         assertThat(details.getUsername()).isEqualTo("ana");
         assertThat(details.getPassword()).isEqualTo("$2y$10$hash");
         assertThat(details.isEnabled()).isTrue();
         assertThat(details.getAuthorities()).extracting(GrantedAuthority::getAuthority)
                 .containsExactly("ROLE_MEMBER");
-    }
-
-    @Test
-    void grantsTheAdminRoleFromTheRoleColumn() {
-        UserDetails details = AppUserDetailsService.toUserDetails(
-                new AppUser("admin", "Admin", "$2y$10$hash", UserRole.ADMIN));
-
-        assertThat(details.getAuthorities()).extracting(GrantedAuthority::getAuthority)
-                .containsExactly("ROLE_ADMIN");
-    }
-
-    @Test
-    void givesAPasswordlessUserAnUnmatchablePlaceholderRatherThanNoPassword() {
-        // If the passwordless branch in LoginService were ever removed, the
-        // ordinary password check must fail closed rather than let anyone in.
-        UserDetails details = AppUserDetailsService.toUserDetails(
-                AppUser.passwordlessMember("ben", "Ben"));
-
-        assertThat(details.getPassword()).isEqualTo("{password-not-required}");
-        BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
-        assertThat(encoder.matches("", details.getPassword())).isFalse();
-        assertThat(encoder.matches("{password-not-required}", details.getPassword())).isFalse();
     }
 
     @Test

@@ -8,9 +8,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.hatodo.user.AppUser;
+import com.hatodo.user.AppUserPrincipal;
 import com.hatodo.user.AppUserRepository;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -20,6 +22,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class LoginServiceTest {
@@ -65,6 +68,24 @@ class LoginServiceTest {
 
         assertThat(loginService().authenticate("ben", "whatever-they-typed").isAuthenticated()).isTrue();
         verify(authenticationManager, never()).authenticate(any());
+    }
+
+    @Test
+    void givesThePasswordlessBranchAPrincipalCarryingTheUserId() {
+        // The two sign-in paths build their Authentication differently. If only
+        // the password path yields an AppUserPrincipal, password sign-in works
+        // and passwordless sign-in puts a principal in the session that every
+        // later authorization check rejects - visible only after sign-in, and
+        // only for the members who need no password. See adr/0016.
+        UUID id = UUID.randomUUID();
+        AppUser ben = AppUser.passwordlessMember("ben", "Ben");
+        ReflectionTestUtils.setField(ben, "id", id);
+        when(users.findByUsernameIgnoreCase("ben")).thenReturn(Optional.of(ben));
+
+        Authentication authentication = loginService().authenticate("ben", null);
+
+        assertThat(authentication.getPrincipal()).isInstanceOf(AppUserPrincipal.class);
+        assertThat(((AppUserPrincipal) authentication.getPrincipal()).getId()).isEqualTo(id);
     }
 
     @Test
