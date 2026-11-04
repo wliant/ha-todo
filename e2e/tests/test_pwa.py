@@ -15,7 +15,7 @@ import httpx
 import pytest
 from playwright.sync_api import Page, expect
 
-from conftest import DemoMember, ui_sign_in
+from conftest import DemoMember, TestData, ui_sign_in
 
 
 @pytest.mark.smoke
@@ -60,25 +60,37 @@ def test_service_worker_is_served_and_registers(page: Page, base_url: str) -> No
     assert registered is True
 
 
-def test_shared_link_is_captured_and_held(
-    page: Page, base_url: str, demo_member: DemoMember
+def test_a_shared_link_becomes_an_item_on_a_chosen_list(
+    page: Page,
+    base_url: str,
+    demo_member: DemoMember,
+    test_data: TestData,
+    cleanup_lists,
 ) -> None:
-    """What Android's share sheet does: open /share with the link on the URL."""
+    """
+    What Android's share sheet does: open /share with the link on the URL.
+
+    It becomes a real item now rather than being parked on the device - the
+    step adr/0008 left for when items existed (adr/0020).
+    """
+    name = test_data.name("Shared into")
+    cleanup_lists(name)
     ui_sign_in(page, base_url, demo_member)
+
+    page.get_by_role("link", name="New list").click()
+    page.get_by_role("textbox", name="Name", exact=True).fill(name)
+    page.get_by_role("button", name="Create list").click()
+    expect(page.get_by_role("heading", name=name)).to_be_visible()
 
     page.goto(f"{base_url}/share?title=Lemon+pie&url=https%3A%2F%2Fexample.com%2Fpie")
 
     expect(page.get_by_role("heading", name="Shared to List")).to_be_visible()
-    expect(page.get_by_text("Saved.")).to_be_visible()
     expect(page.get_by_role("link", name="https://example.com/pie")).to_be_visible()
+    # The list they were last on is already chosen, so this is one tap.
+    page.get_by_role("button", name="Add it").click()
 
-    # It is held, visibly, rather than silently dropped while lists do not exist.
-    page.get_by_role("link", name="Go to lists").click()
-    expect(page.get_by_role("heading", name="Shared links waiting")).to_be_visible()
-    expect(page.get_by_text("Lemon pie", exact=True)).to_be_visible()
-
-    page.get_by_role("button", name="Discard Lemon pie").click()
-    expect(page.get_by_text("Lemon pie", exact=True)).to_have_count(0)
+    expect(page.get_by_role("heading", name=name)).to_be_visible()
+    expect(page.get_by_text("Lemon pie - https://example.com/pie")).to_be_visible()
 
 
 def test_share_arriving_while_signed_out_resumes_after_signing_in(

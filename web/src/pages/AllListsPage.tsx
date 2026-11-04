@@ -16,7 +16,6 @@ import SearchRounded from '@mui/icons-material/SearchRounded'
 import type { ListIcon as ListIconToken, ListScope } from '../api/lists'
 import { ICON_TOKENS, iconLabel } from '../lists/listIconTokens'
 import { ListCard } from '../lists/ListCard'
-import { ParkedLinks } from '../lists/ParkedLinks'
 import { useLists } from '../lists/queries'
 
 /**
@@ -170,7 +169,6 @@ export function AllListsPage() {
         </Box>
       )}
 
-      <ParkedLinks />
     </Stack>
   )
 }

@@ -11,15 +11,19 @@ Implemented: **accounts and administration (R8-R12)** — username identity, opt
 pick-a-user sign-in screen, and a single admin who adds and deletes users. **The PWA (R13, R14)** —
 installable as "List", with an Android share target. **The UI shell (R15-R17)** — now a sidebar rather
 than the original bottom bar, master-detail administration, and a sign-in roster that describes nobody.
-**Phases 1-3 of R18-R35** — Material Design throughout, the current-user plumbing every access check
-needs, a member's own colour scheme and password with an admin reset, **the list entity** (curated
-icon, per-list access grants, personal pins and recency, search), and **the field configuration**: a
-list declares what shape its items take, including any number of named costs with their points rules.
+**R18-R35 are implemented, bar one field.** Material Design throughout; the list entity with per-list
+access grants, pins, recency and search; the per-list field configuration including named costs;
+profile pictures in object storage; and **items** — values for every declared field, assignment bounded
+by access, completion with points credited to whoever did the work, and a shared link becoming a real
+item.
 
-Not implemented: **items**. A list is fully specified but carries none, and `/share` still parks a link
-on the device. That is phases 4-5 of `docs/requirements/0004` — images on MinIO, then items with
-completion and points. `docs/design/0004` describes all of it and `docs/adr/0010`-`0020` record the
-decisions; read the design before writing any of it.
+The exception is **the detail field's rich text and its images (R21)**. A list can declare a detail
+field and an item can carry text in it, but it is stored and rendered as plain text, not HTML — so
+`docs/adr/0018`'s sanitizer is specified and not yet written, and nothing embeds a picture in an item
+yet. `todo_item.detail_html` is named for where it is going. Do not start storing HTML there without
+the sanitizer.
+
+`docs/design/0004` describes the whole feature and `docs/adr/0010`-`0021` record the decisions.
 
 Keep this file true: when a decision here turns out wrong, update it in the same change.
 
@@ -129,13 +133,17 @@ list they were not granted. No access answers **404**, because an ungranted list
 access without ownership answers **403**. Filter list queries in SQL by joining `list_access`, never by
 fetching and filtering in Java. See `docs/adr/0010-per-list-access-instead-of-household-scoping.md`.
 
-**Item completion and assignment are the contended writes.** Two members may complete or reassign the same
-item at once; use optimistic locking (`@Version`) and return a conflict the frontend can reconcile rather
-than silently last-write-wins. `TodoList` already works this way: a write carries the version its view
-was drawn from, checked *before* anything is mutated so the 409 is deterministic rather than dependent
-on flush timing. Changing a list's children - its grants, its fields - calls
-`TodoListService.markChanged`, because Hibernate will not dirty-check a parent whose own columns are
-untouched and a second editor would otherwise never be told.
+**Item completion and assignment are the contended writes, and this is how they work.** Both `TodoList`
+and `TodoItem` carry `@Version`, and every mutating request carries the version its view was drawn from,
+checked *before* anything is mutated so the 409 is deterministic rather than dependent on flush timing.
+An item conflict answers `{error, code: "STALE_ITEM", item}` — the item as it actually is, read in a
+fresh transaction because the one that threw is being rolled back, and the prose names the other member.
+The client takes the server's item outright and raises a snackbar; nothing is retried behind the
+member's back. Two browser contexts cover it in `e2e/tests/test_items.py`.
+
+Changing a list's children — its grants, its fields — calls `TodoListService.markChanged`, because
+Hibernate will not dirty-check a parent whose own columns are untouched and a second editor would
+otherwise never be told.
 
 **A list's field configuration is typed rows, replaced by merging on id.** `list_field` (+
 `list_field_choice`) rather than JSONB: the kinds are closed, and item values will reference a field and
@@ -188,13 +196,14 @@ precaching worker would serve a stale `index.html` behind nginx's `no-store` —
 it without replacing `docs/adr/0007-installable-pwa-without-offline-caching.md`. Icons are drawn by
 `web/scripts/generate-icons.mjs` (`pnpm icons`, no dependencies) and the PNGs are committed.
 
-**Receiving a shared link is Android-only, and the link is parked.** The manifest declares a **GET**
-share target at `/share?title=&text=&url=`; `SharePage` normalises it (Chrome often puts the URL in
-`text`, not `url`) and, because items do not exist yet, holds it in `localStorage` per user via
-`src/share/parkedLinks.ts`, shown on `/lists` as waiting. iOS Safari does not implement Web Share
-Target, so an installed iPhone app cannot appear in the share sheet — a platform limit, not a gap to
-work around. When R1-R5 land, the `park()` call becomes the create-item mutation and that module is
-deleted. See `docs/adr/0008-share-target-for-links.md`.
+**Receiving a shared link is Android-only, and the link becomes an item.** The manifest declares a
+**GET** share target at `/share?title=&text=&url=`; `SharePage` normalises it (`src/share/sharedLink.ts`
+— Chrome often puts the URL in `text`, not `url`) and the member picks which list it goes on, with the
+one they touched most recently already chosen. No "Inbox" list is invented: a link landing somewhere
+nobody looks is the failure that would replace. Nothing is parked on the device any more; `parkedLinks`
+is gone, as `adr/0008` said it would be. iOS Safari does not implement Web Share Target, so an
+installed iPhone app cannot appear in the share sheet — a platform limit, not a gap to work around. See
+`docs/adr/0008` and `docs/adr/0020`.
 
 **The signed-in UI is one shell with one sidebar.** Every authenticated route renders inside
 `AppShell`, so `SideNav` mounts once. The breakpoint is `48rem`, named as `sm` in the MUI theme

@@ -20,4 +20,5 @@ markers = [
     "lists: creating, finding, sharing and pinning lists",
     "access: who can see a list - the rule two browser contexts exist to prove",
     "fields: what shape a list says its items take",
+    "items: adding, completing and scoring items",
 ]

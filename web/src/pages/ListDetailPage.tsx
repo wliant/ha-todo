@@ -11,6 +11,8 @@ import Typography from '@mui/material/Typography'
 import SettingsRounded from '@mui/icons-material/SettingsRounded'
 import { isNotFound } from '../api/http'
 import { MemberAvatar } from '../app/MemberAvatar'
+import { ItemsSection } from '../items/ItemsSection'
+import { PointsPanel } from '../items/PointsPanel'
 import { summarise } from '../lists/fieldConfig'
 import { ListIcon } from '../lists/listIcons'
 import { PinButton } from '../lists/PinButton'
@@ -122,6 +124,10 @@ export function ListDetailPage() {
         </Stack>
       </Paper>
 
+      <ItemsSection list={list} fields={fields ?? []} />
+
+      <PointsPanel listId={list.id} />
+
       <Paper
         component="section"
         elevation={0}
@@ -143,9 +149,6 @@ export function ListDetailPage() {
         </Stack>
       </Paper>
 
-      <Alert severity="info">
-        Items are the next thing to be built. This list is ready for them.
-      </Alert>
     </Stack>
   )
 }

@@ -107,19 +107,4 @@ describe('AllListsPage', () => {
       expect(fetch).toHaveBeenCalledWith(expect.objectContaining({ pinned: true })),
     )
   })
-
-  it('still shows links shared in before there was anywhere to put them', async () => {
-    // adr/0008's parked links outlive the placeholder page they used to live
-    // on, and keep working until items exist.
-    vi.spyOn(listsApi, 'fetchLists').mockResolvedValue([])
-    window.localStorage.setItem(
-      'list.parkedLinks.id-ana',
-      JSON.stringify([
-        { id: '1', url: 'https://example.com', title: 'A recipe', note: null, sharedAt: '' },
-      ]),
-    )
-    renderPage()
-
-    expect(await screen.findByText('A recipe')).toBeVisible()
-  })
 })
