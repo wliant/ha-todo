@@ -8,3 +8,11 @@ spring:
   flyway:
     # Seed data included so the login flow has a known account to authenticate.
     locations: classpath:db/migration,classpath:db/seed
+
+app:
+  admin:
+    # The initializer refuses to start without a password, so the integration
+    # context has to supply one. It is also what the admin-API tests sign in with.
+    username: admin
+    display-name: Admin
+    password: itest-admin-pw

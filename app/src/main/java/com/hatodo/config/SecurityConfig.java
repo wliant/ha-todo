@@ -73,7 +73,11 @@ public class SecurityConfig {
                 // Without this, a 500 inside a controller is forwarded to /error,
                 // blocked by the rule below, and surfaces as a misleading 401.
                 .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
-                .requestMatchers("/api/auth/login", "/api/auth/csrf").permitAll()
+                // The sign-in screen is a list of users, so the roster has to be
+                // readable before anyone holds a session. The requirement document
+                // records that exposure deliberately (requirements/0002).
+                .requestMatchers("/api/auth/login", "/api/auth/csrf", "/api/auth/users").permitAll()
+                .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
                 .anyRequest().authenticated())
             .logout(logout -> logout

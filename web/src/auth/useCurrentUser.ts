@@ -1,7 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { fetchCurrentUser, login, logout, type CurrentUser } from '../api/client'
+import {
+  fetchCurrentUser,
+  fetchLoginUsers,
+  login,
+  logout,
+  type CurrentUser,
+  type LoginUser,
+} from '../api/client'
 
 export const currentUserKey = ['currentUser'] as const
+export const loginUsersKey = ['loginUsers'] as const
 
 /** `null` means "definitely signed out"; `undefined` means "not known yet". */
 export function useCurrentUser() {
@@ -13,11 +21,24 @@ export function useCurrentUser() {
   })
 }
 
+/**
+ * The roster the sign-in screen is drawn from. Not cached for long: the admin
+ * may have just added or removed someone.
+ */
+export function useLoginUsers() {
+  return useQuery<LoginUser[]>({
+    queryKey: loginUsersKey,
+    queryFn: fetchLoginUsers,
+    retry: false,
+    staleTime: 0,
+  })
+}
+
 export function useLogin() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ email, password }: { email: string; password: string }) =>
-      login(email, password),
+    mutationFn: ({ username, password }: { username: string; password?: string }) =>
+      login(username, password),
     onSuccess: (user) => {
       queryClient.setQueryData(currentUserKey, user)
     },

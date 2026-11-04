@@ -7,7 +7,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 class SecurityConfigTest {
 
-    /** The hash the demo seed migration stores for ana@example.com. */
+    /** The hash the demo seed migration stores for the user "ana". */
     private static final String SEEDED_HASH = "$2y$10$ca5oBvmXYQKrb9NIiHTdZOMdQE75fh/3/6A7RblMXxX9rRB038IYO";
 
     private final PasswordEncoder encoder = new SecurityConfig().passwordEncoder();

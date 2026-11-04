@@ -4,10 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-**Skeleton, as of 2026-11-04.** Build, local stack, session auth, deploy scripts and all three test
-harnesses are real and passing. The household / list / item domain (requirements R1-R6) is **not**
-implemented — `/lists` is a placeholder page. Keep this file true: when a decision here turns out wrong,
-update it in the same change.
+**Skeleton plus accounts, as of 2026-11-04.** Build, local stack, deploy scripts and all three test
+harnesses are real and passing. **Accounts and administration (R8-R12) are implemented**: username
+identity, optional per-user passwords, a pick-a-user sign-in screen, and a single admin who adds and
+deletes users. The household / list / item domain (requirements R1-R6) is still **not** implemented —
+`/lists` is a placeholder page. Keep this file true: when a decision here turns out wrong, update it in
+the same change.
 
 ## What this product is
 
@@ -78,14 +80,22 @@ Local stack:
 ./scripts/dev-up.sh                   # infra, then app + web, waiting for health
 ./scripts/dev-down.sh                 # add --volumes to discard the local database
 ```
-web on http://localhost:5173, API on http://localhost:8080. Demo sign-in `ana@example.com` /
-`password123`, seeded from `db/seed` in the local and dev profiles only.
+web on http://localhost:5173, API on http://localhost:8080. Sign-in is a list of people: pick **Ana**
+(password `password123`) or **Ben** (no password at all), seeded from `db/seed` in the local and dev
+profiles only. The admin is `admin` / `admin` locally, from `ADMIN_USERNAME` / `ADMIN_PASSWORD`.
 
 ## Architecture notes
 
 **Backend** is a layered Spring Boot service: REST controllers → application services (transaction
 boundary, authorization) → domain → Spring Data JPA repositories against Postgres. Schema changes go
 through versioned migrations (Flyway); never rely on JPA auto-DDL outside tests.
+
+**Seed data is a repeatable migration (`db/seed/R__*.sql`), not a versioned one.** Flyway runs repeatable
+migrations after every versioned one and re-runs them when their content changes, so demo data can be
+edited freely and can never sit in front of a schema change. The old versioned seed at `V900` is why the
+schema series resumes at **V901** — a lower version would be out of order on any database that applied it,
+and why local/dev set `flyway.ignore-migration-patterns: "*:missing"`. Prod never applied it and keeps
+strict validation. New schema migrations continue from V902.
 
 **Authorization is household-scoped.** Every read and write must be checked against the caller's household
 membership, enforced in the service layer — not only in the controller and not only in the UI. A list id in
@@ -95,12 +105,31 @@ a URL is never sufficient proof of access.
 item at once; use optimistic locking (`@Version`) and return a conflict the frontend can reconcile rather
 than silently last-write-wins.
 
-**Authentication is session-based.** `POST /api/auth/login` takes JSON, BCrypt-checks against `app_user`,
-rotates the session id, and stores the context in the HTTP session. Anonymous API calls get **401**, never a
-redirect. CSRF stays on (the credential is a cookie): `GET /api/auth/csrf` issues the `XSRF-TOKEN` cookie
-and clients echo `X-XSRF-TOKEN`. `ERROR` dispatches are permitted in the chain — without that, a 500 inside
-a controller is forwarded to `/error`, blocked, and surfaces as a misleading 401. See
+**Authentication is session-based.** `POST /api/auth/login` takes JSON, rotates the session id, and stores
+the context in the HTTP session. Anonymous API calls get **401**, never a redirect. CSRF stays on (the
+credential is a cookie): `GET /api/auth/csrf` issues the `XSRF-TOKEN` cookie and clients echo
+`X-XSRF-TOKEN`. `ERROR` dispatches are permitted in the chain — without that, a 500 inside a controller is
+forwarded to `/error`, blocked, and surfaces as a misleading 401. See
 `docs/adr/0002-session-auth-postgres-users.md`.
+
+**Identity is a `username`, and a password is optional.** There is no `email` column. `password_hash IS
+NULL` *is* "no password required" — there is deliberately no companion boolean, because a boolean that
+disagrees with the hash is an auth bypass. `LoginService` branches on it: a stored hash goes through
+`DaoAuthenticationProvider`, a null one is signed in directly and any submitted password ignored. Keep that
+bypass as one obvious `if`, not a custom `AuthenticationProvider`. See
+`docs/adr/0005-pick-a-user-login-with-optional-passwords.md`.
+
+**The sign-in roster is public, on purpose.** `GET /api/auth/users` is `permitAll` because the login screen
+is a list of people. It returns only what draws that screen — never add a field to it. Consequence: anyone
+who can reach the deployment can see the household and sign in as any passwordless member. That trade is
+recorded in `docs/requirements/0002-accounts-and-administration.md`; do not widen it, and keep both
+environments behind the HTTPS front door.
+
+**One admin, from the environment.** `role` is `ADMIN` | `MEMBER`, and a partial unique index makes a
+second admin unrepresentable. `AdminAccountInitializer` reconciles the admin row from `ADMIN_USERNAME` /
+`ADMIN_PASSWORD` on every startup and **fails startup** if no password is set; that is also the rotation
+path. `/api/admin/**` is `hasRole("ADMIN")`, and the service refuses to delete the admin row regardless of
+caller. See `docs/adr/0006-admin-account-from-environment.md`.
 
 **Redis and MinIO are deferred, not optional-and-maybe-present.** Neither is wired in; both sit commented out in
 `deployment/docker-compose.infra.yml` and `.env.example`. Adding either requires a concrete need and a new
@@ -142,6 +171,8 @@ Rules:
 - **Never open an interactive SSH session to a server to do deployment work by hand** — if a step is
   missing, add it to the script. All SSH goes through the single `ssh_run` helper in
   `scripts/lib/common.sh`. `deploy.sh prod` requires typing `deploy prod` to proceed.
+- `ADMIN_PASSWORD` is required in every environment's env file. `scripts/deploy.sh` refuses without it,
+  rather than letting the app fail its health check after the images are already built and pushed.
 - Targets live in uncommitted `deployment/.env.dev` / `.env.prod`; `deployment/.env.example` documents
   every variable. Both environments run on **`wliant@192.168.1.248`**, sharing
   `/home/wliant/myapps/ha-todo` — the compose/env filenames and the project names (`ha-todo-dev`,
@@ -172,6 +203,8 @@ Rules:
   (`pytest-playwright`) through the real UI. Assert on user-visible state, and prefer role/label selectors
   over CSS so a restyle doesn't break the suite. Multi-member scenarios (one member assigns, another
   completes) need two browser contexts in one test — that is the suite's main reason to exist.
+- E2E targeting the admin screens needs `E2E_ADMIN_PASSWORD`; those tests **skip** without it rather than
+  guessing a credential that is environment configuration, not seed data.
 - E2E needs explicit **test data management**: use the `test_data` fixture in `e2e/conftest.py`. It gives a
   run a unique prefix (`TestData.name()`) so parallel and repeated runs cannot collide, and
   `defer_cleanup()` registers teardown that runs at session end. Seed through the API with
