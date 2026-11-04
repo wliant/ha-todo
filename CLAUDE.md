@@ -150,8 +150,14 @@ Rules:
   list it under `insecure-registries`.
 - Each environment has its own Postgres role and database on `192.168.1.248:5432`: `hatodo_dev` and
   `hatodo_prod`. Flyway creates every table, so the role only needs to own its database.
-- `SESSION_COOKIE_SECURE` must stay **false** while an environment is served over plain HTTP. A `Secure`
-  cookie is dropped by the browser on an `http://` origin and login breaks with no visible error.
+- Both environments are fronted by HTTPS: dev at **https://todo-dev.wliant.org**, prod at
+  **https://todo.wliant.org**, terminating TLS upstream and proxying to ports 5987 / 5986. So
+  `SESSION_COOKIE_SECURE=true` in both, and the app sets `server.forward-headers-strategy: framework`
+  while nginx forwards the browser's original scheme (`$http_x_forwarded_proto`, not `$scheme`, which is
+  always plain http inside the container).
+- A consequence: hitting a deployed environment **directly on its port over http:// cannot log in** — the
+  browser drops the `Secure` cookie. Always use the https:// hostname. The TLS terminator must send
+  `X-Forwarded-Proto`.
 - Compose on the target is always invoked with `--env-file .env.<env>`. `env_file:` only populates the
   container; without `--env-file`, `${REGISTRY}` and `${WEB_PORT}` interpolate to empty and the pull fails.
 - Rollback is `./scripts/deploy.sh <env> <older-tag>` — that is why `IMAGE_TAG` is an explicit argument.

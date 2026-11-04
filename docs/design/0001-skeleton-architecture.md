@@ -36,6 +36,13 @@ This is enforced by what is published, not just by convention:
 | local (`pnpm dev`) | `127.0.0.1:8080` only | `5173` (Vite) | Vite proxy to `/api` |
 | dev / prod | **none** (`expose` only) | `WEB_PORT` | nginx `/api` |
 
+In dev and prod an external TLS terminator fronts that published port
+(`https://todo-dev.wliant.org` → 5987, `https://todo.wliant.org` → 5986). The
+session and CSRF cookies are `Secure` there, so Spring must see the browser's
+real scheme: `server.forward-headers-strategy: framework` reads
+`X-Forwarded-Proto`, and nginx passes the incoming value through rather than
+overwriting it with `$scheme`, which is always `http` inside the container.
+
 Health checks follow the same path: `scripts/deploy.sh` polls
 `http://localhost:${WEB_PORT}/actuator/health` on the target rather than the
 app port, because there is no app port to poll.

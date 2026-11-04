@@ -17,6 +17,10 @@ spring:
 
 server:
   port: ${SERVER_PORT:8080}
+  # The app always sits behind nginx, and in dev/prod behind a TLS terminator
+  # too. Without this Spring sees plain HTTP and builds http:// URLs for an
+  # https:// site.
+  forward-headers-strategy: framework
   servlet:
     session:
       cookie:
