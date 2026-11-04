@@ -1,5 +1,14 @@
 # Shared defaults. Every environment-specific value comes from the environment,
 # so no hostnames or secrets live in this repo.
+app:
+  # The single admin account, reconciled on every startup. No password default:
+  # startup fails rather than leaving a deployment nobody can administer.
+  # See docs/adr/0006-admin-account-from-environment.md.
+  admin:
+    username: ${ADMIN_USERNAME:admin}
+    display-name: ${ADMIN_DISPLAY_NAME:Admin}
+    password: ${ADMIN_PASSWORD:}
+
 spring:
   application:
     name: ha-todo

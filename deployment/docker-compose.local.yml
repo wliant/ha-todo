@@ -14,6 +14,9 @@ services:
       DB_USERNAME: ${POSTGRES_USER:-hatodo}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-hatodo}
       SESSION_COOKIE_SECURE: "false"
+      # Local convenience credentials; dev and prod must supply their own.
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
     # Bound to loopback, not the LAN. The browser always talks to the web
     # service (same-origin /api); this port exists only so `pnpm dev` can proxy
     # to it and so you can curl the API directly while debugging.

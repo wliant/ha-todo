@@ -20,11 +20,49 @@ def base_url() -> str:
     return os.environ.get("E2E_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
 
 
+@dataclass(frozen=True)
+class DemoMember:
+    """A seeded account. ``password`` of None means none is required."""
+
+    username: str
+    display_name: str
+    password: str | None
+
+
 @pytest.fixture(scope="session")
-def demo_credentials() -> tuple[str, str]:
-    return (
-        os.environ.get("E2E_EMAIL", "ana@example.com"),
-        os.environ.get("E2E_PASSWORD", "password123"),
+def demo_member() -> DemoMember:
+    """Ana: a member who signs in with a password."""
+    return DemoMember(
+        username=os.environ.get("E2E_USERNAME", "ana"),
+        display_name=os.environ.get("E2E_DISPLAY_NAME", "Ana"),
+        password=os.environ.get("E2E_PASSWORD", "password123"),
+    )
+
+
+@pytest.fixture(scope="session")
+def passwordless_member() -> DemoMember:
+    """Ben: a member who signs in by being picked, with no password at all."""
+    return DemoMember(
+        username=os.environ.get("E2E_PASSWORDLESS_USERNAME", "ben"),
+        display_name=os.environ.get("E2E_PASSWORDLESS_DISPLAY_NAME", "Ben"),
+        password=None,
+    )
+
+
+@pytest.fixture(scope="session")
+def admin_member() -> DemoMember:
+    """
+    The admin, whose credentials come from the environment the app was deployed
+    with (docs/adr/0006). Tests that need it skip when it is not supplied,
+    rather than guessing a password.
+    """
+    password = os.environ.get("E2E_ADMIN_PASSWORD")
+    if not password:
+        pytest.skip("set E2E_ADMIN_PASSWORD to exercise user administration")
+    return DemoMember(
+        username=os.environ.get("E2E_ADMIN_USERNAME", "admin"),
+        display_name=os.environ.get("E2E_ADMIN_DISPLAY_NAME", "Admin"),
+        password=password,
     )
 
 
@@ -35,21 +73,70 @@ def api(base_url: str) -> Iterator[httpx.Client]:
         yield client
 
 
-@pytest.fixture(scope="session")
-def authenticated_api(api: httpx.Client, demo_credentials: tuple[str, str]) -> httpx.Client:
-    """An API client holding a real session, for seeding data the UI then reads."""
-    email, password = demo_credentials
-    csrf = api.get("/api/auth/csrf")
+def api_sign_in(client: httpx.Client, member: DemoMember) -> httpx.Client:
+    """Signs ``client`` in, carrying the CSRF token the login POST requires."""
+    csrf = client.get("/api/auth/csrf")
     csrf.raise_for_status()
     token = csrf.json()["token"]
 
-    response = api.post(
-        "/api/auth/login",
-        json={"email": email, "password": password},
-        headers={"X-XSRF-TOKEN": token},
+    payload: dict[str, str] = {"username": member.username}
+    if member.password is not None:
+        payload["password"] = member.password
+
+    response = client.post(
+        "/api/auth/login", json=payload, headers={"X-XSRF-TOKEN": token}
     )
     response.raise_for_status()
-    return api
+    return client
+
+
+def api_csrf_header(client: httpx.Client) -> dict[str, str]:
+    csrf = client.get("/api/auth/csrf")
+    csrf.raise_for_status()
+    return {"X-XSRF-TOKEN": csrf.json()["token"]}
+
+
+@pytest.fixture(scope="session")
+def authenticated_api(api: httpx.Client, demo_member: DemoMember) -> httpx.Client:
+    """An API client holding a real session, for seeding data the UI then reads."""
+    return api_sign_in(api, demo_member)
+
+
+@pytest.fixture(scope="session")
+def admin_api(base_url: str, admin_member: DemoMember) -> Iterator[httpx.Client]:
+    """
+    A separate admin session, for seeding and removing accounts.
+
+    Session-scoped on purpose: deferred cleanup registered with ``test_data``
+    runs at the end of the session, so a client that closed with the test would
+    leave the accounts it created behind.
+    """
+    with httpx.Client(base_url=base_url, timeout=20.0, follow_redirects=True) as client:
+        yield api_sign_in(client, admin_member)
+
+
+def pick_user(page, member: DemoMember) -> None:
+    """Choose a person on the sign-in screen, the way a family member does."""
+    page.get_by_role("button", name=member.display_name).click()
+
+
+def ui_sign_in(page, base_url: str, member: DemoMember) -> None:
+    """
+    Sign in through the real screen: pick the person, then type a password only
+    if that person needs one.
+
+    Waits for the signed-in page before returning. Without that, a caller that
+    navigates straight afterwards races the login request and arrives back at
+    the sign-in screen.
+    """
+    from playwright.sync_api import expect
+
+    page.goto(f"{base_url}/login")
+    pick_user(page, member)
+    if member.password is not None:
+        page.get_by_label("Password").fill(member.password)
+        page.get_by_role("button", name="Sign in", exact=True).click()
+    expect(page.get_by_role("heading", name="Lists")).to_be_visible()
 
 
 @dataclass
@@ -61,12 +148,23 @@ class TestData:
     between concurrent or repeated runs, and nothing may survive the run.
     """
 
+    # Importing this into a test module would otherwise make pytest try to
+    # collect it as a test class, on the name alone.
+    __test__ = False
+
     prefix: str
     _cleanups: list[Callable[[], None]] = field(default_factory=list)
 
     def name(self, label: str) -> str:
         """A collision-proof, obviously-synthetic name for a created resource."""
         return f"{self.prefix}-{label}"
+
+    def username(self, label: str) -> str:
+        """
+        Like :meth:`name`, but within the 50 characters and restricted alphabet
+        a login name allows.
+        """
+        return f"e2e-{label}-{secrets.token_hex(4)}"
 
     def defer_cleanup(self, cleanup: Callable[[], None]) -> None:
         self._cleanups.append(cleanup)

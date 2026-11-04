@@ -5,30 +5,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.resttestclient.TestRestTemplate;
-import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.test.context.ActiveProfiles;
 
 /**
- * Exercises the whole login path against real Postgres: CSRF token issue,
- * JSON login, session-backed /api/me, and rejection of anonymous callers.
+ * Exercises the whole sign-in path against real Postgres: the roster the
+ * pick-a-user screen is drawn from, CSRF token issue, both login paths
+ * (password and passwordless), session-backed /api/me, and rejection of
+ * anonymous callers.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@AutoConfigureTestRestTemplate
-@ActiveProfiles("itest")
-@Import(TestcontainersConfiguration.class)
-class AuthFlowIntegrationTest {
-
-    @Autowired
-    private TestRestTemplate rest;
+class AuthFlowIntegrationTest extends ApiIntegrationTest {
 
     @Test
     void healthIsPublic() {
@@ -46,20 +35,38 @@ class AuthFlowIntegrationTest {
     }
 
     @Test
+    void rosterIsReadableAnonymouslyAndLeaksNoHashes() {
+        // The sign-in screen cannot be drawn without this, so it is public by
+        // necessity - which is exactly why its payload must stay minimal.
+        ResponseEntity<List> response = rest.getForEntity("/api/auth/users", List.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).hasSizeGreaterThanOrEqualTo(3);
+        assertThat(response.getBody().toString())
+                .doesNotContain("passwordHash")
+                .doesNotContain("$2y$");
+
+        Map<String, Object> ana = userNamed(response.getBody(), "ana");
+        assertThat(ana).containsEntry("passwordRequired", true).containsEntry("role", "MEMBER");
+        assertThat(userNamed(response.getBody(), "ben")).containsEntry("passwordRequired", false);
+        assertThat(userNamed(response.getBody(), "admin")).containsEntry("role", "ADMIN");
+    }
+
+    @Test
+    void adminAccountIsCreatedFromTheEnvironmentAndCanSignIn() {
+        ResponseEntity<Map> login = login(ADMIN_USERNAME, ADMIN_PASSWORD);
+
+        assertThat(login.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(login.getBody()).containsEntry("role", "ADMIN");
+    }
+
+    @Test
     void seededUserCanLogInAndReadTheirOwnProfile() {
-        Csrf csrf = fetchCsrf();
-
-        HttpHeaders loginHeaders = new HttpHeaders();
-        loginHeaders.add(HttpHeaders.COOKIE, csrf.cookie());
-        loginHeaders.add("X-XSRF-TOKEN", csrf.token());
-        loginHeaders.add(HttpHeaders.CONTENT_TYPE, "application/json");
-
-        ResponseEntity<Map> login = rest.exchange("/api/auth/login", HttpMethod.POST,
-                new HttpEntity<>("{\"email\":\"ana@example.com\",\"password\":\"password123\"}", loginHeaders),
-                Map.class);
+        ResponseEntity<Map> login = login("ana", "password123");
 
         assertThat(login.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(login.getBody()).containsEntry("displayName", "Ana");
+        assertThat(login.getBody()).containsEntry("role", "MEMBER");
 
         String session = sessionCookie(login.getHeaders());
         assertThat(session).as("login must establish a session cookie").isNotNull();
@@ -69,64 +76,59 @@ class AuthFlowIntegrationTest {
         ResponseEntity<Map> me = rest.exchange("/api/me", HttpMethod.GET, new HttpEntity<>(authed), Map.class);
 
         assertThat(me.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(me.getBody()).containsEntry("email", "ana@example.com");
+        assertThat(me.getBody()).containsEntry("username", "ana");
     }
 
     @Test
     void wrongPasswordIsRejected() {
+        assertThat(login("ana", "nope").getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void unknownUsernameIsRejectedTheSameWayAsAWrongPassword() {
+        assertThat(login("ghost", "nope").getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void passwordlessUserSignsInWithNoPasswordAtAll() {
         Csrf csrf = fetchCsrf();
+        ResponseEntity<Map> login = rest.exchange("/api/auth/login", HttpMethod.POST,
+                new HttpEntity<>("{\"username\":\"ben\"}", jsonHeaders(csrf)), Map.class);
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.add(HttpHeaders.COOKIE, csrf.cookie());
-        headers.add("X-XSRF-TOKEN", csrf.token());
-        headers.add(HttpHeaders.CONTENT_TYPE, "application/json");
+        assertThat(login.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(login.getBody()).containsEntry("displayName", "Ben");
+        assertThat(sessionCookie(login.getHeaders())).isNotNull();
+    }
 
-        ResponseEntity<String> login = rest.exchange("/api/auth/login", HttpMethod.POST,
-                new HttpEntity<>("{\"email\":\"ana@example.com\",\"password\":\"nope\"}", headers),
-                String.class);
-
-        assertThat(login.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    @Test
+    void passwordlessUserSignsInEvenIfAPasswordIsSent() {
+        // Nothing is stored to check it against, so it is ignored rather than
+        // being treated as a mismatch.
+        assertThat(login("ben", "irrelevant").getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 
     @Test
     void loginWithoutCsrfTokenIsRejected() {
         // CsrfFilter rejects via its own AccessDeniedHandler, so this is a 403
-        // rather than going through the 401 authentication entry point.
+        // rather than going through the 401 authentication entry point. It is
+        // what stops a hostile page silently signing a visitor in as a
+        // passwordless member.
         HttpHeaders headers = new HttpHeaders();
         headers.add(HttpHeaders.CONTENT_TYPE, "application/json");
 
         ResponseEntity<String> login = rest.exchange("/api/auth/login", HttpMethod.POST,
-                new HttpEntity<>("{\"email\":\"ana@example.com\",\"password\":\"password123\"}", headers),
-                String.class);
+                new HttpEntity<>("{\"username\":\"ben\"}", headers), String.class);
 
         assertThat(login.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }
 
-    private record Csrf(String token, String cookie) {}
-
-    private Csrf fetchCsrf() {
-        ResponseEntity<Map> response = rest.getForEntity("/api/auth/csrf", Map.class);
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-
-        String cookie = cookieNamed(response.getHeaders(), "XSRF-TOKEN");
-        assertThat(cookie).as("csrf endpoint must set the XSRF-TOKEN cookie").isNotNull();
-
-        return new Csrf((String) response.getBody().get("token"), cookie);
-    }
-
-    private static String sessionCookie(HttpHeaders headers) {
-        return cookieNamed(headers, "JSESSIONID");
-    }
-
-    private static String cookieNamed(HttpHeaders headers, String name) {
-        List<String> cookies = headers.get(HttpHeaders.SET_COOKIE);
-        if (cookies == null) {
-            return null;
-        }
-        return cookies.stream()
-                .filter(cookie -> cookie.startsWith(name + "="))
-                .map(cookie -> cookie.split(";", 2)[0])
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> userNamed(List<?> roster, String username) {
+        return (Map<String, Object>) roster.stream()
+                .map(entry -> (Map<String, Object>) entry)
+                .filter(entry -> username.equals(entry.get("username")))
                 .findFirst()
-                .orElse(null);
+                .orElseThrow(() -> new AssertionError("roster has no user " + username + ": " + roster));
     }
+
 }

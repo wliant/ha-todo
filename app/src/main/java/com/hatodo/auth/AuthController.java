@@ -1,17 +1,14 @@
 package com.hatodo.auth;
 
-import com.hatodo.user.AppUser;
-import com.hatodo.user.AppUserRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import java.security.Principal;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.context.SecurityContextHolderStrategy;
@@ -32,21 +29,28 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class AuthController {
 
-    private final AuthenticationManager authenticationManager;
+    private final LoginService loginService;
     private final SecurityContextRepository securityContextRepository;
-    private final AppUserRepository users;
     private final SessionAuthenticationStrategy sessionAuthenticationStrategy;
     private final SecurityContextHolderStrategy contextHolderStrategy =
             SecurityContextHolder.getContextHolderStrategy();
 
-    public AuthController(AuthenticationManager authenticationManager,
+    public AuthController(LoginService loginService,
                           SecurityContextRepository securityContextRepository,
-                          AppUserRepository users,
                           SessionAuthenticationStrategy sessionAuthenticationStrategy) {
-        this.authenticationManager = authenticationManager;
+        this.loginService = loginService;
         this.securityContextRepository = securityContextRepository;
-        this.users = users;
         this.sessionAuthenticationStrategy = sessionAuthenticationStrategy;
+    }
+
+    /**
+     * The roster the sign-in screen is drawn from. Necessarily readable by
+     * anonymous callers, which is a trade the requirement document records
+     * explicitly.
+     */
+    @GetMapping("/auth/users")
+    public List<LoginUserResponse> loginUsers() {
+        return loginService.roster();
     }
 
     @PostMapping("/auth/login")
@@ -55,10 +59,10 @@ public class AuthController {
                                                      HttpServletResponse httpResponse) {
         Authentication authentication;
         try {
-            authentication = authenticationManager.authenticate(
-                    UsernamePasswordAuthenticationToken.unauthenticated(request.email(), request.password()));
-        } catch (BadCredentialsException ex) {
-            // Deliberately opaque: never reveal whether the email exists.
+            authentication = loginService.authenticate(request.username(), request.password());
+        } catch (AuthenticationException ex) {
+            // Deliberately opaque: never reveal whether the username exists,
+            // whether it needed a password, or which half was wrong.
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
@@ -71,16 +75,11 @@ public class AuthController {
         contextHolderStrategy.setContext(context);
         securityContextRepository.saveContext(context, httpRequest, httpResponse);
 
-        return ResponseEntity.ok(toResponse(authentication.getName()));
+        return ResponseEntity.ok(loginService.currentUser(authentication.getName()));
     }
 
     @GetMapping("/me")
     public CurrentUserResponse me(Principal principal) {
-        return toResponse(principal.getName());
-    }
-
-    private CurrentUserResponse toResponse(String email) {
-        AppUser user = users.findByEmailIgnoreCase(email).orElseThrow();
-        return new CurrentUserResponse(user.getId(), user.getEmail(), user.getDisplayName());
+        return loginService.currentUser(principal.getName());
     }
 }

@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useCurrentUser, useLogout } from '../auth/useCurrentUser'
 
 /**
@@ -12,9 +13,12 @@ export function ListsPage() {
     <main className="page">
       <header className="row">
         <h1>Lists</h1>
-        <button type="button" onClick={() => logoutMutation.mutate()}>
-          Sign out
-        </button>
+        <span className="row">
+          {user?.role === 'ADMIN' && <Link to="/admin">Users</Link>}
+          <button type="button" onClick={() => logoutMutation.mutate()}>
+            Sign out
+          </button>
+        </span>
       </header>
 
       <p>

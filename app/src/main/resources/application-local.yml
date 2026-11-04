@@ -7,8 +7,19 @@ spring:
   flyway:
     # db/seed holds demo accounts so the login page and e2e suite have a way in.
     locations: classpath:db/migration,classpath:db/seed
+    # The old versioned seed (V900) is gone, replaced by a repeatable one, so a
+    # database that already applied it must not be failed for its absence.
+    # Scoped to the profiles that carry db/seed - prod never applied it and
+    # keeps strict validation.
+    ignore-migration-patterns: "*:missing"
   jpa:
     show-sql: true
+
+app:
+  admin:
+    # Local only, so the stack comes up with no setup. dev and prod inherit the
+    # no-default behaviour from application.yml and refuse to start without it.
+    password: ${ADMIN_PASSWORD:admin}
 
 logging:
   level:
