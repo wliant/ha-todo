@@ -46,6 +46,26 @@ def test_on_a_phone_the_sidebar_opens_from_the_app_bar_and_closes_on_choosing(
 
 
 @pytest.mark.shell
+def test_the_app_bar_does_not_cover_the_page_it_sits_above(
+    page: Page, base_url: str, passwordless_member: DemoMember
+) -> None:
+    """
+    An element underneath a fixed bar is still "visible" to a locator, so this
+    asserts geometry rather than visibility - which is the only way to catch it.
+    """
+    page.set_viewport_size(PHONE)
+    ui_sign_in(page, base_url, passwordless_member)
+
+    heading = page.get_by_role("heading", name="Lists").bounding_box()
+    app_bar = page.locator("header").bounding_box()
+    assert heading is not None and app_bar is not None
+    assert heading["y"] >= app_bar["y"] + app_bar["height"], (
+        f"the page heading starts at {heading['y']}px, under an app bar that "
+        f"ends at {app_bar['y'] + app_bar['height']}px"
+    )
+
+
+@pytest.mark.shell
 def test_nothing_requires_sideways_scrolling_on_a_phone(
     page: Page, base_url: str, passwordless_member: DemoMember
 ) -> None:

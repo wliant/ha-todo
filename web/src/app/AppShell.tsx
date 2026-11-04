@@ -94,8 +94,10 @@ export function AppShell() {
           flex: 1,
           minWidth: 0,
           px: { xs: 2, sm: 3 },
-          py: { xs: 2, sm: 3 },
           // Clears the fixed app bar, which only exists below the breakpoint.
+          // Deliberately not written alongside `py`: sx applies system props in
+          // its own order rather than the object's, so a `py` here would win
+          // and drop the page heading underneath the app bar.
           pt: wide ? 3 : 'calc(3.5rem + 1rem)',
           pb: 'calc(1.5rem + env(safe-area-inset-bottom))',
         }}
