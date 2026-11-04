@@ -4,21 +4,18 @@ import Alert from '@mui/material/Alert'
 import Avatar from '@mui/material/Avatar'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Chip from '@mui/material/Chip'
-import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import SettingsRounded from '@mui/icons-material/SettingsRounded'
 import { isNotFound } from '../api/http'
-import { MemberAvatar } from '../app/MemberAvatar'
+import { ListAudience } from '../lists/ListAudience'
 import { ItemsSection } from '../items/ItemsSection'
 import { PointsPanel } from '../items/PointsPanel'
-import { summarise } from '../lists/fieldConfig'
 import { ListIcon } from '../lists/listIcons'
 import { PinButton } from '../lists/PinButton'
 import { useList, useListFields, useTouchList } from '../lists/queries'
 
-/** One list: who it is for, and - once items exist - what is on it. */
+/** One list: what is on it, with its audience in the header. */
 export function ListDetailPage() {
   const { listId } = useParams()
   const { data: list, isPending, error } = useList(listId)
@@ -81,7 +78,8 @@ export function ListDetailPage() {
           </Box>
         </Stack>
 
-        <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+          <ListAudience members={list.members} />
           <PinButton id={list.id} name={list.name} pinned={list.pinned} />
           {list.owned && (
             <Button
@@ -96,59 +94,9 @@ export function ListDetailPage() {
         </Stack>
       </Stack>
 
-      <Paper
-        component="section"
-        elevation={0}
-        sx={{ p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider' }}
-      >
-        <Stack spacing={1.5}>
-          <Typography component="h2" variant="h6">
-            Who can see this
-          </Typography>
-          <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
-            {list.members.map((member) => (
-              <Chip
-                key={member.id}
-                avatar={
-                  <MemberAvatar
-                    displayName={member.displayName}
-                    avatarImageId={member.avatarImageId}
-                    size={24}
-                  />
-                }
-                label={member.owner ? `${member.displayName} (owner)` : member.displayName}
-                variant={member.owner ? 'filled' : 'outlined'}
-              />
-            ))}
-          </Stack>
-        </Stack>
-      </Paper>
-
       <ItemsSection list={list} fields={fields ?? []} />
 
       <PointsPanel listId={list.id} />
-
-      <Paper
-        component="section"
-        elevation={0}
-        sx={{ p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider' }}
-      >
-        <Stack spacing={1.5}>
-          <Typography component="h2" variant="h6">
-            What an item looks like
-          </Typography>
-          <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
-            {(fields ?? []).map((field) => (
-              <Chip
-                key={field.id ?? field.kind}
-                label={field.required ? `${summarise(field)} (required)` : summarise(field)}
-                variant={field.required ? 'filled' : 'outlined'}
-              />
-            ))}
-          </Stack>
-        </Stack>
-      </Paper>
-
     </Stack>
   )
 }

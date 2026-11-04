@@ -114,3 +114,32 @@ def test_a_grantee_cannot_reach_the_settings_screen_even_by_its_url(
     expect(
         second_member_page.get_by_text("Only the person who created this list can change it")
     ).to_be_visible()
+
+
+@pytest.mark.access
+def test_the_list_header_shows_who_it_is_shared_with(
+    page: Page,
+    base_url: str,
+    demo_member: DemoMember,
+    passwordless_member: DemoMember,
+    test_data: TestData,
+    cleanup_lists,
+) -> None:
+    """
+    Faces in the header rather than a panel - who the list is shared with, not
+    who happens to be looking at it.
+    """
+    name = test_data.name("Audience")
+    cleanup_lists(name)
+
+    ui_sign_in(page, base_url, demo_member)
+    create_list(page, name, share_with=passwordless_member.display_name)
+
+    for member in (demo_member, passwordless_member):
+        expect(page.get_by_label(member.display_name, exact=True)).to_be_visible()
+
+    # The owner is named as such, on hover.
+    page.get_by_label(demo_member.display_name, exact=True).hover()
+    expect(page.get_by_role("tooltip")).to_contain_text(
+        f"{demo_member.display_name} (owner)"
+    )

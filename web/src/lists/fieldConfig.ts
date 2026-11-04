@@ -102,24 +102,3 @@ export function describeProblem(fields: ListField[]): string | null {
   }
   return null
 }
-
-/** How a configured field reads on the list itself. */
-export function summarise(field: ListField): string {
-  switch (field.kind) {
-    case 'DESCRIPTION':
-      return 'Description'
-    case 'DETAIL':
-      return 'Detail'
-    case 'ASSIGNEE':
-      return 'Assignee'
-    case 'DUE_AT':
-      return 'Due date and time'
-    case 'COST':
-      if (field.costMode === 'NUMERIC') {
-        return `${field.label} (in ${field.costUnitLabel})`
-      }
-      return `${field.label} (${field.choices.length} ${
-        field.choices.length === 1 ? 'choice' : 'choices'
-      })`
-  }
-}

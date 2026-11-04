@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeProblem, newCostField, summarise, withCostMode } from './fieldConfig'
+import { describeProblem, newCostField, withCostMode } from './fieldConfig'
 import type { ListField } from '../api/lists'
 
 function cost(overrides: Partial<ListField>): ListField {
@@ -108,29 +108,5 @@ describe('newCostField', () => {
       '30 min',
       '60 min',
     ])
-  })
-})
-
-describe('summarise', () => {
-  it('says what a numeric cost is measured in', () => {
-    expect(summarise(cost({ costMode: 'NUMERIC', costUnitLabel: 'dollar' }))).toBe(
-      'Time (in dollar)',
-    )
-  })
-
-  it('counts a fixed cost’s choices, and can count to one', () => {
-    expect(summarise(cost({ choices: [{ id: null, label: 'a', points: 0 }] }))).toBe(
-      'Time (1 choice)',
-    )
-    expect(
-      summarise(
-        cost({
-          choices: [
-            { id: null, label: 'a', points: 0 },
-            { id: null, label: 'b', points: 0 },
-          ],
-        }),
-      ),
-    ).toBe('Time (2 choices)')
   })
 })

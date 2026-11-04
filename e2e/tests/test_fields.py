@@ -53,12 +53,9 @@ def test_a_list_declares_two_costs_and_remembers_them(
     page.get_by_role("button", name="Save changes").click()
     expect(page.get_by_role("heading", name=name)).to_be_visible()
 
-    # The list itself says what an item will be asked for.
-    expect(page.get_by_text("Assignee (required)")).to_be_visible()
-    expect(page.get_by_text("Time (3 choices)")).to_be_visible()
-    expect(page.get_by_text("Money (in dollar)")).to_be_visible()
+    # The configuration is not restated on the list itself - what matters is
+    # that it comes back the same way, and that the item form asks for it.
 
-    # And it all comes back the same way.
     page.goto(f"{base_url}/lists/{list_id}/settings")
     expect(page.get_by_role("switch", name="Assignee")).to_be_checked()
     expect(page.get_by_role("checkbox", name="Assignee is required")).to_be_checked()
