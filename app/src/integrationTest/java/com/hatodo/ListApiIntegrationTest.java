@@ -264,7 +264,7 @@ class ListApiIntegrationTest extends ApiIntegrationTest {
         assertThat((List<Map<String, Object>>) members.getBody())
                 .isNotEmpty()
                 .allSatisfy(member -> assertThat(member.keySet()).containsExactlyInAnyOrder(
-                        "id", "displayName"));
+                        "id", "displayName", "avatarImageId"));
     }
 
     @Test

@@ -14,10 +14,11 @@ load_env "$1"
 IMAGE_TAG="${2:-${IMAGE_TAG:-latest}}"
 export IMAGE_TAG
 
-# ADMIN_PASSWORD is checked here rather than discovered at startup: without it
-# the app refuses to boot, and the health poll below would only fail after the
-# images were already built and pushed.
-require_env REGISTRY IMAGE_TAG SSH_USER DEPLOY_HOST DEPLOY_DIR ADMIN_PASSWORD
+# ADMIN_PASSWORD and the object store are checked here rather than discovered
+# at startup: without either the app refuses to boot, and the health poll below
+# would only fail after the images were already built and pushed.
+require_env REGISTRY IMAGE_TAG SSH_USER DEPLOY_HOST DEPLOY_DIR ADMIN_PASSWORD \
+    MINIO_ENDPOINT MINIO_ACCESS_KEY MINIO_SECRET_KEY MINIO_BUCKET
 
 if [[ "$ENV_NAME" == "prod" ]]; then
     warn "about to deploy ha-todo-{app,web}:$IMAGE_TAG to PROD at $DEPLOY_HOST:$DEPLOY_DIR"

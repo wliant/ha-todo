@@ -11,9 +11,9 @@ import java.util.UUID;
  * it. Even so this carries only what a picker draws, and nothing about how
  * anyone signs in.
  */
-public record MemberResponse(UUID id, String displayName) {
+public record MemberResponse(UUID id, String displayName, UUID avatarImageId) {
 
     public static MemberResponse of(AppUser user) {
-        return new MemberResponse(user.getId(), user.getDisplayName());
+        return new MemberResponse(user.getId(), user.getDisplayName(), user.getAvatarImageId());
     }
 }

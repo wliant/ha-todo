@@ -9,6 +9,12 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+import java.io.IOException;
+import java.util.Map;
+import java.util.UUID;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @RestController
 @RequestMapping("/api/me")
@@ -28,6 +34,17 @@ public class MeController {
     @PatchMapping("/preferences")
     public PreferencesResponse updatePreferences(@Valid @RequestBody PreferencesRequest request) {
         return me.updatePreferences(request);
+    }
+
+    @PutMapping("/avatar")
+    public Map<String, UUID> setAvatar(@RequestParam("file") MultipartFile file) throws IOException {
+        return Map.of("avatarImageId", me.setAvatar(file.getBytes()));
+    }
+
+    @DeleteMapping("/avatar")
+    public ResponseEntity<Void> removeAvatar() {
+        me.removeAvatar();
+        return ResponseEntity.noContent().build();
     }
 
     /** No user id in the path: this acts on the caller, always. */

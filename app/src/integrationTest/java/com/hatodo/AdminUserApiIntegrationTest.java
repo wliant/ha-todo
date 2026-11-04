@@ -69,7 +69,7 @@ class AdminUserApiIntegrationTest extends ApiIntegrationTest {
         // signs in with no password at all.
         assertThat(roster()).anySatisfy(entry -> assertThat(entry)
                 .containsEntry("username", "cara")
-                .containsOnlyKeys("id", "username", "displayName"));
+                .containsOnlyKeys("id", "username", "displayName", "avatarImageId"));
         assertThat(login("cara", null).getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 

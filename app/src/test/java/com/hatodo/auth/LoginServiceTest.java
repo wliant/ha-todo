@@ -110,10 +110,13 @@ class LoginServiceTest {
                         org.assertj.core.groups.Tuple.tuple("ana", "Ana"),
                         org.assertj.core.groups.Tuple.tuple("ben", "Ben"));
         // Anyone who can reach the deployment reads this, so it must not say who
-        // is the admin, nor who needs no password (adr/0009).
+        // is the admin, nor who needs no password (adr/0009). The avatar is the
+        // single exception ever argued for - it says nothing about what an
+        // account is worth attacking for (adr/0019). Adding anything else to
+        // this list needs an ADR of its own, not just a passing test.
         assertThat(LoginUserResponse.class.getRecordComponents())
                 .extracting(java.lang.reflect.RecordComponent::getName)
-                .containsExactly("id", "username", "displayName");
+                .containsExactly("id", "username", "displayName", "avatarImageId");
         assertThat(roster.toString()).doesNotContain("$2y$10$hash");
     }
 }

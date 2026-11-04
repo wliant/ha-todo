@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
+import com.hatodo.images.ImageService;
 import com.hatodo.user.AdminPasswordProtectedException;
 import com.hatodo.user.AppUser;
 import com.hatodo.user.AppUserPrincipal;
@@ -27,6 +28,9 @@ class MeServiceTest {
     @Mock
     private AppUserRepository users;
 
+    @Mock
+    private ImageService images;
+
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
     private MeService serviceFor(AppUser caller) {
@@ -34,7 +38,7 @@ class MeServiceTest {
         ReflectionTestUtils.setField(caller, "id", id);
         when(users.findById(id)).thenReturn(Optional.of(caller));
         CurrentUserProvider currentUser = () -> AppUserPrincipal.of(caller);
-        return new MeService(users, currentUser, encoder);
+        return new MeService(users, currentUser, encoder, images);
     }
 
     @Test

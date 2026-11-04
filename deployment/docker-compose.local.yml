@@ -13,6 +13,12 @@ services:
       DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-hatodo}
       DB_USERNAME: ${POSTGRES_USER:-hatodo}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-hatodo}
+      # The throwaway MinIO beside the throwaway database. Its own bucket, so
+      # nothing here can ever be confused with dev's or prod's.
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-ha-todo-local}
       SESSION_COOKIE_SECURE: "false"
       # Local convenience credentials; dev and prod must supply their own.
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}

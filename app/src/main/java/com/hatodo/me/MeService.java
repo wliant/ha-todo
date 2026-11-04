@@ -2,6 +2,9 @@ package com.hatodo.me;
 
 import com.hatodo.user.AppUser;
 import com.hatodo.user.AppUserRepository;
+import com.hatodo.images.ImagePurpose;
+import com.hatodo.images.ImageService;
+import com.hatodo.images.StoredImage;
 import com.hatodo.user.AdminPasswordProtectedException;
 import com.hatodo.user.CurrentUserProvider;
 import com.hatodo.user.SetPasswordRequest;
@@ -23,12 +26,14 @@ public class MeService {
     private final AppUserRepository users;
     private final CurrentUserProvider currentUser;
     private final PasswordEncoder passwordEncoder;
+    private final ImageService images;
 
     public MeService(AppUserRepository users, CurrentUserProvider currentUser,
-                     PasswordEncoder passwordEncoder) {
+                     PasswordEncoder passwordEncoder, ImageService images) {
         this.users = users;
         this.currentUser = currentUser;
         this.passwordEncoder = passwordEncoder;
+        this.images = images;
     }
 
     @Transactional(readOnly = true)
@@ -55,6 +60,37 @@ public class MeService {
             throw new AdminPasswordProtectedException();
         }
         user.setPasswordHash(request.wantsPassword() ? passwordEncoder.encode(request.password()) : null);
+    }
+
+    /**
+     * Replaces the caller's picture, and forgets the one it replaced.
+     *
+     * <p>One request, one transaction: the new object is written, the row
+     * repointed, and the old image's bytes deleted only after the whole thing
+     * commits. A crash before that leaves one unreferenced object, which is a
+     * few kilobytes; the other order loses a picture that is still referenced.
+     */
+    @Transactional
+    public UUID setAvatar(byte[] content) {
+        AppUser user = require();
+        StoredImage previous = user.getAvatarImage();
+        StoredImage stored = images.store(content, ImagePurpose.AVATAR, user);
+        user.setAvatarImage(stored);
+        if (previous != null) {
+            images.forget(previous);
+        }
+        return stored.getId();
+    }
+
+    @Transactional
+    public void removeAvatar() {
+        AppUser user = require();
+        StoredImage previous = user.getAvatarImage();
+        if (previous == null) {
+            return;
+        }
+        user.setAvatarImage(null);
+        images.forget(previous);
     }
 
     private AppUser require() {
