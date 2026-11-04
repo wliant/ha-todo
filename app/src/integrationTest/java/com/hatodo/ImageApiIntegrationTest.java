@@ -186,6 +186,124 @@ class ImageApiIntegrationTest extends ApiIntegrationTest {
         assertThat(response.getStatusCode()).isIn(HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN);
     }
 
+    private ResponseEntity<Map> uploadDetail(Session session, byte[] content) {
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("file", new ByteArrayResource(content) {
+            @Override
+            public String getFilename() {
+                return "step.png";
+            }
+        });
+        HttpHeaders headers = headersFor(session);
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        return rest.exchange("/api/images", HttpMethod.POST, new HttpEntity<>(body, headers),
+                Map.class);
+    }
+
+    private String newList(Member owner, String... memberIds) {
+        String members = memberIds.length == 0 ? "[]" : "[\"" + String.join("\",\"", memberIds) + "\"]";
+        ResponseEntity<Map> created = rest.exchange("/api/lists", HttpMethod.POST,
+                new HttpEntity<>("{\"name\":\"Detail %s\",\"icon\":\"CHECKLIST\",\"memberIds\":%s}"
+                        .formatted(UUID.randomUUID(), members), headersFor(owner.session())),
+                Map.class);
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        rest.exchange("/api/lists/" + created.getBody().get("id") + "/fields", HttpMethod.PUT,
+                new HttpEntity<>("{\"version\":%d,\"fields\":[{\"kind\":\"DETAIL\"}]}"
+                        .formatted(((Number) created.getBody().get("version")).longValue()),
+                        headersFor(owner.session())), String.class);
+        return (String) created.getBody().get("id");
+    }
+
+    @Test
+    void aDetailPictureIsAsPrivateAsTheListItIsOn() throws IOException {
+        // Without the item link a detail picture would have no owner, and
+        // "who may read it" no answer but "anybody signed in" (R19).
+        Member ana = givenMember("detail-owner");
+        Member stranger = givenMember("detail-stranger");
+        String listId = newList(ana);
+
+        String imageId = (String) uploadDetail(ana.session(), png()).getBody().get("id");
+        ResponseEntity<Map> item = rest.exchange("/api/lists/" + listId + "/items",
+                HttpMethod.POST, new HttpEntity<>(
+                        "{\"description\":\"With a picture\",\"detailHtml\":\"<p>step</p><img src=\\\"/api/images/%s\\\">\"}"
+                                .formatted(imageId), headersFor(ana.session())), Map.class);
+        assertThat(item.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat((String) item.getBody().get("detailHtml")).contains(imageId);
+
+        assertThat(rest.exchange("/api/images/" + imageId, HttpMethod.GET,
+                new HttpEntity<>(headersFor(ana.session())), byte[].class).getStatusCode())
+                .isEqualTo(HttpStatus.OK);
+        assertThat(rest.exchange("/api/images/" + imageId, HttpMethod.GET,
+                new HttpEntity<>(headersFor(stranger.session())), byte[].class).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(rest.getForEntity("/api/images/" + imageId, byte[].class).getStatusCode())
+                .as("and certainly not anonymously, unlike an avatar")
+                .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void sharingTheListSharesItsPicturesToo() throws IOException {
+        Member ana = givenMember("detail-sharer");
+        Member ben = givenMember("detail-grantee");
+        String listId = newList(ana, ben.id().toString());
+
+        String imageId = (String) uploadDetail(ana.session(), png()).getBody().get("id");
+        rest.exchange("/api/lists/" + listId + "/items", HttpMethod.POST, new HttpEntity<>(
+                "{\"description\":\"Shared picture\",\"detailHtml\":\"<img src=\\\"/api/images/%s\\\">\"}"
+                        .formatted(imageId), headersFor(ana.session())), Map.class);
+
+        assertThat(rest.exchange("/api/images/" + imageId, HttpMethod.GET,
+                new HttpEntity<>(headersFor(ben.session())), byte[].class).getStatusCode())
+                .isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void anUnclaimedPictureIsReadableOnlyByWhoeverUploadedIt() throws IOException {
+        // Uploaded into an item that was never saved: nobody else has any
+        // claim on it, and it is the orphan adr/0013 tolerates.
+        Member ana = givenMember("detail-unclaimed");
+        Member other = givenMember("detail-other");
+
+        String imageId = (String) uploadDetail(ana.session(), png()).getBody().get("id");
+
+        assertThat(rest.exchange("/api/images/" + imageId, HttpMethod.GET,
+                new HttpEntity<>(headersFor(other.session())), byte[].class).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void cannotDragSomebodyElsesPictureOntoYourOwnList() throws IOException {
+        // An id alone must not be enough: otherwise guessing one would pull a
+        // picture out of a list you cannot see and onto one you can.
+        Member ana = givenMember("detail-victim");
+        Member thief = givenMember("detail-thief");
+        String imageId = (String) uploadDetail(ana.session(), png()).getBody().get("id");
+        String theirList = newList(thief);
+
+        rest.exchange("/api/lists/" + theirList + "/items", HttpMethod.POST, new HttpEntity<>(
+                "{\"description\":\"Not mine\",\"detailHtml\":\"<img src=\\\"/api/images/%s\\\">\"}"
+                        .formatted(imageId), headersFor(thief.session())), Map.class);
+
+        assertThat(rest.exchange("/api/images/" + imageId, HttpMethod.GET,
+                new HttpEntity<>(headersFor(thief.session())), byte[].class).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void stripsAnAttackOutOfTheDetailBeforeItIsEverStored() throws IOException {
+        Member ana = givenMember("detail-xss");
+        String listId = newList(ana);
+
+        ResponseEntity<Map> item = rest.exchange("/api/lists/" + listId + "/items",
+                HttpMethod.POST, new HttpEntity<>(
+                        "{\"description\":\"Nasty\",\"detailHtml\":"
+                        + "\"<p>ok</p><script>alert(1)</script><img src=x onerror=alert(1)>\"}",
+                        headersFor(ana.session())), Map.class);
+
+        String stored = (String) item.getBody().get("detailHtml");
+        assertThat(stored).contains("ok").doesNotContain("script").doesNotContain("onerror");
+    }
+
     @Test
     void anUnknownImageIsNotThere() {
         assertThat(rest.getForEntity("/api/images/" + UUID.randomUUID(), byte[].class)

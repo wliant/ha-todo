@@ -29,20 +29,25 @@ import java.time.Duration;
 public class ImageController {
 
     private final ImageService images;
+    private final ImageAccess access;
 
-    public ImageController(ImageService images) {
+    public ImageController(ImageService images, ImageAccess access) {
         this.images = images;
+        this.access = access;
     }
 
     /**
      * Readable by anyone for an avatar, because the sign-in screen draws faces
-     * before there is a session (adr/0019). A DETAIL image will inherit its
-     * list's access rule when items arrive; until then it has no reader.
+     * before there is a session (adr/0019). A detail picture inherits the
+     * access rule of the list its item is on, so a private list's pictures are
+     * as private as the list.
      */
     @GetMapping("/{id}")
     public ResponseEntity<InputStreamResource> bytes(@PathVariable UUID id) {
         StoredImage image = images.require(id);
-        if (image.getPurpose() != ImagePurpose.AVATAR) {
+        if (!mayRead(image)) {
+            // The same answer as a picture that does not exist: which list it
+            // belongs to is itself something R19 hides.
             throw new ImageNotFoundException(id);
         }
 
@@ -56,6 +61,15 @@ public class ImageController {
                 .cacheControl(CacheControl.maxAge(Duration.ofDays(1)).cachePrivate())
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
                 .body(new InputStreamResource(content));
+    }
+
+    private boolean mayRead(StoredImage image) {
+        if (image.getPurpose() == ImagePurpose.AVATAR) {
+            return true;
+        }
+        // Unclaimed: uploaded into an item that was never saved, so only the
+        // person who uploaded it has any claim on it.
+        return image.getItemId() != null && access.canReadItem(image.getItemId());
     }
 
     @ExceptionHandler(ImageNotFoundException.class)

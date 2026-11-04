@@ -222,6 +222,18 @@ public class TodoListService {
     }
 
     /**
+     * The same question as {@link #requireReadable}, answered without throwing.
+     *
+     * <p>Catching the exception from that one does not undo the rollback-only
+     * mark it leaves on the surrounding transaction, so a caller that wants a
+     * yes or no - rather than to fail - has to ask this way.
+     */
+    @Transactional(readOnly = true)
+    public boolean isReadable(UUID listId) {
+        return lists.findVisibleById(listId, currentUser.requireUserId()).isPresent();
+    }
+
+    /**
      * Ownership plus a view that is still current, which is what every write
      * to a list's children needs before it starts.
      */

@@ -47,6 +47,14 @@ public class StoredImage {
     @JoinColumn(name = "uploaded_by")
     private AppUser uploadedBy;
 
+    /**
+     * The item whose detail field uses this picture, and therefore whose list
+     * decides who may read it. Null while unclaimed - uploaded into an item
+     * that was never saved.
+     */
+    @Column(name = "item_id")
+    private UUID itemId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -90,6 +98,14 @@ public class StoredImage {
 
     public AppUser getUploadedBy() {
         return uploadedBy;
+    }
+
+    public UUID getItemId() {
+        return itemId;
+    }
+
+    public void claimFor(UUID itemId) {
+        this.itemId = itemId;
     }
 
     public Instant getCreatedAt() {

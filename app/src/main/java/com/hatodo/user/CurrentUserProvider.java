@@ -21,6 +21,22 @@ public interface CurrentUserProvider {
      */
     AppUserPrincipal require();
 
+    /**
+     * The caller, if there is one.
+     *
+     * <p>For the few places where "nobody" is a real answer rather than a bug
+     * - a public endpoint deciding whether to show something - instead of a
+     * caught exception, which inside a transaction leaves it marked
+     * rollback-only whether or not anybody catches it.
+     */
+    default java.util.Optional<AppUserPrincipal> find() {
+        try {
+            return java.util.Optional.of(require());
+        } catch (IllegalStateException nobody) {
+            return java.util.Optional.empty();
+        }
+    }
+
     default UUID requireUserId() {
         return require().getId();
     }

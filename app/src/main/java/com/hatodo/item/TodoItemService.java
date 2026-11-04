@@ -10,13 +10,19 @@ import com.hatodo.list.TodoList;
 import com.hatodo.list.TodoListService;
 import com.hatodo.user.AppUser;
 import com.hatodo.user.AppUserRepository;
+import com.hatodo.images.StoredImage;
+import com.hatodo.images.StoredImageRepository;
+import com.hatodo.richtext.HtmlSanitizer;
 import com.hatodo.user.CurrentUserProvider;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,16 +42,25 @@ public class TodoItemService {
     private final AppUserRepository users;
     private final TodoListService lists;
     private final CurrentUserProvider currentUser;
+    private final HtmlSanitizer sanitizer;
+    private final StoredImageRepository storedImages;
+
+    /** Matches exactly what the sanitizer is willing to keep in an {@code img}. */
+    private static final Pattern DETAIL_IMAGE =
+            Pattern.compile("/api/images/([0-9a-fA-F-]{36})");
 
     public TodoItemService(TodoItemRepository items, ListFieldRepository fields,
                            ListAccessRepository access, AppUserRepository users,
-                           TodoListService lists, CurrentUserProvider currentUser) {
+                           TodoListService lists, CurrentUserProvider currentUser,
+                           HtmlSanitizer sanitizer, StoredImageRepository storedImages) {
         this.items = items;
         this.fields = fields;
         this.access = access;
         this.users = users;
         this.lists = lists;
         this.currentUser = currentUser;
+        this.sanitizer = sanitizer;
+        this.storedImages = storedImages;
     }
 
     @Transactional(readOnly = true)
@@ -70,6 +85,7 @@ public class TodoItemService {
                 items.highestPosition(listId) + 1);
         apply(item, list, request);
         TodoItem saved = items.save(item);
+        claimDetailImages(saved, me.getId());
 
         lists.recordInteraction(list, me);
         return ItemResponse.of(saved);
@@ -83,6 +99,7 @@ public class TodoItemService {
 
         item.setDescription(request.description().trim());
         apply(item, item.getList(), request);
+        claimDetailImages(item, me.getId());
 
         lists.recordInteraction(item.getList(), me);
         return ItemResponse.of(item);
@@ -169,9 +186,9 @@ public class TodoItemService {
             item.setDetailHtml(null);
             return;
         }
-        String detail = request.detailHtml() == null || request.detailHtml().isBlank()
-                ? null
-                : request.detailHtml();
+        // Sanitized here, on write, so what is stored is already safe and no
+        // read path has to remember to filter it (adr/0018).
+        String detail = sanitizer.sanitize(request.detailHtml());
         if (field.isRequired() && detail == null) {
             throw new MissingRequiredFieldException("This list needs some detail on every item.");
         }
@@ -267,6 +284,36 @@ public class TodoItemService {
     /** What this item is worth right now, across every cost it answered. */
     private int pointsFor(TodoItem item) {
         return item.getCostValues().stream().mapToInt(ItemCostValue::points).sum();
+    }
+
+    /**
+     * Hands the pictures this item's detail refers to over to the item, so
+     * from now on its list decides who may read them.
+     *
+     * <p>Only pictures this member uploaded, and only ones nobody has claimed
+     * yet: an id alone must not be enough to drag somebody else's picture onto
+     * a list they cannot see. Anything left unclaimed is the orphan adr/0013
+     * tolerates.
+     */
+    private void claimDetailImages(TodoItem item, UUID uploaderId) {
+        String detail = item.getDetailHtml();
+        if (detail == null) {
+            return;
+        }
+        Set<UUID> referenced = new java.util.HashSet<>();
+        Matcher matcher = DETAIL_IMAGE.matcher(detail);
+        while (matcher.find()) {
+            referenced.add(UUID.fromString(matcher.group(1)));
+        }
+
+        for (UUID imageId : referenced) {
+            storedImages.findById(imageId)
+                    .filter(image -> image.getItemId() == null
+                            || item.getId().equals(image.getItemId()))
+                    .filter(image -> image.getUploadedBy() != null
+                            && uploaderId.equals(image.getUploadedBy().getId()))
+                    .ifPresent(image -> image.claimFor(item.getId()));
+        }
     }
 
     private TodoItem readable(UUID itemId) {
