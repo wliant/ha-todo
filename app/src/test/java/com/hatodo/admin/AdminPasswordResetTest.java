@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 
 import com.hatodo.user.AdminPasswordProtectedException;
 import com.hatodo.user.AppUser;
+import com.hatodo.images.ImageService;
 import com.hatodo.user.AppUserRepository;
 import com.hatodo.user.SetPasswordRequest;
 import com.hatodo.user.UserRole;
@@ -27,10 +28,13 @@ class AdminPasswordResetTest {
     @Mock
     private AppUserRepository users;
 
+    @Mock
+    private ImageService images;
+
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
     private AdminUserService service() {
-        return new AdminUserService(users, encoder);
+        return new AdminUserService(users, encoder, images);
     }
 
     private UUID stored(AppUser user) {

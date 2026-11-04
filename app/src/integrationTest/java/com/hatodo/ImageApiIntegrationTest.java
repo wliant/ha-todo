@@ -153,6 +153,27 @@ class ImageApiIntegrationTest extends ApiIntegrationTest {
     }
 
     @Test
+    void deletingAMemberTakesTheirPictureWithThem() throws IOException {
+        // The foreign keys alone would not: deleting a user only nulls
+        // stored_image.uploaded_by, so without this the bytes outlive the
+        // account for good. Caught by counting objects in dev's bucket after
+        // three runs of this suite.
+        Member ana = givenMember("departing");
+        String imageId = (String) upload(ana.session(), png(), "me.png").getBody()
+                .get("avatarImageId");
+        assertThat(rest.getForEntity("/api/images/" + imageId, byte[].class).getStatusCode())
+                .isEqualTo(HttpStatus.OK);
+
+        Session admin = signIn(ADMIN_USERNAME, ADMIN_PASSWORD);
+        ResponseEntity<Void> removed = rest.exchange("/api/admin/users/" + ana.id(),
+                HttpMethod.DELETE, new HttpEntity<>(headersFor(admin)), Void.class);
+        assertThat(removed.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+
+        assertThat(rest.getForEntity("/api/images/" + imageId, byte[].class).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
     void anonymousCallersStillCannotUploadOne() throws IOException {
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
         body.add("file", new ByteArrayResource(png()));

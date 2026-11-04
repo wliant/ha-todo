@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.hatodo.user.AppUser;
+import com.hatodo.images.ImageService;
 import com.hatodo.user.AppUserRepository;
 import com.hatodo.user.UserRole;
 import java.util.Optional;
@@ -26,10 +27,13 @@ class AdminUserServiceTest {
     @Mock
     private AppUserRepository users;
 
+    @Mock
+    private ImageService images;
+
     private final PasswordEncoder encoder = new BCryptPasswordEncoder();
 
     private AdminUserService service() {
-        return new AdminUserService(users, encoder);
+        return new AdminUserService(users, encoder, images);
     }
 
     private AppUser saved() {
