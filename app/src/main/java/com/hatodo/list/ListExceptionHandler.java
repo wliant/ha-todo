@@ -53,6 +53,12 @@ class ListExceptionHandler {
                 "code", "STALE_LIST"));
     }
 
+    /** Carries the service's own sentence: "invalid" is not an answer. */
+    @ExceptionHandler(InvalidFieldConfigurationException.class)
+    ResponseEntity<Map<String, String>> invalidConfiguration(InvalidFieldConfigurationException ex) {
+        return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<Map<String, String>> invalid(MethodArgumentNotValidException ex) {
         return ResponseEntity.badRequest().body(Map.of("error", ValidationErrors.firstMessage(ex)));

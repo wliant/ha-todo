@@ -49,16 +49,19 @@ public class TodoListService {
     private final TodoListRepository lists;
     private final ListAccessRepository access;
     private final ListUserStateRepository states;
+    private final ListFieldRepository fields;
     private final AppUserRepository users;
     private final CurrentUserProvider currentUser;
     private final EntityManager entityManager;
 
     public TodoListService(TodoListRepository lists, ListAccessRepository access,
-                           ListUserStateRepository states, AppUserRepository users,
-                           CurrentUserProvider currentUser, EntityManager entityManager) {
+                           ListUserStateRepository states, ListFieldRepository fields,
+                           AppUserRepository users, CurrentUserProvider currentUser,
+                           EntityManager entityManager) {
         this.lists = lists;
         this.access = access;
         this.states = states;
+        this.fields = fields;
         this.users = users;
         this.currentUser = currentUser;
         this.entityManager = entityManager;
@@ -109,6 +112,12 @@ public class TodoListService {
         // later membership question is one table.
         access.save(new ListAccess(list, me, me));
         grantTo(list, me, request.memberIdsOrEmpty());
+
+        // Every list has a description field whether or not anyone asked for
+        // one (R21). Written here rather than by the field service, so that
+        // service can depend on this one without the two depending on each
+        // other.
+        fields.save(ListField.description(list, (short) 0));
 
         // Creating a list is the strongest possible interaction with it.
         stateFor(list, me).touch();
@@ -199,6 +208,32 @@ public class TodoListService {
     }
 
     // --- the two predicates -------------------------------------------------
+
+    /** For services that own a list's children - the same rule, one caller up. */
+    @Transactional(readOnly = true)
+    public TodoList requireReadable(UUID listId) {
+        return readable(listId, currentUser.requireUserId());
+    }
+
+    /**
+     * Ownership plus a view that is still current, which is what every write
+     * to a list's children needs before it starts.
+     */
+    @Transactional(readOnly = true)
+    public TodoList requireManagedAndFresh(UUID listId, Long seenVersion) {
+        TodoList list = managed(listId, currentUser.requireUserId());
+        requireFreshView(list, seenVersion);
+        return list;
+    }
+
+    /**
+     * Moves the list's version because one of its children changed. Hibernate
+     * will not dirty-check a list whose own columns are untouched, so without
+     * this a second editor holding the old version is never told.
+     */
+    public void markChanged(TodoList list) {
+        entityManager.lock(list, LockModeType.OPTIMISTIC_FORCE_INCREMENT);
+    }
 
     private TodoList readable(UUID listId, UUID userId) {
         return lists.findVisibleById(listId, userId)

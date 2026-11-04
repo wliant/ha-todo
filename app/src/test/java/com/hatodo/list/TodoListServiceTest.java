@@ -38,6 +38,7 @@ class TodoListServiceTest {
     @Mock private TodoListRepository lists;
     @Mock private ListAccessRepository access;
     @Mock private ListUserStateRepository states;
+    @Mock private ListFieldRepository fields;
     @Mock private AppUserRepository users;
     @Mock private EntityManager entityManager;
 
@@ -60,8 +61,10 @@ class TodoListServiceTest {
         when(states.find(any(), any())).thenReturn(Optional.empty());
         when(states.save(any())).thenAnswer(call -> call.getArgument(0));
         when(access.findForList(any())).thenReturn(List.of());
+        when(fields.save(any())).thenAnswer(call -> call.getArgument(0));
         CurrentUserProvider currentUser = () -> AppUserPrincipal.of(me);
-        service = new TodoListService(lists, access, states, users, currentUser, entityManager);
+        service = new TodoListService(lists, access, states, fields, users, currentUser,
+                entityManager);
     }
 
     @Test

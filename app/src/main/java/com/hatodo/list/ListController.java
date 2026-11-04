@@ -30,9 +30,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class ListController {
 
     private final TodoListService todoLists;
+    private final ListFieldService listFields;
 
-    public ListController(TodoListService todoLists) {
+    public ListController(TodoListService todoLists, ListFieldService listFields) {
         this.todoLists = todoLists;
+        this.listFields = listFields;
     }
 
     @GetMapping
@@ -82,6 +84,22 @@ public class ListController {
     public List<ListMemberResponse> replaceMembers(@PathVariable UUID id,
                                                    @Valid @RequestBody UpdateAccessRequest request) {
         return todoLists.replaceMembers(id, request);
+    }
+
+    @GetMapping("/{id}/fields")
+    public List<ListFieldResponse> fields(@PathVariable UUID id) {
+        return listFields.get(id);
+    }
+
+    /**
+     * Replaces the whole configuration. Existing ids come back in the body so
+     * the service can merge rather than recreate - item values will reference
+     * these rows by id.
+     */
+    @PutMapping("/{id}/fields")
+    public List<ListFieldResponse> replaceFields(@PathVariable UUID id,
+                                                 @Valid @RequestBody UpdateFieldsRequest request) {
+        return listFields.replace(id, request);
     }
 
     @PutMapping("/{id}/pin")
