@@ -9,17 +9,25 @@ three test harnesses are real and passing. **Accounts and administration (R8-R12
 username identity, optional per-user passwords, a pick-a-user sign-in screen, and a single admin who
 adds and deletes users. **The PWA and UI shell (R13-R17) are implemented**: installable as "List",
 responsive with a navigation bar, master-detail administration, an Android share target, and a sign-in
-roster that describes nobody. The household / list / item domain (requirements R1-R6) is still **not**
+roster that describes nobody. The list / item domain (requirements R1-R6) is still **not**
 implemented — `/lists` is a placeholder page, and a shared link is parked on the device because there
-is no item to make of it yet. Keep this file true: when a decision here turns out wrong, update it in
-the same change.
+is no item to make of it yet.
+
+**Lists, items and personal settings (R18-R35) are specified, not built, as of 2026-11-05.**
+`docs/requirements/0004` and `docs/design/0004` describe the whole feature and `docs/adr/0010`-`0019`
+record its decisions; delivery is phased, one PR per phase, and only phase 0 (the specification) has
+landed. Read design/0004 before writing any of it. Keep this file true: when a decision here turns out
+wrong, update it in the same change.
 
 ## What this product is
 
-`ha-todo` is a shared household todo list. A family/household has many **lists** (grouping is a core
-feature, not a label); members add **items** to a list, items can be **assigned** to a member, and any
-member can read any list in their household and mark items complete. Design every API and UI around
-"multiple people touching the same list concurrently", not around a single-user todo app.
+`ha-todo` is a shared household todo list. **The deployment is the household** — there is one, every
+user belongs to it, and there is no household entity (`docs/adr/0010`). A household has many **lists**
+(grouping is a core feature, not a label); each list is seen by the people its creator grants access
+to, so a shared grocery list and a private workout log are both ordinary. Members add **items** to a
+list, items can be **assigned** to a member, and any member with access can mark any of that list's
+items complete. Design every API and UI around "multiple people touching the same list concurrently",
+not around a single-user todo app.
 
 ## Monorepo layout
 
@@ -101,9 +109,14 @@ schema series resumes at **V901** — a lower version would be out of order on a
 and why local/dev set `flyway.ignore-migration-patterns: "*:missing"`. Prod never applied it and keeps
 strict validation. New schema migrations continue from V902.
 
-**Authorization is household-scoped.** Every read and write must be checked against the caller's household
-membership, enforced in the service layer — not only in the controller and not only in the UI. A list id in
-a URL is never sufficient proof of access.
+**Authorization is per-list access, not household-scoped.** Every read and write is checked against the
+caller's grant on that list, enforced in the service layer — not only in the controller and not only in
+the UI. A list id in a URL is never sufficient proof of access. Two predicates: `readable` (the caller
+owns the list or holds a `list_access` row) and `managed` (the caller owns it). `managed` is deliberately
+**not** `owner || isAdmin()` — the admin administers accounts, not list contents, and gains nothing on a
+list they were not granted. No access answers **404**, because an ungranted list must not be discoverable;
+access without ownership answers **403**. Filter list queries in SQL by joining `list_access`, never by
+fetching and filtering in Java. See `docs/adr/0010-per-list-access-instead-of-household-scoping.md`.
 
 **Item completion and assignment are the contended writes.** Two members may complete or reassign the same
 item at once; use optimistic locking (`@Version`) and return a conflict the frontend can reconcile rather
@@ -256,5 +269,6 @@ Rules:
 - **Spec-driven**: before implementing a feature, write the requirement and design into `docs/`, and record
   non-obvious technical choices as an ADR (`docs/adr/NNNN-title.md` from `template.md`, immutable once
   accepted — supersede rather than edit). Implementation should be traceable back to a spec document.
-  Start from `docs/requirements/0001-shared-household-todo.md`; its open questions (how a member joins a
-  household) block the household-scoping work.
+  Start from `docs/requirements/0001-shared-household-todo.md`, then `0004` which refines it. 0001's
+  open question — how a member joins a household — is **closed, not answered**: there is no household to
+  join (`docs/adr/0010`), so nothing blocks the domain work any more.

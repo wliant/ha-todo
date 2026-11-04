@@ -1,6 +1,7 @@
 # 0003 - Defer Redis and MinIO until something needs them
 
-Status: accepted
+Status: superseded by [0013](0013-minio-for-images-served-through-the-api.md)
+for MinIO only - the decision to defer Redis stands and is unaffected.
 Date: 2026-11-04
 
 ## Context
