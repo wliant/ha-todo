@@ -10,6 +10,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -53,11 +54,12 @@ public class TodoListService {
     private final AppUserRepository users;
     private final CurrentUserProvider currentUser;
     private final EntityManager entityManager;
+    private final ApplicationEventPublisher events;
 
     public TodoListService(TodoListRepository lists, ListAccessRepository access,
                            ListUserStateRepository states, ListFieldRepository fields,
                            AppUserRepository users, CurrentUserProvider currentUser,
-                           EntityManager entityManager) {
+                           EntityManager entityManager, ApplicationEventPublisher events) {
         this.lists = lists;
         this.access = access;
         this.states = states;
@@ -65,6 +67,7 @@ public class TodoListService {
         this.users = users;
         this.currentUser = currentUser;
         this.entityManager = entityManager;
+        this.events = events;
     }
 
     @Transactional(readOnly = true)
@@ -167,7 +170,10 @@ public class TodoListService {
 
         for (ListAccess existing : access.findForList(listId)) {
             if (!existing.getUserId().equals(me.getId()) && !wanted.contains(existing.getUserId())) {
+                UUID removed = existing.getUserId();
                 access.delete(existing);
+                // Their items cannot stay assigned to them (R24).
+                events.publishEvent(new ListAccessRevokedEvent(listId, removed));
             }
         }
         grantTo(list, me, wanted);
@@ -224,6 +230,19 @@ public class TodoListService {
         TodoList list = managed(listId, currentUser.requireUserId());
         requireFreshView(list, seenVersion);
         return list;
+    }
+
+    /**
+     * Records that this member just did something with this list.
+     *
+     * <p>Called from the writes themselves - an item added, completed or
+     * edited - because that is the strongest evidence of interaction there is,
+     * and the transaction is already open. Reads use the throttled POST
+     * instead; see {@link #touch}.
+     */
+    @Transactional
+    public void recordInteraction(TodoList list, AppUser member) {
+        stateFor(list, member).touch();
     }
 
     /**

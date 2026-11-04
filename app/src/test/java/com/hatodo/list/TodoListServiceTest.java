@@ -41,6 +41,7 @@ class TodoListServiceTest {
     @Mock private ListFieldRepository fields;
     @Mock private AppUserRepository users;
     @Mock private EntityManager entityManager;
+    @Mock private org.springframework.context.ApplicationEventPublisher events;
 
     private final UUID meId = UUID.randomUUID();
     private AppUser me;
@@ -64,7 +65,7 @@ class TodoListServiceTest {
         when(fields.save(any())).thenAnswer(call -> call.getArgument(0));
         CurrentUserProvider currentUser = () -> AppUserPrincipal.of(me);
         service = new TodoListService(lists, access, states, fields, users, currentUser,
-                entityManager);
+                entityManager, events);
     }
 
     @Test
