@@ -46,3 +46,12 @@ export function errorMessage(error: unknown, fallback: string): string {
   }
   return fallback
 }
+
+/**
+ * Where an image's bytes live. Relative, like everything else: the object store
+ * is not reachable from a browser, and a presigned URL would outlive the grant
+ * that justified it (docs/adr/0013).
+ */
+export function imageUrl(id: string | null | undefined): string | undefined {
+  return id ? `/api/images/${id}` : undefined
+}

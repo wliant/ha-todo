@@ -8,14 +8,19 @@ import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import org.springframework.stereotype.Component;
 
-/** The one class that knows MinIO exists. */
+/**
+ * The one class that talks to the object store.
+ *
+ * <p>The client is MinIO's, but the server is SeaweedFS - minio-java is a plain
+ * S3 client and speaks to any S3 API. See docs/adr/0021.
+ */
 @Component
-public class MinioImageStorage implements ImageStorage {
+public class S3ImageStorage implements ImageStorage {
 
     private final MinioClient client;
     private final String bucket;
 
-    public MinioImageStorage(MinioClient client, MinioProperties properties) {
+    public S3ImageStorage(MinioClient client, ObjectStorageProperties properties) {
         this.client = client;
         this.bucket = properties.bucket();
     }

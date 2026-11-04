@@ -1,4 +1,3 @@
-import Avatar from '@mui/material/Avatar'
 import Box from '@mui/material/Box'
 import Divider from '@mui/material/Divider'
 import List from '@mui/material/List'
@@ -18,7 +17,7 @@ import type { CurrentUser } from '../api/auth'
 import type { ListSummary } from '../api/lists'
 import { ListIcon } from '../lists/listIcons'
 import { useSidebar } from '../lists/queries'
-import { initials } from './initials'
+import { MemberAvatar } from './MemberAvatar'
 
 /**
  * The one navigation surface (R25). Three sections: the member's pinned lists
@@ -127,9 +126,11 @@ export function SideNav({
           selected={pathname.startsWith('/profile')}
         >
           <ListItemIcon sx={{ minWidth: 40 }} aria-hidden>
-            <Avatar sx={{ width: 28, height: 28, fontSize: '0.8rem' }}>
-              {initials(user.displayName)}
-            </Avatar>
+            <MemberAvatar
+              displayName={user.displayName}
+              avatarImageId={user.avatarImageId}
+              size={28}
+            />
           </ListItemIcon>
           <ListItemText primary={user.displayName} secondary="Your profile" />
         </ListItemButton>

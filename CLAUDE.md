@@ -216,10 +216,25 @@ on no component introduces a global class: use `sx`, a styled component, or a th
 imported one per path (`@mui/icons-material/ChecklistRounded`), never from the barrel, which is ~11,000
 modules. See `docs/adr/0014`.
 
-**Redis and MinIO are deferred, not optional-and-maybe-present.** Neither is wired in; both sit commented out in
-`deployment/docker-compose.infra.yml` and `.env.example`. Adding either requires a concrete need and a new
-ADR — see `docs/adr/0003-defer-redis-and-minio.md`. The likeliest triggers are a second backend instance
-(in-memory sessions break) and item attachments.
+**Object storage is wired in; Redis is still deferred.** Profile pictures live in an S3 store
+(`app.storage.*`, from `S3_ENDPOINT` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` / `S3_BUCKET`), and the detail
+field's images will. **SeaweedFS** provides that API — locally, in the integration tests, and on the
+host — because MinIO's own images stopped allowing anonymous pulls; nothing in the code is specific to
+either, and the client library is still minio-java used as a plain S3 client. See `docs/adr/0013` and
+`docs/adr/0021`. Redis remains deferred on `docs/adr/0003`'s reasoning, and still needs a concrete need
+and a new ADR; its likeliest trigger is a second backend instance, where in-memory sessions break.
+
+**The app creates its own bucket at startup and fails closed.** `S3_BUCKET` is named explicitly per
+environment, never derived from the Spring profile, so a misconfigured profile cannot put prod's images
+in dev's bucket. An unreachable store stops the app from starting, deliberately: a deployment that
+passes its health check and silently cannot save a picture is a bug report nobody can diagnose.
+`scripts/deploy.sh` refuses without the four variables, before building anything.
+
+**Image bytes are streamed through `GET /api/images/{id}`, never a presigned URL.** The store is not
+published through either HTTPS front door, so a presigned URL is unreachable from a phone and blocked
+as mixed content — and it is a capability that outlives a revoked grant. The type is decided by
+sniffing the bytes, never the filename or `Content-Type`; PNG, JPEG and WebP only, and **SVG is refused
+by name**, because an SVG served same-origin is script execution in our own security context.
 
 **The frontend reaches the backend same-origin in every environment.** The SPA only ever uses relative
 `/api` paths - never an absolute API URL, never `VITE_API_URL`. nginx in the `web` image proxies `/api` and

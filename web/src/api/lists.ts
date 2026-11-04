@@ -36,6 +36,7 @@ export interface ListMember {
   id: string
   displayName: string
   owner: boolean
+  avatarImageId: string | null
 }
 
 export interface ListDetail extends Omit<ListSummary, 'memberCount'> {
@@ -156,6 +157,7 @@ export async function touchList(id: string): Promise<void> {
 export interface Member {
   id: string
   displayName: string
+  avatarImageId: string | null
 }
 
 /**

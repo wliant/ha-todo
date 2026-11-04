@@ -12,6 +12,7 @@ import Typography from '@mui/material/Typography'
 import { errorMessage } from '../api/http'
 import { useCurrentUser } from '../auth/useCurrentUser'
 import { useOwnPassword } from '../auth/useOwnPassword'
+import { AvatarUpload } from '../profile/AvatarUpload'
 import { useThemePreference } from '../theme/useThemePreference'
 import type { ThemePreference } from '../api/profile'
 
@@ -22,6 +23,7 @@ export function ProfilePage() {
       <Typography component="h1" variant="h5">
         Your profile
       </Typography>
+      <Picture />
       <Appearance />
       <PasswordSection />
     </Stack>
@@ -54,6 +56,18 @@ function Section({ title, children }: { title: string; children: React.ReactNode
         {children}
       </Stack>
     </Paper>
+  )
+}
+
+function Picture() {
+  const { data: user } = useCurrentUser()
+  if (!user) {
+    return null
+  }
+  return (
+    <Section title="Your picture">
+      <AvatarUpload user={user} />
+    </Section>
   )
 }
 

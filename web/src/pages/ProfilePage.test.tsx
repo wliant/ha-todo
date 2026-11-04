@@ -16,6 +16,7 @@ function renderProfile(role: UserRole = 'MEMBER') {
     username: 'ana',
     displayName: 'Ana',
     role,
+    avatarImageId: null,
   })
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },

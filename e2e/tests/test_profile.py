@@ -9,6 +9,10 @@ it would stay broken until someone noticed.
 
 from __future__ import annotations
 
+import io
+import struct
+import zlib
+
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -159,3 +163,88 @@ def test_colour_scheme_is_stored_against_the_account_and_survives_a_reload(
 
     page.reload()
     expect(page.get_by_role("radio", name="Match my device")).to_be_checked()
+
+
+def tiny_png() -> bytes:
+    """
+    A real 1x1 PNG, built here rather than committed as a fixture.
+
+    The server decides the type from the bytes, so a file that merely ends in
+    .png would be refused - which is the point of that rule.
+    """
+
+    def chunk(kind: bytes, payload: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(payload))
+            + kind
+            + payload
+            + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+        )
+
+    header = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    pixel = zlib.compress(b"\x00\xff\x00\x00")
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", pixel) + chunk(b"IEND", b"")
+
+
+@pytest.mark.profile
+def test_a_members_picture_follows_them_to_the_sidebar_and_the_sign_in_screen(
+    page: Page, base_url: str, disposable_member: DemoMember
+) -> None:
+    ui_sign_in(page, base_url, disposable_member)
+    page.goto(f"{base_url}/profile")
+
+    page.get_by_label("Profile picture").set_input_files(
+        files=[{"name": "me.png", "mimeType": "image/png", "buffer": tiny_png()}]
+    )
+    expect(page.get_by_role("button", name="Change picture")).to_be_visible()
+
+    # The bytes really come back, rather than a broken image element.
+    src = page.locator("img").first.get_attribute("src")
+    assert src is not None and src.startswith("/api/images/")
+    assert page.request.get(f"{base_url}{src}").status == 200
+
+    # It is on the sign-in screen too, which is the whole argument of adr/0019.
+    sign_out(page, base_url)
+    row = page.get_by_role("button", name=disposable_member.display_name)
+    expect(row.locator("img")).to_have_count(1)
+    # And the row still says only their name (R17).
+    expect(row).to_have_text(disposable_member.display_name)
+
+
+@pytest.mark.profile
+def test_a_picture_can_be_taken_away_again(
+    page: Page, base_url: str, disposable_member: DemoMember
+) -> None:
+    ui_sign_in(page, base_url, disposable_member)
+    page.goto(f"{base_url}/profile")
+    page.get_by_label("Profile picture").set_input_files(
+        files=[{"name": "me.png", "mimeType": "image/png", "buffer": tiny_png()}]
+    )
+    expect(page.get_by_role("button", name="Change picture")).to_be_visible()
+    src = page.locator("img").first.get_attribute("src")
+
+    page.get_by_role("button", name="Remove").click()
+
+    expect(page.get_by_role("button", name="Add a picture")).to_be_visible()
+    assert src is not None
+    assert page.request.get(f"{base_url}{src}").status == 404
+
+
+@pytest.mark.profile
+def test_something_that_is_not_an_image_is_refused_however_it_is_named(
+    page: Page, base_url: str, disposable_member: DemoMember
+) -> None:
+    ui_sign_in(page, base_url, disposable_member)
+    page.goto(f"{base_url}/profile")
+
+    page.get_by_label("Profile picture").set_input_files(
+        files=[
+            {
+                "name": "innocent.png",
+                "mimeType": "image/png",
+                "buffer": b"<svg xmlns='http://www.w3.org/2000/svg'><script/></svg>",
+            }
+        ]
+    )
+
+    expect(page.get_by_text("must be a PNG, JPEG or WebP")).to_be_visible()

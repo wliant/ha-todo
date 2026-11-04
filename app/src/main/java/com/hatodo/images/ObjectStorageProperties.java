@@ -9,7 +9,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *               bucket
  */
 @ConfigurationProperties(prefix = "app.storage")
-public record MinioProperties(String endpoint, String accessKey, String secretKey, String bucket) {
+public record ObjectStorageProperties(String endpoint, String accessKey, String secretKey, String bucket) {
 
     public boolean isConfigured() {
         return endpoint != null && !endpoint.isBlank()

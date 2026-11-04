@@ -8,8 +8,20 @@ import { LoginPage } from './LoginPage'
 import * as client from '../api/auth'
 import type { LoginUser } from '../api/auth'
 
-const ana: LoginUser = { id: 'id-ana', username: 'ana', displayName: 'Ana' }
-const ben: LoginUser = { id: 'id-ben', username: 'ben', displayName: 'Ben' }
+// avatarImageId null: a member is not obliged to have a picture, and the
+// roster has to draw them either way.
+const ana: LoginUser = {
+  id: 'id-ana',
+  username: 'ana',
+  displayName: 'Ana',
+  avatarImageId: null,
+}
+const ben: LoginUser = {
+  id: 'id-ben',
+  username: 'ben',
+  displayName: 'Ben',
+  avatarImageId: null,
+}
 
 /** What the API returns for "that sign-in did not work", whatever the reason. */
 function unauthorized(): AxiosError {
@@ -62,14 +74,25 @@ describe('LoginPage', () => {
   })
 
   it('shows a roster row whose whole text is the name, nothing decorating it', async () => {
+    // Not just the accessible name - the visible text too. An initial here
+    // reads as "A Ana", which is a row describing someone rather than naming
+    // them, and the e2e suite asserts on this text as well. A member with a
+    // picture gets one; a member without gets a wordless placeholder.
     renderLoginPage()
 
-    // Not just the accessible name - the visible text too. An avatar or an
-    // initial here reads as "A Ana", which is a row describing someone rather
-    // than naming them, and the e2e suite asserts on this text as well.
-    expect(await screen.findByRole('button', { name: 'Ana' })).toHaveTextContent(
-      /^Ana$/,
-    )
+    expect(await screen.findByRole('button', { name: 'Ana' })).toHaveTextContent(/^Ana$/)
+  })
+
+  it('draws the face of a member who has uploaded one (R32, adr/0019)', async () => {
+    vi.spyOn(client, 'fetchLoginUsers').mockResolvedValue([
+      { ...ana, avatarImageId: 'id-face' },
+    ])
+    renderLoginPage()
+
+    const row = await screen.findByRole('button', { name: 'Ana' })
+    expect(row.querySelector('img')).toHaveAttribute('src', '/api/images/id-face')
+    // Still only the name as text.
+    expect(row).toHaveTextContent(/^Ana$/)
   })
 
   it('signs a passwordless member in on one tap, asking for nothing', async () => {
@@ -78,6 +101,7 @@ describe('LoginPage', () => {
       username: 'ben',
       displayName: 'Ben',
       role: 'MEMBER',
+    avatarImageId: null,
     })
 
     renderLoginPage()
@@ -96,6 +120,7 @@ describe('LoginPage', () => {
         username: 'ana',
         displayName: 'Ana',
         role: 'MEMBER',
+    avatarImageId: null,
       })
 
     renderLoginPage()

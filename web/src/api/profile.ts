@@ -24,3 +24,15 @@ export async function updatePreferences(theme: ThemePreference): Promise<Prefere
 export async function setOwnPassword(password: string | null): Promise<void> {
   await api.put('/me/password', { password })
 }
+
+/** Replaces the caller's picture. The old one stops existing. */
+export async function setOwnAvatar(file: File): Promise<string> {
+  const body = new FormData()
+  body.append('file', file)
+  const { data } = await api.put<{ avatarImageId: string }>('/me/avatar', body)
+  return data.avatarImageId
+}
+
+export async function removeOwnAvatar(): Promise<void> {
+  await api.delete('/me/avatar')
+}

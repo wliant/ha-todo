@@ -10,6 +10,7 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import SettingsRounded from '@mui/icons-material/SettingsRounded'
 import { isNotFound } from '../api/http'
+import { MemberAvatar } from '../app/MemberAvatar'
 import { summarise } from '../lists/fieldConfig'
 import { ListIcon } from '../lists/listIcons'
 import { PinButton } from '../lists/PinButton'
@@ -106,6 +107,13 @@ export function ListDetailPage() {
             {list.members.map((member) => (
               <Chip
                 key={member.id}
+                avatar={
+                  <MemberAvatar
+                    displayName={member.displayName}
+                    avatarImageId={member.avatarImageId}
+                    size={24}
+                  />
+                }
                 label={member.owner ? `${member.displayName} (owner)` : member.displayName}
                 variant={member.owner ? 'filled' : 'outlined'}
               />

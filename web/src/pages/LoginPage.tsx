@@ -5,6 +5,7 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import List from '@mui/material/List'
+import ListItemAvatar from '@mui/material/ListItemAvatar'
 import ListItemButton from '@mui/material/ListItemButton'
 import ListItemText from '@mui/material/ListItemText'
 import Paper from '@mui/material/Paper'
@@ -14,6 +15,7 @@ import Typography from '@mui/material/Typography'
 import { isUnauthorized } from '../api/http'
 import type { LoginUser } from '../api/auth'
 import { useCurrentUser, useLogin, useLoginUsers } from '../auth/useCurrentUser'
+import { MemberAvatar } from '../app/MemberAvatar'
 
 /**
  * Sign-in is picking yourself out of the household, not filling in a form.
@@ -163,10 +165,16 @@ export function LoginPage() {
                     disabled={loginMutation.isPending}
                     onClick={() => choose(candidate)}
                   >
-                    {/* The name, and nothing else (R17). No initial and no
-                        picture: the row's whole text is what the roster
-                        discloses, and adr/0019 is what will add a real avatar
-                        here deliberately, once there is one to add. */}
+                    {/* A face, and the name as the row's only text (R17).
+                        The picture is the one field adr/0019 adds here; it is
+                        aria-hidden, so the row still reads as just the name. */}
+                    <ListItemAvatar aria-hidden>
+                      <MemberAvatar
+                        displayName={candidate.displayName}
+                        avatarImageId={candidate.avatarImageId}
+                        fallback="icon"
+                      />
+                    </ListItemAvatar>
                     <ListItemText primary={candidate.displayName} />
                   </ListItemButton>
                 ))}

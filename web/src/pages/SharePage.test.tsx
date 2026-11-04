@@ -29,6 +29,7 @@ describe('SharePage', () => {
       username: 'ana',
       displayName: 'Ana',
       role: 'MEMBER',
+    avatarImageId: null,
     })
   })
 

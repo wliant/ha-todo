@@ -8,6 +8,7 @@ export interface CurrentUser {
   username: string
   displayName: string
   role: UserRole
+  avatarImageId: string | null
 }
 
 /**
@@ -19,6 +20,12 @@ export interface LoginUser {
   id: string
   username: string
   displayName: string
+  /**
+   * The one field ever added to this payload - see docs/adr/0019. It lets a
+   * member who cannot read pick their own face; it says nothing about what
+   * their account is worth attacking for, which is what adr/0009 forbids.
+   */
+  avatarImageId: string | null
 }
 
 /** Resolving the token server-side is what sets the XSRF-TOKEN cookie. */

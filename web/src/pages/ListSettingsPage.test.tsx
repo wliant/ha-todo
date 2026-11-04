@@ -18,7 +18,7 @@ const groceries: ListDetail = {
   owned: true,
   pinned: false,
   version: 3,
-  members: [{ id: 'id-ana', displayName: 'Ana', owner: true }],
+  members: [{ id: 'id-ana', displayName: 'Ana', owner: true, avatarImageId: null }],
   createdAt: '2026-11-05T00:00:00Z',
 }
 
@@ -28,10 +28,11 @@ function renderPage(list: ListDetail | Error = groceries) {
     username: 'ana',
     displayName: 'Ana',
     role: 'MEMBER',
+    avatarImageId: null,
   })
   vi.spyOn(listsApi, 'fetchMembers').mockResolvedValue([
-    { id: 'id-ana', displayName: 'Ana' },
-    { id: 'id-ben', displayName: 'Ben' },
+    { id: 'id-ana', displayName: 'Ana', avatarImageId: null },
+    { id: 'id-ben', displayName: 'Ben', avatarImageId: null },
   ])
   const fetchList = vi.spyOn(listsApi, 'fetchList')
   if (list instanceof Error) {

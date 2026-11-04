@@ -14,6 +14,7 @@ const ana: CurrentUser = {
   username: 'ana',
   displayName: 'Ana',
   role: 'MEMBER',
+    avatarImageId: null,
 }
 
 function list(id: string, name: string, pinned = false): ListSummary {

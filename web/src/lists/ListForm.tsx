@@ -1,6 +1,7 @@
 import Checkbox from '@mui/material/Checkbox'
 import List from '@mui/material/List'
 import ListItemButton from '@mui/material/ListItemButton'
+import ListItemAvatar from '@mui/material/ListItemAvatar'
 import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
 import Paper from '@mui/material/Paper'
@@ -8,6 +9,7 @@ import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import type { ListIcon as ListIconToken, Member } from '../api/lists'
+import { MemberAvatar } from '../app/MemberAvatar'
 import { IconPicker } from './IconPicker'
 
 export interface ListFormValue {
@@ -88,6 +90,13 @@ export function ListForm({
                   <ListItemIcon sx={{ minWidth: 40 }} aria-hidden>
                     <Checkbox edge="start" checked={checked} tabIndex={-1} disableRipple />
                   </ListItemIcon>
+                  <ListItemAvatar aria-hidden sx={{ minWidth: 48 }}>
+                    <MemberAvatar
+                      displayName={member.displayName}
+                      avatarImageId={member.avatarImageId}
+                      size={32}
+                    />
+                  </ListItemAvatar>
                   <ListItemText primary={member.displayName} />
                 </ListItemButton>
               )

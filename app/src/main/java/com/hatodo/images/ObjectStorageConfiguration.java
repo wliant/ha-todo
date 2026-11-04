@@ -9,16 +9,16 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration(proxyBeanMethods = false)
-public class MinioConfiguration {
+public class ObjectStorageConfiguration {
 
     @Bean
-    MinioClient minioClient(MinioProperties properties) {
+    MinioClient s3Client(ObjectStorageProperties properties) {
         if (!properties.isConfigured()) {
             // Same fail-closed choice as the admin account: a deployment that
             // starts and silently cannot store an image is a bug report nobody
             // can diagnose.
             throw new IllegalStateException(
-                    "MINIO_ENDPOINT and MINIO_BUCKET are required. See docs/adr/0013.");
+                    "S3_ENDPOINT and S3_BUCKET are required. See docs/adr/0013 and 0021.");
         }
         return MinioClient.builder()
                 .endpoint(properties.endpoint())
@@ -35,7 +35,8 @@ public class MinioConfiguration {
      * if the store is unreachable - see adr/0013 for the trade that accepts.
      */
     @Bean
-    ApplicationRunner minioBucketInitializer(MinioClient client, MinioProperties properties) {
+    ApplicationRunner objectStoreBucketInitializer(MinioClient client,
+                                                  ObjectStorageProperties properties) {
         return (ApplicationArguments args) -> {
             String bucket = properties.bucket();
             try {

@@ -15,10 +15,11 @@ function renderPage() {
     username: 'ana',
     displayName: 'Ana',
     role: 'MEMBER',
+    avatarImageId: null,
   })
   vi.spyOn(listsApi, 'fetchMembers').mockResolvedValue([
-    { id: 'id-ana', displayName: 'Ana' },
-    { id: 'id-ben', displayName: 'Ben' },
+    { id: 'id-ana', displayName: 'Ana', avatarImageId: null },
+    { id: 'id-ben', displayName: 'Ben', avatarImageId: null },
   ])
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },

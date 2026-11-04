@@ -26,6 +26,7 @@ function renderPage() {
     username: 'ana',
     displayName: 'Ana',
     role: 'MEMBER',
+    avatarImageId: null,
   })
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },

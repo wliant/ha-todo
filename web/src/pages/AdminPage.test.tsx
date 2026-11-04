@@ -50,6 +50,7 @@ describe('AdminPage', () => {
       username: 'admin',
       displayName: 'Admin',
       role: 'ADMIN',
+    avatarImageId: null,
     })
     vi.spyOn(adminApi, 'fetchAdminUsers').mockResolvedValue([adminAccount, ben])
   })
