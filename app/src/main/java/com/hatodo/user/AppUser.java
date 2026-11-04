@@ -41,6 +41,10 @@ public class AppUser {
     @Column(nullable = false)
     private boolean enabled = true;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "theme_preference", nullable = false)
+    private ThemePreference themePreference = ThemePreference.SYSTEM;
+
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private Instant createdAt;
 
@@ -110,6 +114,14 @@ public class AppUser {
 
     public boolean isEnabled() {
         return enabled;
+    }
+
+    public ThemePreference getThemePreference() {
+        return themePreference;
+    }
+
+    public void setThemePreference(ThemePreference themePreference) {
+        this.themePreference = themePreference;
     }
 
     public Instant getCreatedAt() {
