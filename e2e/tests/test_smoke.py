@@ -31,6 +31,30 @@ def test_login_page_lists_the_household_instead_of_a_form(
 
 
 @pytest.mark.smoke
+def test_sign_in_list_describes_nobody(
+    page: Page, base_url: str, demo_member: DemoMember, passwordless_member: DemoMember
+) -> None:
+    """R17: the roster is public, so each row is a name and nothing else."""
+    page.goto(f"{base_url}/login")
+    expect(page.get_by_role("button", name=demo_member.display_name)).to_be_visible()
+
+    # Who needs a password is not published...
+    expect(page.get_by_text("password", exact=False)).to_have_count(0)
+
+    # ...and no row carries anything beyond the person's own name. (A member
+    # may of course be *called* Admin; what must not appear is a row saying
+    # what someone is.)
+    for choice in page.get_by_role("listitem").get_by_role("button").all():
+        assert choice.inner_text().strip().splitlines() == [
+            choice.inner_text().strip()
+        ], "a sign-in row is describing someone, not just naming them"
+
+    expect(page.get_by_role("button", name=demo_member.display_name)).to_have_text(
+        demo_member.display_name
+    )
+
+
+@pytest.mark.smoke
 def test_member_with_a_password_is_asked_for_it(
     page: Page, base_url: str, demo_member: DemoMember
 ) -> None:
@@ -56,7 +80,9 @@ def test_passwordless_member_signs_in_with_one_click(
     pick_user(page, passwordless_member)
 
     expect(page.get_by_role("heading", name="Lists")).to_be_visible()
-    expect(page.get_by_text(passwordless_member.display_name)).to_be_visible()
+    expect(page.get_by_text(passwordless_member.display_name).first).to_be_visible()
+    # The field never appeared, for this member: nothing was typed to get here.
+    expect(page.get_by_label("Password")).to_have_count(0)
 
 
 def test_wrong_password_is_refused_without_saying_why(
@@ -67,7 +93,7 @@ def test_wrong_password_is_refused_without_saying_why(
     page.get_by_label("Password").fill("definitely-not-the-password")
     page.get_by_role("button", name="Sign in", exact=True).click()
 
-    expect(page.get_by_role("alert")).to_contain_text("did not match")
+    expect(page.get_by_role("alert")).to_contain_text("did not work")
     expect(page.get_by_role("heading", name="Lists")).to_have_count(0)
 
 

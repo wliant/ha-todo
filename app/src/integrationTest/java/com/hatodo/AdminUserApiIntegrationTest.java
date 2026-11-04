@@ -65,9 +65,11 @@ class AdminUserApiIntegrationTest extends ApiIntegrationTest {
         assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(created.getBody()).containsEntry("passwordRequired", false);
 
-        // Visible on the sign-in screen, and signs in with no password at all.
-        assertThat(roster()).anySatisfy(entry ->
-                assertThat(entry).containsEntry("username", "cara").containsEntry("passwordRequired", false));
+        // Visible on the sign-in screen - which says only that they exist - and
+        // signs in with no password at all.
+        assertThat(roster()).anySatisfy(entry -> assertThat(entry)
+                .containsEntry("username", "cara")
+                .containsOnlyKeys("id", "username", "displayName"));
         assertThat(login("cara", null).getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 
@@ -115,7 +117,7 @@ class AdminUserApiIntegrationTest extends ApiIntegrationTest {
     void theAdminCannotDeleteItself() {
         // R12: the household must not be able to lock itself out of administration.
         Session admin = signIn(ADMIN_USERNAME, ADMIN_PASSWORD);
-        String adminId = adminIdFromRoster();
+        String adminId = adminIdOf(admin);
 
         ResponseEntity<String> response = rest.exchange("/api/admin/users/" + adminId, HttpMethod.DELETE,
                 new HttpEntity<>(headersFor(admin)), String.class);
@@ -160,11 +162,19 @@ class AdminUserApiIntegrationTest extends ApiIntegrationTest {
         return (List<Map<String, Object>>) response.getBody();
     }
 
-    private String adminIdFromRoster() {
-        return roster().stream()
+    /**
+     * The admin's own id. Read from the admin API, not the sign-in roster: the
+     * roster deliberately no longer says who the admin is (adr/0009).
+     */
+    @SuppressWarnings("unchecked")
+    private String adminIdOf(Session admin) {
+        ResponseEntity<List> response = rest.exchange("/api/admin/users", HttpMethod.GET,
+                new HttpEntity<>(headersFor(admin)), List.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        return ((List<Map<String, Object>>) response.getBody()).stream()
                 .filter(entry -> "ADMIN".equals(entry.get("role")))
                 .map(entry -> (String) entry.get("id"))
                 .findFirst()
-                .orElseThrow(() -> new AssertionError("no admin in the roster"));
+                .orElseThrow(() -> new AssertionError("no admin in the user list"));
     }
 }
