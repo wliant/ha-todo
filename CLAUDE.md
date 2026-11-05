@@ -4,9 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-**Everything specified so far is built, as of 2026-11-05.** Build, local stack, deploy scripts and all
-three test harnesses are real and passing: 104 backend unit tests, 142 integration tests, 167 frontend
-tests, 66 end-to-end.
+**Everything specified so far is built except `docs/requirements/0006`, as of 2026-11-05.** Build, local
+stack, deploy scripts and all three test harnesses are real and passing: 104 backend unit tests, 142
+integration tests, 167 frontend tests, 66 end-to-end. **0006 — data lists — is specified and not yet
+implemented**; see the paragraph below before starting on it.
 
 Implemented: **accounts and administration (R8-R12)** — username identity, optional per-user passwords, a
 pick-a-user sign-in screen, and a single admin who adds and deletes users. **The PWA (R13, R14)** —
@@ -27,6 +28,20 @@ with only what the list insists on; work is claimed in bulk and the claim reads 
 reopening keeps the record and returns the points; a list has tabs — items, standing instructions, and
 who did what lately; and **the dashboard is the landing page**, reading across every list a member can
 see.
+
+**R50-R61 are specified and not built.** `docs/requirements/0006` adds **data lists** — reference
+collections (recipes, restaurants, quotes, vocabulary) whose entries have a name, a description, a
+rich-text detail and free-form tags, and which are *never* assigned, dated, completed, scored or
+generated on a schedule. `docs/design/0006` lays out the build in eight steps and `docs/adr/0029`-`0032`
+record the decisions. Three of those decisions are the ones to read first. A data list is **its own
+aggregate** — `data_list` / `data_list_access` / `data_entry`, not a `kind` column on `todo_list`, because
+nine existing readers of `todo_list` would otherwise have to remember to exclude it and the one that
+forgets is wrong without failing (`docs/adr/0029`). An entry's `search_vector` is a **generated**
+`tsvector` fed by an **application-maintained** `detail_text` column, so `DataEntry` must expose one
+`setDetail(html, text)` and never a setter for either column alone (`docs/adr/0030`). And search is one
+native statement whose grant check is the driving `EXISTS`, with a `pg_trgm` arm that always ranks below
+a real full-text hit (`docs/adr/0031`). Collections deliberately have **no pins and no recency**, which is
+why the share picker cannot preselect one.
 
 **Two things in there are easy to break.** "Finished" is no longer one column: a reopened item keeps its
 completion record, so the question is answered by a *generated* column (`docs/adr/0024`), and a new reader
@@ -135,7 +150,8 @@ migrations after every versioned one and re-runs them when their content changes
 edited freely and can never sit in front of a schema change. The old versioned seed at `V900` is why the
 schema series resumes at **V901** — a lower version would be out of order on any database that applied it,
 and why local/dev set `flyway.ignore-migration-patterns: "*:missing"`. Prod never applied it and keeps
-strict validation. The highest applied migration is **V907**; new ones continue from V908.
+strict validation. The highest applied migration is **V911**; new ones continue from V912, and
+`docs/design/0006` claims V912-V915.
 
 **Authorization is per-list access, not household-scoped.** Every read and write is checked against the
 caller's grant on that list, enforced in the service layer — not only in the controller and not only in
