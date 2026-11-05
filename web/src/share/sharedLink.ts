@@ -50,3 +50,38 @@ export function describeSharedLink(link: SharedLink): string {
   const parts = [link.title, link.url].filter(Boolean)
   return parts.length > 0 ? parts.join(' - ') : (link.note ?? '')
 }
+
+/**
+ * The same share, as a collection entry (R59).
+ *
+ * The title becomes the name - a member names it on the way in rather than
+ * filing something called "https://..." - and the link goes into the detail as
+ * an anchor, which the sanitizer keeps (http/https/mailto, rel=nofollow
+ * forced). Falls back to the URL as the name when the share carried no title,
+ * because an entry must have one.
+ */
+export function sharedLinkAsEntry(link: SharedLink): {
+  name: string
+  description?: string
+  detailHtml?: string
+} {
+  const name = link.title ?? link.note ?? link.url ?? 'Shared link'
+  const description = link.title && link.note && link.note !== link.title ? link.note : undefined
+  const detailHtml = link.url
+    ? `<p><a href="${escapeHtml(link.url)}">${escapeHtml(link.url)}</a></p>`
+    : undefined
+  return { name: name.slice(0, 200), description: description?.slice(0, 500), detailHtml }
+}
+
+/**
+ * The URL came from a share sheet, so it is not ours. Escaped before it is
+ * interpolated into HTML - the server sanitizes on write too, but building
+ * broken markup here and relying on that to clean it up is the wrong order.
+ */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}

@@ -29,4 +29,21 @@ public interface StoredImageRepository extends JpaRepository<StoredImage, UUID> 
 
     @Query("SELECT i FROM StoredImage i WHERE i.ruleId = :ruleId")
     List<StoredImage> findForRule(@Param("ruleId") UUID ruleId);
+
+    @Query("SELECT i FROM StoredImage i WHERE i.entryId = :entryId")
+    List<StoredImage> findForEntry(@Param("entryId") UUID entryId);
+
+    /**
+     * Every picture on every entry of one collection.
+     *
+     * <p>Native for the same reason {@link #findForList} is: this package does
+     * not know about collections and should not have to in order to let go of
+     * their pictures.
+     */
+    @Query(value = """
+            SELECT * FROM stored_image
+            WHERE entry_id IN (SELECT id FROM data_entry WHERE data_list_id = :listId)
+            """, nativeQuery = true)
+    List<StoredImage> findForDataList(@Param("listId") UUID listId);
 }
+

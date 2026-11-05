@@ -1,6 +1,6 @@
 # 0030 - An entry's searchable document is generated from text the app maintains
 
-Status: accepted
+Status: superseded by [0033](0033-tags-enter-the-search-document-stemmed.md)
 Date: 2026-11-05
 
 ## Context

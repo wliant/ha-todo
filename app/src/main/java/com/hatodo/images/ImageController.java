@@ -30,10 +30,16 @@ public class ImageController {
 
     private final ImageService images;
     private final ImageAccess access;
+    private final DataEntryImageAccess entryAccess;
+    private final com.hatodo.user.CurrentUserProvider currentUser;
 
-    public ImageController(ImageService images, ImageAccess access) {
+    public ImageController(ImageService images, ImageAccess access,
+                           DataEntryImageAccess entryAccess,
+                           com.hatodo.user.CurrentUserProvider currentUser) {
         this.images = images;
         this.access = access;
+        this.entryAccess = entryAccess;
+        this.currentUser = currentUser;
     }
 
     /**
@@ -63,13 +69,33 @@ public class ImageController {
                 .body(new InputStreamResource(content));
     }
 
+    /**
+     * Which owner the picture has decides who may read it, so this is a
+     * three-way question since requirements/0006 R61 (adr/0032).
+     *
+     * <p>A rule-owned picture answers no, as it always has: a rule's detail is
+     * not displayed anywhere a member can reach it directly.
+     */
     private boolean mayRead(StoredImage image) {
         if (image.getPurpose() == ImagePurpose.AVATAR) {
             return true;
         }
-        // Unclaimed: uploaded into an item that was never saved, so only the
-        // person who uploaded it has any claim on it.
-        return image.getItemId() != null && access.canReadItem(image.getItemId());
+        if (image.getItemId() != null) {
+            return access.canReadItem(image.getItemId());
+        }
+        if (image.getEntryId() != null) {
+            return entryAccess.canReadEntry(image.getEntryId());
+        }
+        // Unclaimed: uploaded into something that was never saved, so only
+        // whoever uploaded it has any claim on it - which is what makes the
+        // editor's own preview work between pasting a picture and saving.
+        // ImageUploadController has always documented this; until R61 it was
+        // not actually implemented, and every unclaimed picture answered no
+        // even to its uploader.
+        return image.isUnclaimed()
+                && currentUser.find()
+                        .map(me -> image.wasUploadedBy(me.getId()))
+                        .orElse(false);
     }
 
     @ExceptionHandler(ImageNotFoundException.class)
