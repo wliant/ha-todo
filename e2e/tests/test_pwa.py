@@ -77,6 +77,8 @@ def test_a_shared_link_becomes_an_item_on_a_chosen_list(
     cleanup_lists(name)
     ui_sign_in(page, base_url, demo_member)
 
+    # Signing in lands on the dashboard (R44); "New list" is on the lists page.
+    page.get_by_role("link", name="Lists").first.click()
     page.get_by_role("link", name="New list").click()
     page.get_by_role("textbox", name="Name", exact=True).fill(name)
     page.get_by_role("button", name="Create list").click()

@@ -56,7 +56,7 @@ def test_the_app_bar_does_not_cover_the_page_it_sits_above(
     page.set_viewport_size(PHONE)
     ui_sign_in(page, base_url, passwordless_member)
 
-    heading = page.get_by_role("heading", name="Lists").bounding_box()
+    heading = page.get_by_role("heading", name="My day").bounding_box()
     app_bar = page.locator("header").bounding_box()
     assert heading is not None and app_bar is not None
     assert heading["y"] >= app_bar["y"] + app_bar["height"], (

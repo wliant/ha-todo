@@ -17,6 +17,9 @@ from conftest import DemoMember, TestData, ui_sign_in
 
 
 def create_list(page: Page, name: str) -> str:
+    # "New list" lives on the list of lists, and signing in no longer lands
+    # there - the dashboard does (R44). The sidebar is always present.
+    page.get_by_role("link", name="Lists").first.click()
     page.get_by_role("link", name="New list").click()
     page.get_by_role("textbox", name="Name", exact=True).fill(name)
     page.get_by_role("button", name="Create list").click()

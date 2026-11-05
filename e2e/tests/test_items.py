@@ -39,6 +39,9 @@ def tiny_png() -> bytes:
 
 
 def create_list(page: Page, name: str, share_with: str | None = None) -> str:
+    # "New list" lives on the list of lists, and signing in no longer lands
+    # there - the dashboard does (R44). The sidebar is always present.
+    page.get_by_role("link", name="Lists").first.click()
     page.get_by_role("link", name="New list").click()
     page.get_by_role("textbox", name="Name", exact=True).fill(name)
     if share_with:

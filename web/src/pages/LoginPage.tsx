@@ -41,7 +41,7 @@ export function LoginPage() {
     // Back to wherever they were headed - a shared link, usually (adr/0008).
     const from = (location.state as { from?: { pathname: string; search: string } } | null)
       ?.from
-    return <Navigate to={from ? `${from.pathname}${from.search}` : '/lists'} replace />
+    return <Navigate to={from ? `${from.pathname}${from.search}` : '/dashboard'} replace />
   }
 
   async function attempt(candidate: LoginUser, secret?: string) {

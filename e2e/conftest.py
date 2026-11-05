@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import secrets
 import time
+import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 
@@ -211,7 +212,13 @@ def ui_sign_in(page, base_url: str, member: DemoMember) -> None:
     if member.password is not None:
         page.get_by_label("Password").fill(member.password)
         page.get_by_role("button", name="Sign in", exact=True).click()
-    expect(page.get_by_role("heading", name="Lists")).to_be_visible()
+    # Asserts being signed in, not being anywhere in particular. A fresh
+    # sign-in lands on the dashboard (R44), but ProtectedRoute remembers the
+    # screen a member was sent away from - so signing in again resumes there,
+    # and waiting on one page's heading makes this fixture wrong for half its
+    # callers. Leaving the sign-in screen is the thing every caller means.
+    expect(page.get_by_role("heading", name="Who's signing in?")).to_have_count(0)
+    expect(page).not_to_have_url(re.compile(r"/login"))
 
 
 @dataclass

@@ -6,6 +6,10 @@ import { AdminPage } from './pages/AdminPage'
 import { AllListsPage } from './pages/AllListsPage'
 import { CreateListPage } from './pages/CreateListPage'
 import { ActivityTab, ItemsTab, ListDetailPage, RecurringTab } from './pages/ListDetailPage'
+import { DashboardPage } from './dashboard/DashboardPage'
+import { MonthView } from './dashboard/MonthView'
+import { MyDayView } from './dashboard/MyDayView'
+import { WeekView } from './dashboard/WeekView'
 import { ListSettingsPage } from './pages/ListSettingsPage'
 import { LoginPage } from './pages/LoginPage'
 import { ProfilePage } from './pages/ProfilePage'
@@ -25,6 +29,14 @@ export function App() {
           </ProtectedRoute>
         }
       >
+        {/* The landing page (R44). The ranges are routes, so each is
+            deep-linkable and the back button behaves. */}
+        <Route path="/dashboard" element={<DashboardPage />}>
+          <Route index element={<Navigate to="/dashboard/day" replace />} />
+          <Route path="day" element={<MyDayView />} />
+          <Route path="week" element={<WeekView />} />
+          <Route path="month" element={<MonthView />} />
+        </Route>
         <Route path="/lists" element={<AllListsPage />} />
         <Route path="/lists/new" element={<CreateListPage />} />
         {/* The tabs are routes, so each way of looking at a list has its own
@@ -50,7 +62,7 @@ export function App() {
         />
       </Route>
 
-      <Route path="*" element={<Navigate to="/lists" replace />} />
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   )
 }
