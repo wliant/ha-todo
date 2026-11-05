@@ -98,6 +98,7 @@ describe('ItemsSection', () => {
       username: 'ana',
       displayName: 'Ana',
       role: 'MEMBER',
+      timezone: 'Asia/Singapore',
       avatarImageId: null,
     })
   })

@@ -13,6 +13,7 @@ import {
   monthGrid,
   monthRange,
   now,
+  windowOf,
 } from './calendar'
 import { useScheduled } from './queries'
 
@@ -25,19 +26,15 @@ const COLUMN_HEADS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
  * months and make the page jump. Descriptions only, as in the week view.
  */
 export function MonthView() {
-  const { scope, open } = useDashboardView()
+  const { scope, zone, open } = useDashboardView()
   // Once per mount: a range snapped to midnight is stable through a day, and
   // computing it during every render would make the query key - and therefore
   // the refetch - depend on when React happened to re-render.
-  const today = useMemo(() => now(), [])
-  const range = useMemo(() => monthRange(today), [today])
-  const { data, isPending } = useScheduled(
-    range.from.toISOString(),
-    range.to.toISOString(),
-    scope,
-  )
+  const today = useMemo(() => now(zone), [zone])
+  const window = useMemo(() => windowOf(monthRange(today), zone), [today, zone])
+  const { data, isPending } = useScheduled(window.from, window.to, scope)
   const grid = monthGrid(today)
-  const grouped = byDay(data?.items ?? [], (item) => item.dueAt)
+  const grouped = byDay(data?.items ?? [], (item) => item.dueAt, zone)
 
   return (
     <Stack spacing={1.5}>

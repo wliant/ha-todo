@@ -101,6 +101,7 @@ describe('LoginPage', () => {
       username: 'ben',
       displayName: 'Ben',
       role: 'MEMBER',
+      timezone: 'Asia/Singapore',
     avatarImageId: null,
     })
 
@@ -120,6 +121,7 @@ describe('LoginPage', () => {
         username: 'ana',
         displayName: 'Ana',
         role: 'MEMBER',
+        timezone: 'Asia/Singapore',
     avatarImageId: null,
       })
 

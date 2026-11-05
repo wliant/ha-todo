@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   addDays,
+  civilIn,
+  instantOf,
+  windowOf,
   addMonths,
   byDay,
   dayKey,
@@ -95,18 +98,74 @@ describe('calendar', () => {
     expect(dayKey(month.to)).toBe(dayKey(addDays(grid[41], 1)))
   })
 
-  it('groups by the local day, not by UTC’s', () => {
-    // An item due at 00:30 local in a positive offset is the previous day in
-    // UTC, so slicing an ISO string would file it under the wrong column.
-    const justAfterMidnight = new Date(2026, 10, 5, 0, 30)
-    const grouped = byDay([{ dueAt: justAfterMidnight.toISOString() }], (item) => item.dueAt)
+  it('groups by the household’s day, not by UTC’s and not by the device’s', () => {
+    // 00:30 on the 5th in Singapore is still the 4th in UTC, so slicing an ISO
+    // string files it under the wrong column - and so does anything that reads
+    // the machine running this test (adr/0036).
+    const grouped = byDay(
+      [{ dueAt: '2026-11-04T16:30:00.000Z' }],
+      (item) => item.dueAt,
+      'Asia/Singapore',
+    )
 
     expect([...grouped.keys()]).toEqual(['2026-11-05'])
   })
 
+  it('groups the same instant into a different day in a different zone', () => {
+    const grouped = byDay([{ dueAt: '2026-11-04T16:30:00.000Z' }], (item) => item.dueAt, 'UTC')
+
+    expect([...grouped.keys()]).toEqual(['2026-11-04'])
+  })
+
   it('leaves undated items out of the grouping entirely', () => {
-    const grouped = byDay([{ dueAt: null }], (item) => item.dueAt)
+    const grouped = byDay([{ dueAt: null }], (item) => item.dueAt, 'Asia/Singapore')
 
     expect(grouped.size).toBe(0)
+  })
+
+  describe('the household’s zone', () => {
+    it('reads an instant as the household’s wall clock', () => {
+      const civil = civilIn(new Date('2026-11-04T16:30:00.000Z'), 'Asia/Singapore')
+
+      expect(dayKey(civil)).toBe('2026-11-05')
+      expect(civil.getHours()).toBe(0)
+      expect(civil.getMinutes()).toBe(30)
+    })
+
+    it('reads midnight as hour zero, not as hour 24', () => {
+      // Some locales render the start of a day as 24:00 of the day before, and
+      // a formatter that does puts every midnight event on the wrong date.
+      const civil = civilIn(new Date('2026-11-04T16:00:00.000Z'), 'Asia/Singapore')
+
+      expect(civil.getHours()).toBe(0)
+      expect(dayKey(civil)).toBe('2026-11-05')
+    })
+
+    it('turns a household civil time back into the instant it happened at', () => {
+      const instant = instantOf(new Date(2026, 10, 5, 0, 30), 'Asia/Singapore')
+
+      expect(instant.toISOString()).toBe('2026-11-04T16:30:00.000Z')
+    })
+
+    it('round-trips an instant through the household’s clock', () => {
+      const original = new Date('2026-06-15T09:17:00.000Z')
+
+      expect(instantOf(civilIn(original, 'Asia/Singapore'), 'Asia/Singapore')).toEqual(original)
+    })
+
+    it('survives a zone that does observe daylight saving', () => {
+      // London is +01:00 in July, so the correction pass is what makes this
+      // right rather than an hour out.
+      const instant = instantOf(new Date(2026, 6, 15, 12, 0), 'Europe/London')
+
+      expect(instant.toISOString()).toBe('2026-07-15T11:00:00.000Z')
+    })
+
+    it('asks the API for the household’s midnight, not the device’s', () => {
+      const window = windowOf(dayRange(new Date(2026, 10, 5)), 'Asia/Singapore')
+
+      expect(window.from).toBe('2026-11-04T16:00:00.000Z')
+      expect(window.to).toBe('2026-11-05T16:00:00.000Z')
+    })
   })
 })

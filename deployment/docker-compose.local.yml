@@ -30,8 +30,18 @@ services:
       RECURRENCE_ENABLED: ${RECURRENCE_ENABLED:-true}
       RECURRENCE_CRON: ${RECURRENCE_CRON:-0 5 * * * *}
       RECURRENCE_CATCH_UP_DAYS: ${RECURRENCE_CATCH_UP_DAYS:-7}
-      # Without this, a rule's time of day would mean 7pm UTC in the container.
+      # The household's zone, and so the whole product's (docs/adr/0036).
+      # Without it, a rule's time of day would mean 7pm UTC in the container and
+      # My day would bucket chores into the wrong evening.
       APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Singapore}
+      # Calendar feeds. Polled every five minutes locally rather than every
+      # twenty, so a developer can watch a feed refresh.
+      CALENDAR_SYNC_ENABLED: ${CALENDAR_SYNC_ENABLED:-true}
+      CALENDAR_SYNC_CRON: ${CALENDAR_SYNC_CRON:-0 */5 * * * *}
+      # Local only: lets a fixture .ics be served from this machine. dev and
+      # prod leave it false, which is what stops a pasted address reaching the
+      # registry on the LAN - see docs/adr/0035.
+      CALENDAR_ALLOW_PRIVATE_HOSTS: ${CALENDAR_ALLOW_PRIVATE_HOSTS:-true}
     # Bound to loopback, not the LAN. The browser always talks to the web
     # service (same-origin /api); this port exists only so `pnpm dev` can proxy
     # to it and so you can curl the API directly while debugging.

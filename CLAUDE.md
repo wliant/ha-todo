@@ -68,6 +68,22 @@ revoked **by a list's owner** (0005 R49 settles only the reopen path), and wheth
 else has it open. Where a completed item goes is **answered** by 0005 R38 — it stays in place, struck
 through, with its detail and completion note one tap away.
 
+**R62-R72 are specified and not yet built.** `docs/requirements/0007` and `docs/design/0007` add
+**calendar feeds**: a member subscribes somebody else's calendar by its iCalendar URL (Google's secret
+iCal address, Outlook's published link), grants other members access to it per feed, and its events appear
+on My day *merged* with the chores. Nothing here authors an event, there is no Calendar menu, and there is
+no OAuth - `docs/adr/0034` records why a read-only `.ics` subscription beats two application
+registrations for a household of four, and what it costs (the copy lags its source by up to hours).
+`docs/adr/0035` makes the feed address a **write-only** secret - no response record has a `url` component
+at all - and puts every fetch behind an egress guard, because the app container can otherwise be made to
+GET the insecure registry on `192.168.1.248:5000` and hand the response back in the preview screen.
+`docs/adr/0036` gives the household **one timezone**: `app.timezone` (`APP_TIMEZONE`, now defaulting to
+`Asia/Singapore`) replaces `app.recurrence.zone`, and it governs the day bucketing of items too - one
+merged grid cannot have two definitions of Thursday, so My day stops following the device's zone. Two
+traps are written down there: an all-day event is a **date**, never an instant (a parser that resolves it
+against a UTC JVM default puts the school play on the previous evening), and `occurs_on` cannot be a
+generated column because `AT TIME ZONE` is STABLE rather than IMMUTABLE and Postgres refuses it.
+
 Keep this file true: when a decision here turns out wrong, update it in the same change.
 
 ## What this product is

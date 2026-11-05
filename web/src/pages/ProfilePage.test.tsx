@@ -16,6 +16,7 @@ function renderProfile(role: UserRole = 'MEMBER') {
     username: 'ana',
     displayName: 'Ana',
     role,
+    timezone: 'Asia/Singapore',
     avatarImageId: null,
   })
   const queryClient = new QueryClient({

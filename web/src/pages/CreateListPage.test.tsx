@@ -15,6 +15,7 @@ function renderPage() {
     username: 'ana',
     displayName: 'Ana',
     role: 'MEMBER',
+    timezone: 'Asia/Singapore',
     avatarImageId: null,
   })
   vi.spyOn(listsApi, 'fetchMembers').mockResolvedValue([

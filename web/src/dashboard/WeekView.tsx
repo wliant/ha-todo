@@ -5,7 +5,7 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { DashboardItemChip } from './DashboardItemChip'
 import { useDashboardView } from './dashboardView'
-import { byDay, dayKey, isSameDay, now, weekDays, weekRange } from './calendar'
+import { byDay, dayKey, isSameDay, now, weekDays, weekRange, windowOf } from './calendar'
 import { useScheduled } from './queries'
 
 /**
@@ -17,19 +17,15 @@ import { useScheduled } from './queries'
  * overflow lives here.
  */
 export function WeekView() {
-  const { scope, open } = useDashboardView()
+  const { scope, zone, open } = useDashboardView()
   // Once per mount: a range snapped to midnight is stable through a day, and
   // computing it during every render would make the query key - and therefore
   // the refetch - depend on when React happened to re-render.
-  const today = useMemo(() => now(), [])
-  const range = useMemo(() => weekRange(today), [today])
-  const { data, isPending } = useScheduled(
-    range.from.toISOString(),
-    range.to.toISOString(),
-    scope,
-  )
+  const today = useMemo(() => now(zone), [zone])
+  const window = useMemo(() => windowOf(weekRange(today), zone), [today, zone])
+  const { data, isPending } = useScheduled(window.from, window.to, scope)
   const days = weekDays(today)
-  const grouped = byDay(data?.items ?? [], (item) => item.dueAt)
+  const grouped = byDay(data?.items ?? [], (item) => item.dueAt, zone)
 
   return (
     <Stack spacing={1.5}>

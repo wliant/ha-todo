@@ -13,6 +13,7 @@ const ana: CurrentUser = {
   username: 'ana',
   displayName: 'Ana',
   role: 'MEMBER',
+  timezone: 'Asia/Singapore',
   avatarImageId: null,
 }
 

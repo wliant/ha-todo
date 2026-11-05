@@ -9,19 +9,15 @@ import Typography from '@mui/material/Typography'
 import { MemberAvatar } from '../app/MemberAvatar'
 import { ListIcon } from '../lists/listIcons'
 import { useDashboardView } from './dashboardView'
-import { dayRange, now } from './calendar'
+import { dayRange, now, windowOf } from './calendar'
 import { useScheduled } from './queries'
 
 /** What today holds, in full rows - this is the view a member acts from. */
 export function MyDayView() {
-  const { scope, open } = useDashboardView()
+  const { scope, zone, open } = useDashboardView()
   // Once per mount; see WeekView for why this is not computed during render.
-  const range = useMemo(() => dayRange(now()), [])
-  const { data, isPending } = useScheduled(
-    range.from.toISOString(),
-    range.to.toISOString(),
-    scope,
-  )
+  const window = useMemo(() => windowOf(dayRange(now(zone)), zone), [zone])
+  const { data, isPending } = useScheduled(window.from, window.to, scope)
 
   return (
     <Stack spacing={1.5}>

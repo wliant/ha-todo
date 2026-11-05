@@ -12,7 +12,8 @@ import { DashboardItemDialog } from './DashboardItemDialog'
 import { ViewContext } from './dashboardView'
 import { UndatedPanel } from './UndatedPanel'
 import { useScheduled, useUndated } from './queries'
-import { monthRange, now } from './calendar'
+import { useHouseholdZone } from '../app/useHouseholdZone'
+import { monthRange, now, windowOf } from './calendar'
 
 /**
  * What a member needs to do, across every list they can see (R44, R45).
@@ -26,6 +27,9 @@ import { monthRange, now } from './calendar'
  */
 export function DashboardPage() {
   const { pathname } = useLocation()
+  // The one place this page asks what zone it is in; every view reads it from
+  // the context rather than calling the hook again.
+  const zone = useHouseholdZone()
   const [params, setParams] = useSearchParams()
   const scope: DashboardScope = params.get('scope') === 'mine' ? 'mine' : 'all'
   const tab = pathname.endsWith('/week') ? 'week' : pathname.endsWith('/month') ? 'month' : 'day'
@@ -55,7 +59,7 @@ export function DashboardPage() {
   const openId = params.get('item')
 
   return (
-    <ViewContext.Provider value={{ scope, open }}>
+    <ViewContext.Provider value={{ scope, zone, open }}>
       <Stack spacing={2.5}>
         <Stack
           direction={{ xs: 'column', sm: 'row' }}
@@ -101,7 +105,7 @@ export function DashboardPage() {
         </Stack>
       </Stack>
 
-      {openId && <OpenItem id={openId} scope={scope} onClose={close} />}
+      {openId && <OpenItem id={openId} scope={scope} zone={zone} onClose={close} />}
     </ViewContext.Provider>
   )
 }
@@ -117,21 +121,19 @@ export function DashboardPage() {
 function OpenItem({
   id,
   scope,
+  zone,
   onClose,
 }: {
   id: string
   scope: DashboardScope
+  zone: string
   onClose: () => void
 }) {
   // Once per mount. Every range here snaps to a midnight, so recomputing would
   // usually give the same value - but "usually" is how phase C's activity
   // window ended up as a query key that moved under its own refetch.
-  const month = useMemo(() => monthRange(now()), [])
-  const { data: scheduled } = useScheduled(
-    month.from.toISOString(),
-    month.to.toISOString(),
-    scope,
-  )
+  const month = useMemo(() => windowOf(monthRange(now(zone)), zone), [zone])
+  const { data: scheduled } = useScheduled(month.from, month.to, scope)
   const { data: undated } = useUndated(scope)
 
   const item =
