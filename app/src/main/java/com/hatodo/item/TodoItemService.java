@@ -87,9 +87,9 @@ public class TodoItemService {
 
         TodoItem item = new TodoItem(list, request.description().trim(), me,
                 items.highestPosition(listId) + 1);
-        apply(item, list, request);
+        apply(item, list, request, me);
         TodoItem saved = items.save(item);
-        claimDetailImages(saved, me.getId());
+        claimImages(saved, me.getId());
 
         lists.recordInteraction(list, me);
         return ItemResponse.of(saved);
@@ -102,8 +102,8 @@ public class TodoItemService {
         AppUser me = requireCurrentUser();
 
         item.setDescription(request.description().trim());
-        apply(item, item.getList(), request);
-        claimDetailImages(item, me.getId());
+        apply(item, item.getList(), request, me);
+        claimImages(item, me.getId());
 
         lists.recordInteraction(item.getList(), me);
         return ItemResponse.of(item);
@@ -136,6 +136,10 @@ public class TodoItemService {
      * <p>The points are computed here, from the configuration as it stands at
      * this moment, and written onto the item. They go to whoever completed it -
      * never the assignee - which is the whole point of points (R23, adr/0012).
+     *
+     * <p>Reopening keeps what the completion recorded and takes only the points
+     * back (R49, adr/0024), so the note stays in the database and stops being
+     * returned.
      */
     @Transactional
     public ItemResponse setCompleted(UUID itemId, CompletionRequest request) {
@@ -144,9 +148,17 @@ public class TodoItemService {
         AppUser me = requireCurrentUser();
 
         if (request.completed()) {
-            item.completeBy(me, pointsFor(item));
+            item.completeBy(me, pointsFor(item), sanitizer.sanitize(request.noteHtml()));
+            // The note's pictures need handing to the item too, or every member
+            // but the uploader sees a broken image (adr/0023).
+            claimImages(item, me.getId());
         } else {
-            item.reopen();
+            if (request.noteHtml() != null) {
+                // Refused rather than dropped: the CHECK would make this a 500,
+                // and a silently discarded field hides a client bug.
+                throw new InvalidCompletionException("A note belongs on a completed item.");
+            }
+            item.reopen(me);
         }
 
         lists.recordInteraction(item.getList(), me);
@@ -169,7 +181,9 @@ public class TodoItemService {
     @Transactional
     public void unassignEverythingFrom(UUID listId, UUID userId) {
         for (TodoItem item : items.findAssignedTo(listId, userId)) {
-            item.setAssignee(null);
+            // assignTo clears assigned_by with the assignee, so a later grant
+            // cannot leave a claim behind pointing at nobody.
+            item.assignTo(null, null);
         }
     }
 
@@ -179,7 +193,7 @@ public class TodoItemService {
      * Writes the configured fields onto the item, and refuses anything the
      * list did not ask for or did ask for and did not get.
      */
-    private void apply(TodoItem item, TodoList list, SaveItemRequest request) {
+    private void apply(TodoItem item, TodoList list, SaveItemRequest request, AppUser actor) {
         Map<FieldKind, ListField> singletons = new HashMap<>();
         Map<UUID, ListField> costs = new HashMap<>();
         for (ListField field : fields.findForList(list.getId())) {
@@ -191,7 +205,7 @@ public class TodoItemService {
         }
 
         applyDetail(item, singletons.get(FieldKind.DETAIL), request);
-        applyAssignee(item, list, singletons.get(FieldKind.ASSIGNEE), request);
+        applyAssignee(item, list, singletons.get(FieldKind.ASSIGNEE), request, actor);
         applyDueAt(item, singletons.get(FieldKind.DUE_AT), request);
         applyCosts(item, costs, request);
     }
@@ -214,16 +228,16 @@ public class TodoItemService {
     }
 
     private void applyAssignee(TodoItem item, TodoList list, ListField field,
-                               SaveItemRequest request) {
+                               SaveItemRequest request, AppUser actor) {
         if (field == null) {
-            item.setAssignee(null);
+            item.assignTo(null, actor);
             return;
         }
         if (request.assigneeId() == null) {
             if (field.isRequired()) {
                 throw new MissingRequiredFieldException("This list needs every item assigned.");
             }
-            item.setAssignee(null);
+            item.assignTo(null, actor);
             return;
         }
 
@@ -232,8 +246,10 @@ public class TodoItemService {
         if (!access.exists(list.getId(), request.assigneeId())) {
             throw new AssigneeWithoutAccessException();
         }
-        item.setAssignee(users.findById(request.assigneeId())
-                .orElseThrow(AssigneeWithoutAccessException::new));
+        // Recorded with whoever chose, so "they claimed it themselves" survives
+        // a page load and reads the same for everybody (R47).
+        item.assignTo(users.findById(request.assigneeId())
+                .orElseThrow(AssigneeWithoutAccessException::new), actor);
     }
 
     private void applyDueAt(TodoItem item, ListField field, SaveItemRequest request) {
@@ -324,23 +340,28 @@ public class TodoItemService {
     }
 
     /**
-     * Hands the pictures this item's detail refers to over to the item, so
-     * from now on its list decides who may read them.
+     * Hands the pictures this item's detail and completion note refer to over
+     * to the item, so from now on its list decides who may read them.
      *
      * <p>Only pictures this member uploaded, and only ones nobody has claimed
      * yet: an id alone must not be enough to drag somebody else's picture onto
      * a list they cannot see. Anything left unclaimed is the orphan adr/0013
      * tolerates.
      */
-    private void claimDetailImages(TodoItem item, UUID uploaderId) {
-        String detail = item.getDetailHtml();
-        if (detail == null) {
-            return;
-        }
+    private void claimImages(TodoItem item, UUID uploaderId) {
         Set<UUID> referenced = new java.util.HashSet<>();
-        Matcher matcher = DETAIL_IMAGE.matcher(detail);
-        while (matcher.find()) {
-            referenced.add(UUID.fromString(matcher.group(1)));
+        // Both rich-text bodies, because stored_image keys a claim on the item
+        // alone and does not know which field referred to the picture. Scanning
+        // only the detail leaves the note's pictures unclaimed, and therefore
+        // readable by nobody but whoever uploaded them (adr/0023).
+        for (String html : new String[] {item.getDetailHtml(), item.getCompletionNoteHtml()}) {
+            if (html == null) {
+                continue;
+            }
+            Matcher matcher = DETAIL_IMAGE.matcher(html);
+            while (matcher.find()) {
+                referenced.add(UUID.fromString(matcher.group(1)));
+            }
         }
 
         for (UUID imageId : referenced) {

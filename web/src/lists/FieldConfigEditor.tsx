@@ -15,8 +15,10 @@ import { OPTIONAL_KINDS, emptyField, newCostField } from './fieldConfig'
  * What a list's items will be asked for (R21).
  *
  * Enabling a field is the field existing; there is no separate flag, which is
- * also how the server stores it. Description is shown as a locked row rather
- * than hidden, so the shape of an item is complete on the screen.
+ * also how the server stores it. Description and the due date are shown as
+ * locked rows rather than hidden, so the shape of an item is complete on the
+ * screen - every list declares both (adr/0022), and the due date's only
+ * setting is whether it is required.
  */
 export function FieldConfigEditor({
   fields,
@@ -26,6 +28,7 @@ export function FieldConfigEditor({
   onChange: (fields: ListField[]) => void
 }) {
   const costs = fields.filter((field) => field.kind === 'COST')
+  const dueAt = fields.find((field) => field.kind === 'DUE_AT')
 
   function replaceKind(kind: FieldKind, next: ListField | null) {
     const without = fields.filter((field) => field.kind !== kind)
@@ -62,6 +65,36 @@ export function FieldConfigEditor({
           <Typography variant="body2" color="text.secondary" sx={{ pl: 6 }}>
             Always on, always required.
           </Typography>
+        </Stack>
+      </Paper>
+
+      <Paper variant="outlined" sx={{ p: 2 }}>
+        <Stack spacing={1}>
+          <FormControlLabel
+            control={<Switch checked disabled />}
+            label="Due date and time"
+            // Not removable: the dashboard reads dates across every list, and
+            // a list that dropped the field would be silently missing from it.
+            slotProps={{ typography: { color: 'text.primary' } }}
+          />
+          <Typography variant="body2" color="text.secondary" sx={{ pl: 6 }}>
+            Always on. Leave it blank on an item unless you make it required.
+          </Typography>
+          <FormControlLabel
+            sx={{ pl: 5 }}
+            control={
+              <Checkbox
+                checked={dueAt?.required ?? false}
+                onChange={(event) =>
+                  replaceKind('DUE_AT', {
+                    ...(dueAt ?? emptyField('DUE_AT')),
+                    required: event.target.checked,
+                  })
+                }
+              />
+            }
+            label="Due date and time is required"
+          />
         </Stack>
       </Paper>
 

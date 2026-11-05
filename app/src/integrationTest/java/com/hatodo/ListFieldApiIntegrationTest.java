@@ -5,7 +5,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -21,6 +25,9 @@ import org.springframework.http.ResponseEntity;
  */
 @SuppressWarnings({"unchecked", "rawtypes"})
 class ListFieldApiIntegrationTest extends ApiIntegrationTest {
+
+    @Autowired
+    private JdbcTemplate jdbc;
 
     private record Owner(UUID id, Session session) {}
 
@@ -66,14 +73,18 @@ class ListFieldApiIntegrationTest extends ApiIntegrationTest {
     }
 
     @Test
-    void everyNewListAlreadyHasARequiredDescription() {
+    void everyNewListAlreadyHasARequiredDescriptionAndAnOptionalDueDate() {
+        // Both are declared on every list (R21, R40). The due date is optional
+        // to fill in, which is the difference between the two (adr/0022).
         Owner ana = givenOwner("fresh");
         String listId = (String) newList(ana).get("id");
 
         List<Map<String, Object>> fields = getFields(ana, listId);
 
-        assertThat(fields).hasSize(1);
-        assertThat(fields.get(0)).containsEntry("kind", "DESCRIPTION").containsEntry("required", true);
+        assertThat(fields).extracting(field -> field.get("kind"))
+                .containsExactly("DESCRIPTION", "DUE_AT");
+        assertThat(fields.get(0)).containsEntry("required", true);
+        assertThat(fields.get(1)).containsEntry("required", false);
     }
 
     @Test
@@ -121,8 +132,12 @@ class ListFieldApiIntegrationTest extends ApiIntegrationTest {
 
         assertThat(saved.getStatusCode()).isEqualTo(HttpStatus.OK);
         List<Map<String, Object>> fields = getFields(ana, listId);
+        // The due date is appended because the request omitted it, so the costs
+        // keep the positions the owner gave them.
+        assertThat(fields).extracting(field -> field.get("kind"))
+                .containsExactly("DESCRIPTION", "COST", "COST", "DUE_AT");
         assertThat(fields).extracting(field -> field.get("label"))
-                .containsExactly(null, "Time", "Money");
+                .containsExactly(null, "Time", "Money", null);
         assertThat((List<Map<String, Object>>) fields.get(1).get("choices"))
                 .extracting(choice -> choice.get("label"))
                 .containsExactly("5 min", "30 min", "60 min");
@@ -152,7 +167,9 @@ class ListFieldApiIntegrationTest extends ApiIntegrationTest {
                 "[{\"kind\":\"COST\",\"label\":\"Time\",\"costMode\":\"FIXED\",\"choices\":[]}]");
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(getFields(ana, listId)).hasSize(1);
+        // Untouched: still just the two fields every list is created with.
+        assertThat(getFields(ana, listId)).extracting(field -> field.get("kind"))
+                .containsExactly("DESCRIPTION", "DUE_AT");
     }
 
     @Test
@@ -267,11 +284,42 @@ class ListFieldApiIntegrationTest extends ApiIntegrationTest {
         Owner ana = givenOwner("dropper");
         String listId = (String) newList(ana).get("id");
         putFields(ana, listId, versionOf(ana, listId),
-                "[{\"kind\":\"DESCRIPTION\",\"required\":true},{\"kind\":\"DUE_AT\"}]");
+                "[{\"kind\":\"DESCRIPTION\",\"required\":true},{\"kind\":\"ASSIGNEE\"}]");
 
         putFields(ana, listId, versionOf(ana, listId), "[{\"kind\":\"DESCRIPTION\",\"required\":true}]");
 
-        assertThat(getFields(ana, listId)).hasSize(1);
+        assertThat(getFields(ana, listId)).extracting(field -> field.get("kind"))
+                .containsExactly("DESCRIPTION", "DUE_AT");
+    }
+
+    @Test
+    void keepsTheDueDateEvenWhenTheClientTriesToDropIt() {
+        // R40: the field is optional to fill in and impossible to remove,
+        // because the dashboard reads dates across every list (adr/0022). A
+        // request that omits it gets it back rather than an error - "not
+        // mentioned" already means "unchanged" for a singleton kind.
+        Owner ana = givenOwner("due-dropper");
+        String listId = (String) newList(ana).get("id");
+
+        ResponseEntity<String> response = putFields(ana, listId, versionOf(ana, listId),
+                "[{\"kind\":\"DESCRIPTION\",\"required\":true}]");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(getFields(ana, listId)).extracting(field -> field.get("kind"))
+                .containsExactly("DESCRIPTION", "DUE_AT");
+    }
+
+    @Test
+    void lettingTheOwnerInsistOnADueDate() {
+        Owner ana = givenOwner("due-required");
+        String listId = (String) newList(ana).get("id");
+
+        putFields(ana, listId, versionOf(ana, listId),
+                "[{\"kind\":\"DESCRIPTION\",\"required\":true},"
+                        + "{\"kind\":\"DUE_AT\",\"required\":true}]");
+
+        assertThat(getFields(ana, listId).get(1))
+                .containsEntry("kind", "DUE_AT").containsEntry("required", true);
     }
 
     @Test
@@ -345,5 +393,52 @@ class ListFieldApiIntegrationTest extends ApiIntegrationTest {
         assertThat(rest.exchange("/api/lists/" + listId + "/fields", HttpMethod.GET,
                 new HttpEntity<>(headersFor(stranger.session())), String.class).getStatusCode())
                 .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void theDueDateBackfillAppendsWithoutCollidingOnPosition() throws Exception {
+        // V909 runs over lists that already exist, and ux_list_field_position
+        // is UNIQUE (list_id, position) - deferred, but deferred is not absent,
+        // so a constant position would collide at commit on most real lists.
+        //
+        // The migration's own statement is executed here rather than a copy of
+        // it, so this cannot drift from what actually ships. It is idempotent
+        // by its WHERE NOT EXISTS, which is also what makes re-running it safe.
+        Owner ana = givenOwner("backfiller");
+        String listId = (String) newList(ana).get("id");
+        putFields(ana, listId, versionOf(ana, listId), """
+                [{"kind":"DESCRIPTION","required":true},
+                 {"kind":"DETAIL"},
+                 {"kind":"ASSIGNEE"},
+                 {"kind":"COST","label":"Time","costMode":"NUMERIC","costUnitLabel":"hour"}]
+                """);
+
+        // Put the list back into its pre-R40 shape: four fields at 0..3 and no
+        // due date at all, which is what a list in dev looks like today.
+        jdbc.update("DELETE FROM list_field WHERE list_id = ?::uuid AND kind = 'DUE_AT'", listId);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM list_field WHERE list_id = ?::uuid", Integer.class, listId))
+                .isEqualTo(4);
+
+        jdbc.execute(backfillStatement());
+
+        assertThat(getFields(ana, listId)).extracting(field -> field.get("kind"))
+                .containsExactly("DESCRIPTION", "DETAIL", "ASSIGNEE", "COST", "DUE_AT");
+        assertThat(jdbc.queryForObject(
+                "SELECT position FROM list_field WHERE list_id = ?::uuid AND kind = 'DUE_AT'",
+                Integer.class, listId)).isEqualTo(4);
+
+        // Idempotent: the deploy may apply it to a database that already has it.
+        jdbc.execute(backfillStatement());
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM list_field WHERE list_id = ?::uuid AND kind = 'DUE_AT'",
+                Integer.class, listId)).isEqualTo(1);
+    }
+
+    private String backfillStatement() throws Exception {
+        try (var in = new ClassPathResource("db/migration/V909__due_at_always_declared.sql")
+                .getInputStream()) {
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
     }
 }

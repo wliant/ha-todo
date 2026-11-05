@@ -8,6 +8,8 @@ the server merges on.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -34,7 +36,7 @@ def test_a_list_declares_two_costs_and_remembers_them(
     page.goto(f"{base_url}/lists/{list_id}/settings")
     page.get_by_role("switch", name="Assignee").click()
     page.get_by_role("checkbox", name="Assignee is required").click()
-    page.get_by_role("switch", name="Due date and time").click()
+    # No switch for the due date any more: every list declares it (R40).
 
     # A chore costs both time and money - different questions, different units.
     page.get_by_role("button", name="Add a cost").click()
@@ -114,3 +116,37 @@ def test_renaming_a_choice_keeps_the_rest_of_the_cost_intact(
     expect(choices.nth(0)).to_have_value("Five minutes")
     expect(choices.nth(1)).to_have_value("30 min")
     expect(choices).to_have_count(3)
+
+
+@pytest.mark.fields
+def test_a_brand_new_list_already_offers_a_due_date(
+    page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
+) -> None:
+    """R40: every list declares a due date, and nobody has to switch it on.
+
+    The dashboard reads dates across every list the member can see, so a list
+    that could omit the field would be silently missing from it (adr/0022).
+    Asserted from the member's side: the input is simply there on a list where
+    nothing was configured at all.
+    """
+    name = test_data.name("Dated")
+    cleanup_lists(name)
+    ui_sign_in(page, base_url, demo_member)
+    list_id = create_list(page, name)
+
+    # Nothing configured, straight to adding an item.
+    page.get_by_role("button", name="Add item").click()
+    page.get_by_role("textbox", name="Description").fill("Pay the rent")
+    page.get_by_role("textbox", name="Due").fill("2026-12-01T09:00")
+    page.get_by_role("button", name="Save").click()
+
+    expect(page.get_by_text("Pay the rent")).to_be_visible()
+    # Matched loosely: the chip is formatted by Intl in the browser's locale,
+    # so the month's spelling is not ours to pin down.
+    expect(page.get_by_text(re.compile(r"Due\b.*Dec.*1"))).to_be_visible()
+
+    # And it cannot be switched off, only insisted upon.
+    page.goto(f"{base_url}/lists/{list_id}/settings")
+    due_date = page.get_by_role("switch", name="Due date and time")
+    expect(due_date).to_be_checked()
+    expect(due_date).to_be_disabled()

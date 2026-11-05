@@ -1,15 +1,19 @@
 package com.hatodo;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * Items, against real Postgres.
@@ -20,6 +24,10 @@ import org.springframework.http.ResponseEntity;
  */
 @SuppressWarnings({"unchecked", "rawtypes"})
 class ItemApiIntegrationTest extends ApiIntegrationTest {
+
+    /** For the handful of rules only the database holds. */
+    @Autowired
+    private JdbcTemplate jdbc;
 
     private record Member(UUID id, Session session) {}
 
@@ -78,6 +86,15 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
                                              boolean completed) {
         return rest.exchange("/api/items/" + itemId + "/completion", HttpMethod.PUT,
                 new HttpEntity<>("{\"version\":%d,\"completed\":%s}".formatted(version, completed),
+                        headersFor(member.session())), Map.class);
+    }
+
+    private ResponseEntity<Map> setCompleted(Member member, String itemId, long version,
+                                             boolean completed, String noteHtml) {
+        return rest.exchange("/api/items/" + itemId + "/completion", HttpMethod.PUT,
+                new HttpEntity<>("{\"version\":%d,\"completed\":%s,\"noteHtml\":%s}"
+                        .formatted(version, completed,
+                                noteHtml == null ? "null" : "\"" + noteHtml + "\""),
                         headersFor(member.session())), Map.class);
     }
 
@@ -294,8 +311,12 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
                 {"description":"Plain","assigneeId":"%s","dueAt":"2026-12-01T10:00:00Z"}
                 """.formatted(ana.id())).getBody();
 
+        // The list declares no assignee, so the answer is dropped rather than
+        // stored - it would reappear if the field were ever switched on.
         assertThat(created.get("assignee")).isNull();
-        assertThat(created.get("dueAt")).isNull();
+        // The due date is a different matter since R40: every list declares it,
+        // so an answer to it is always kept (adr/0022).
+        assertThat(created.get("dueAt")).isEqualTo("2026-12-01T10:00:00Z");
     }
 
     @Test
@@ -366,5 +387,187 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
         assertThat(rest.exchange("/api/items/" + created.get("id"), HttpMethod.GET,
                 new HttpEntity<>(headersFor(ana.session())), Map.class).getStatusCode())
                 .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void completingWithANoteRecordsHowItWent() {
+        Member ana = givenMember("noting");
+        String listId = newList(ana);
+        Map created = addItem(ana, listId, "{\"description\":\"Fix the tap\"}").getBody();
+
+        Map completed = setCompleted(ana, (String) created.get("id"),
+                ((Number) created.get("version")).longValue(), true,
+                "<ul><li>Washer was perished</li></ul>").getBody();
+
+        assertThat(completed.get("completed")).isEqualTo(true);
+        assertThat(completed.get("completionNoteHtml"))
+                .isEqualTo("<ul><li>Washer was perished</li></ul>");
+        assertThat((Map<String, Object>) completed.get("completedBy"))
+                .containsEntry("id", ana.id().toString());
+        assertThat(completed.get("completedAt")).isNotNull();
+    }
+
+    @Test
+    void aCompletionNoteIsSanitizedLikeAnyOtherRichText() {
+        // Same policy as the detail field, on the same write path (adr/0018,
+        // adr/0023). The note is authored by one member and rendered into
+        // another member's session, so it is stored filtered or not at all.
+        Member ana = givenMember("note-xss");
+        String listId = newList(ana);
+        Map created = addItem(ana, listId, "{\"description\":\"Risky\"}").getBody();
+
+        Map completed = setCompleted(ana, (String) created.get("id"),
+                ((Number) created.get("version")).longValue(), true,
+                "<p>Done<script>alert(1)</script></p><img src=\\\"https://evil.test/x.png\\\">")
+                .getBody();
+
+        String note = (String) completed.get("completionNoteHtml");
+        assertThat(note).contains("Done").doesNotContain("script").doesNotContain("evil.test");
+    }
+
+    @Test
+    void aNoteSentWhileReopeningIsRefusedRatherThanDropped() {
+        // The CHECK would make this a 500, and a field silently discarded
+        // hides a client bug for a release (adr/0023).
+        Member ana = givenMember("note-on-reopen");
+        String listId = newList(ana);
+        Map created = addItem(ana, listId, "{\"description\":\"Mow the lawn\"}").getBody();
+        Map completed = setCompleted(ana, (String) created.get("id"),
+                ((Number) created.get("version")).longValue(), true, null).getBody();
+
+        ResponseEntity<Map> refused = setCompleted(ana, (String) created.get("id"),
+                ((Number) completed.get("version")).longValue(), false, "<p>Actually not</p>");
+
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void reopeningKeepsTheRecordInTheRowAndStopsShowingIt() {
+        // R49: the points come back, the rest is kept and simply not reported.
+        // Only a real database can show the row still holds it (adr/0024).
+        Member ana = givenMember("reopen-keeps");
+        String listId = newList(ana);
+        Map created = addItem(ana, listId, "{\"description\":\"Hoover\"}").getBody();
+        String itemId = (String) created.get("id");
+        Map completed = setCompleted(ana, itemId,
+                ((Number) created.get("version")).longValue(), true, "<p>Upstairs too</p>")
+                .getBody();
+
+        Map reopened = setCompleted(ana, itemId,
+                ((Number) completed.get("version")).longValue(), false).getBody();
+
+        assertThat(reopened.get("completed")).isEqualTo(false);
+        assertThat(reopened.get("completedBy")).isNull();
+        assertThat(reopened.get("completionNoteHtml")).isNull();
+        assertThat(reopened.get("reopenedAt")).isNotNull();
+
+        Map<String, Object> row = jdbc.queryForMap(
+                "SELECT completed_by, completed_at, completion_note_html, done "
+                        + "FROM todo_item WHERE id = ?::uuid", itemId);
+        assertThat(row.get("completed_by")).isNotNull();
+        assertThat(row.get("completed_at")).isNotNull();
+        assertThat(row.get("completion_note_html")).isEqualTo("<p>Upstairs too</p>");
+        assertThat(row.get("done")).isEqualTo(false);
+    }
+
+    @Test
+    void theDatabaseRefusesANoteOnAnItemNobodyCompleted() {
+        // Enforced by ck_todo_item_completion, not only by the service: a note
+        // about work nobody did is unrepresentable.
+        Member ana = givenMember("note-check");
+        String listId = newList(ana);
+        String itemId = (String) addItem(ana, listId, "{\"description\":\"Open\"}")
+                .getBody().get("id");
+
+        assertThatThrownBy(() -> jdbc.update(
+                "UPDATE todo_item SET completion_note_html = '<p>x</p>' WHERE id = ?::uuid",
+                itemId))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void theDatabaseRefusesAReopenThatPredatesItsCompletion() {
+        Member ana = givenMember("reopen-check");
+        String listId = newList(ana);
+        Map created = addItem(ana, listId, "{\"description\":\"Ordered\"}").getBody();
+        String itemId = (String) created.get("id");
+        setCompleted(ana, itemId, ((Number) created.get("version")).longValue(), true);
+
+        assertThatThrownBy(() -> jdbc.update(
+                "UPDATE todo_item SET reopened_at = completed_at - INTERVAL '1 hour', "
+                        + "reopened_by = completed_by WHERE id = ?::uuid", itemId))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void deletingAnAccountThatAssignedWorkDoesNotFail() {
+        // The test that catches the obvious-looking CHECK pairing assigned_by
+        // with assignee_id: both columns are ON DELETE SET NULL, Postgres
+        // applies that as an update, and such a CHECK would reject it - which
+        // would abort the deletion of exactly those accounts that were used
+        // (adr/0026). Nothing here asserts a constraint; it asserts the
+        // absence of one.
+        Member ana = givenMember("assigner");
+        Member ben = givenMember("assignee");
+        String listId = newList(ana, ben.id().toString());
+        configure(ana, listId, "[{\"kind\":\"ASSIGNEE\"}]");
+        addItem(ana, listId, "{\"description\":\"For Ben\",\"assigneeId\":\"%s\"}"
+                .formatted(ben.id()));
+
+        Session admin = signIn(ADMIN_USERNAME, ADMIN_PASSWORD);
+        ResponseEntity<String> deleted = rest.exchange("/api/admin/users/" + ben.id(),
+                HttpMethod.DELETE, new HttpEntity<>(headersFor(admin)), String.class);
+
+        assertThat(deleted.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+    }
+
+    @Test
+    void claimingWorkForYourselfReadsAsClaimedToEverybody() {
+        // R47: a fact about the item, not about who is looking. Ana assigns to
+        // Ben and Ben assigns to Ben; both members see the same two answers.
+        Member ana = givenMember("claim-owner");
+        Member ben = givenMember("claim-peer");
+        String listId = newList(ana, ben.id().toString());
+        configure(ana, listId, "[{\"kind\":\"ASSIGNEE\"}]");
+
+        Map given = addItem(ana, listId, "{\"description\":\"Given to Ben\",\"assigneeId\":\"%s\"}"
+                .formatted(ben.id())).getBody();
+        Map taken = addItem(ben, listId, "{\"description\":\"Taken by Ben\",\"assigneeId\":\"%s\"}"
+                .formatted(ben.id())).getBody();
+
+        assertThat(given.get("selfAssigned")).isEqualTo(false);
+        assertThat(taken.get("selfAssigned")).isEqualTo(true);
+
+        ResponseEntity<List> asAna = rest.exchange("/api/lists/" + listId + "/items",
+                HttpMethod.GET, new HttpEntity<>(headersFor(ana.session())), List.class);
+        assertThat((List<Map<String, Object>>) asAna.getBody())
+                .extracting(item -> item.get("selfAssigned"))
+                .containsExactly(false, true);
+    }
+
+    @Test
+    void anItemReopenedIsBackOnTheToDoList() {
+        // The generated `done` column is what the open/done filter reads, so
+        // this is the assertion that the derivation actually works end to end.
+        Member ana = givenMember("reopen-filter");
+        String listId = newList(ana);
+        Map created = addItem(ana, listId, "{\"description\":\"Back again\"}").getBody();
+        String itemId = (String) created.get("id");
+        Map completed = setCompleted(ana, itemId,
+                ((Number) created.get("version")).longValue(), true).getBody();
+
+        assertThat(openDescriptions(ana, listId)).isEmpty();
+
+        setCompleted(ana, itemId, ((Number) completed.get("version")).longValue(), false);
+
+        assertThat(openDescriptions(ana, listId)).containsExactly("Back again");
+    }
+
+    private List<String> openDescriptions(Member member, String listId) {
+        ResponseEntity<List> open = rest.exchange("/api/lists/" + listId + "/items?status=open",
+                HttpMethod.GET, new HttpEntity<>(headersFor(member.session())), List.class);
+        return ((List<Map<String, Object>>) open.getBody()).stream()
+                .map(item -> (String) item.get("description"))
+                .toList();
     }
 }

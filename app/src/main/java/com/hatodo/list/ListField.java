@@ -89,6 +89,14 @@ public class ListField {
         return new ListField(list, FieldKind.DESCRIPTION, null, true, position);
     }
 
+    /**
+     * Also on every list (R40), but optional to fill in: the owner may make it
+     * required, and cannot remove it. See adr/0022.
+     */
+    public static ListField dueAt(TodoList list, short position) {
+        return new ListField(list, FieldKind.DUE_AT, null, false, position);
+    }
+
     public UUID getId() {
         return id;
     }

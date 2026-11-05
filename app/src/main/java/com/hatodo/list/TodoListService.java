@@ -117,10 +117,13 @@ public class TodoListService {
         grantTo(list, me, request.memberIdsOrEmpty());
 
         // Every list has a description field whether or not anyone asked for
-        // one (R21). Written here rather than by the field service, so that
+        // one (R21), and a due date field for the same reason since R40 - the
+        // dashboard can only read dates from lists that declare the field
+        // (adr/0022). Written here rather than by the field service, so that
         // service can depend on this one without the two depending on each
         // other.
         fields.save(ListField.description(list, (short) 0));
+        fields.save(ListField.dueAt(list, (short) 1));
 
         // Creating a list is the strongest possible interaction with it.
         stateFor(list, me).touch();

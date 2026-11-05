@@ -61,7 +61,8 @@ class ItemExceptionHandler {
                 "error", "That item changed while you were looking at it."));
     }
 
-    @ExceptionHandler({MissingRequiredFieldException.class, AssigneeWithoutAccessException.class})
+    @ExceptionHandler({MissingRequiredFieldException.class, AssigneeWithoutAccessException.class,
+            InvalidCompletionException.class})
     ResponseEntity<Map<String, Object>> invalid(RuntimeException ex) {
         return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
     }

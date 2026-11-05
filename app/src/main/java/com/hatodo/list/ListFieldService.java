@@ -103,20 +103,39 @@ public class ListFieldService {
     // --- validation ---------------------------------------------------------
 
     /**
-     * Puts the description first and guarantees it is there, so the rest of the
-     * rules can be about what the member actually chose.
+     * Puts the always-declared fields first and guarantees they are there, so
+     * the rest of the rules can be about what the member actually chose.
+     *
+     * <p>Description has always been one of these. The due date joined it for
+     * R40: a dashboard reading across lists can only answer from the lists that
+     * declared the field, so the field is not removable - though it stays
+     * optional to fill in, and the owner may still make it required. A request
+     * that omits it gets it back rather than an error, because "not mentioned"
+     * already means "unchanged" for a singleton kind. See adr/0022.
+     *
+     * <p>Presence is guaranteed here rather than by a constraint because SQL
+     * cannot say "every row in this table has a child of this kind" without a
+     * trigger - the same position adr/0011 takes for the description.
      */
     private List<ListFieldRequest> normalise(List<ListFieldRequest> requested) {
         List<ListFieldRequest> ordered = new ArrayList<>();
-        ListFieldRequest description = requested.stream()
+        ordered.add(requested.stream()
                 .filter(field -> field.kind() == FieldKind.DESCRIPTION)
                 .findFirst()
                 .orElse(new ListFieldRequest(null, FieldKind.DESCRIPTION, null, Boolean.TRUE,
-                        null, null, null, null));
-        ordered.add(description);
+                        null, null, null, null)));
         requested.stream()
                 .filter(field -> field.kind() != FieldKind.DESCRIPTION)
                 .forEach(ordered::add);
+
+        // Guaranteed present, not pinned to a position: a caller who sent it
+        // keeps it where they put it, and a list can still reorder it. Only
+        // omitting it is impossible, and then it goes on the end rather than
+        // shifting whatever the caller did send.
+        if (ordered.stream().noneMatch(field -> field.kind() == FieldKind.DUE_AT)) {
+            ordered.add(new ListFieldRequest(null, FieldKind.DUE_AT, null, Boolean.FALSE,
+                    null, null, null, null));
+        }
         return ordered;
     }
 
