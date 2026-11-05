@@ -11,37 +11,40 @@ import { MemberAvatar } from '../app/MemberAvatar'
 import { ListIcon } from '../lists/listIcons'
 import { useDashboardView } from './dashboardView'
 import { civilIn, dayKey, dayRange, now, windowOf, type Zone } from './calendar'
+import { periodName } from './period'
 import { byDayEntries, eventSources, eventTime, type DayEntry } from './entries'
 import { useScheduled } from './queries'
 
 /**
  * What today holds, in full rows - this is the view a member acts from.
  *
+ * <p>The day on screen is the anchor's, not necessarily today's (R74).
+ *
  * <p>Chores and events in one sequence rather than two sections
  * (requirements/0007 R67): what matters at breakfast is the shape of the day,
  * and an appointment at seven is why nobody can take the seven o'clock chore.
  */
 export function MyDayView() {
-  const { scope, zone, open, openEvent } = useDashboardView()
-  // Once per mount; see WeekView for why this is not computed during render.
-  const today = useMemo(() => now(zone), [zone])
-  const window = useMemo(() => windowOf(dayRange(today), zone), [today, zone])
+  const { scope, zone, anchor, open, openEvent } = useDashboardView()
+  // The day on screen, which is today unless the member stepped away from it
+  // (R74). See WeekView for why ranges are not computed during render.
+  const window = useMemo(() => windowOf(dayRange(anchor), zone), [anchor, zone])
   const { data, isPending } = useScheduled(window.from, window.to, scope)
 
   const entries =
-    byDayEntries(data?.items ?? [], data?.events ?? [], zone).get(dayKey(today)) ?? []
+    byDayEntries(data?.items ?? [], data?.events ?? [], zone).get(dayKey(anchor)) ?? []
 
   return (
     <Stack spacing={1.5}>
-      <Typography component="h2" variant="h6">
-        Today
+      <Typography component="h2" variant="h6" aria-live="polite">
+        {periodName('day', anchor, now(zone))}
       </Typography>
 
       {isPending && <Typography role="status">Loading…</Typography>}
 
       {data && entries.length === 0 && (
         <Typography role="status" color="text.secondary">
-          Nothing is due today, and nothing is happening.
+          Nothing is due, and nothing is happening.
         </Typography>
       )}
 

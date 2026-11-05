@@ -170,7 +170,7 @@ describe('CalendarFeeds', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Remove Family' }))
 
-    expect(await screen.findByText(/takes its events off My day/)).toBeVisible()
+    expect(await screen.findByText(/takes its events off the agenda/)).toBeVisible()
     expect(unsubscribe).not.toHaveBeenCalled()
 
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }))

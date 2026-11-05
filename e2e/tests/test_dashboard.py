@@ -8,6 +8,8 @@ any view.
 
 from __future__ import annotations
 
+import re
+
 from datetime import datetime, timedelta
 
 import pytest
@@ -47,12 +49,12 @@ def test_signing_in_lands_on_the_dashboard(
     ui_sign_in(page, base_url, demo_member)
 
     expect(page).to_have_url(f"{base_url}/dashboard/day")
-    expect(page.get_by_role("heading", name="My day")).to_be_visible()
-    expect(page.get_by_role("tab", name="Today")).to_have_attribute("aria-selected", "true")
+    expect(page.get_by_role("heading", name="Agenda")).to_be_visible()
+    expect(page.get_by_role("tab", name="Day")).to_have_attribute("aria-selected", "true")
 
 
 @pytest.mark.dashboard
-def test_an_item_due_today_appears_in_my_day_and_in_the_week(
+def test_an_item_due_today_appears_on_the_agenda_and_in_the_week(
     page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
 ) -> None:
     name = test_data.name("Planning")
@@ -64,14 +66,14 @@ def test_an_item_due_today_appears_in_my_day_and_in_the_week(
     later_today = datetime.now().replace(hour=23, minute=0, second=0, microsecond=0)
     add_dated_item(page, "Due today", later_today)
 
-    page.get_by_role("link", name="My day").click()
+    page.get_by_role("link", name="Agenda").click()
     main = page.get_by_role("main")
     expect(main.get_by_text("Due today")).to_be_visible()
     # Scoped: the sidebar's Recent section names the list too.
     expect(main.get_by_text(name).first).to_be_visible()
 
     page.get_by_role("tab", name="Week").click()
-    expect(page.get_by_role("heading", name="This week")).to_be_visible()
+    expect(page.get_by_role("button", name="Next week")).to_be_visible()
     expect(page.get_by_text("Due today")).to_be_visible()
 
     page.get_by_role("tab", name="Month").click()
@@ -132,13 +134,13 @@ def test_a_private_list_never_reaches_another_members_dashboard(
     later_today = datetime.now().replace(hour=23, minute=0, second=0, microsecond=0)
     add_dated_item(page, "Ana's secret", later_today)
 
-    page.get_by_role("link", name="My day").click()
+    page.get_by_role("link", name="Agenda").click()
     create_list(page, shared_name, share_with=passwordless_member.display_name)
     add_dated_item(page, "Everybody's chore", later_today)
 
     # Ben's dashboard holds the shared one and nothing else, in every view.
     ui_sign_in(second_member_page, base_url, passwordless_member)
-    for tab in ("Today", "Week", "Month"):
+    for tab in ("Day", "Week", "Month"):
         second_member_page.get_by_role("tab", name=tab).click()
         expect(second_member_page.get_by_text("Everybody's chore")).to_be_visible()
         expect(second_member_page.get_by_text("Ana's secret")).to_have_count(0)
@@ -166,7 +168,7 @@ def test_opening_an_item_is_a_url_the_back_button_closes(
     page.go_back()
     expect(page.get_by_role("dialog")).to_have_count(0)
     # And the view behind it is still there.
-    expect(page.get_by_role("heading", name="This week")).to_be_visible()
+    expect(page.get_by_role("button", name="Next week")).to_be_visible()
 
 
 @pytest.mark.dashboard
@@ -199,3 +201,79 @@ def test_mine_narrows_the_dashboard_without_hiding_it_from_the_url(
 
     expect(page).to_have_url(f"{base_url}/dashboard/day?scope=mine")
     expect(page.get_by_text("Nobody's job")).to_have_count(0)
+
+
+@pytest.mark.dashboard
+def test_a_member_walks_to_another_day_and_back(
+    page: Page, base_url: str, demo_member: DemoMember
+) -> None:
+    """
+    Stepping, and getting home again (requirements/0008 R74, R75).
+
+    The return control is the assertion that matters: it is disabled on the
+    current period, so a member can always tell whether they are looking at now
+    without reading the date.
+    """
+    ui_sign_in(page, base_url, demo_member)
+    page.goto(f"{base_url}/dashboard/day")
+
+    expect(page.get_by_role("button", name="Today", exact=True)).to_be_disabled()
+    heading = page.get_by_role("heading", name="Today", exact=True)
+    expect(heading).to_be_visible()
+
+    page.get_by_role("button", name="Next day").click()
+
+    expect(page.get_by_role("heading", name="Today", exact=True)).to_have_count(0)
+    expect(page.get_by_role("button", name="Today", exact=True)).to_be_enabled()
+    expect(page).to_have_url(re.compile(r"[?&]on=\d{4}-\d{2}-\d{2}"))
+
+    page.get_by_role("button", name="Previous day").click()
+    expect(page.get_by_role("heading", name="Today", exact=True)).to_be_visible()
+    expect(page.get_by_role("button", name="Today", exact=True)).to_be_disabled()
+
+
+@pytest.mark.dashboard
+def test_a_day_is_a_link_somebody_else_can_follow(
+    page: Page, base_url: str, demo_member: DemoMember
+) -> None:
+    """R76: the period is in the address, so it survives a reload and a share."""
+    ui_sign_in(page, base_url, demo_member)
+
+    page.goto(f"{base_url}/dashboard/day?on=2026-02-11")
+    expect(page.get_by_role("heading", name=re.compile(r"(11 February|February 11)"))).to_be_visible()
+
+    page.reload()
+    expect(page.get_by_role("heading", name=re.compile(r"(11 February|February 11)"))).to_be_visible()
+
+    # And the range change keeps it rather than jumping home.
+    page.get_by_role("tab", name="Month").click()
+    expect(page.get_by_role("heading", name=re.compile(r"February 2026"))).to_be_visible()
+
+
+@pytest.mark.dashboard
+def test_a_mangled_address_still_opens_the_dashboard(
+    page: Page, base_url: str, demo_member: DemoMember
+) -> None:
+    """
+    This is the landing page. A truncated or edited ?on= must not be a member
+    who cannot get into the product at all.
+    """
+    ui_sign_in(page, base_url, demo_member)
+
+    page.goto(f"{base_url}/dashboard/day?on=not-a-date")
+
+    expect(page.get_by_role("heading", name="Today", exact=True)).to_be_visible()
+
+
+@pytest.mark.dashboard
+def test_stepping_past_what_has_been_read_says_so(
+    page: Page, base_url: str, demo_member: DemoMember
+) -> None:
+    """
+    R77. An empty month a long way out means "nobody looked", not "nothing is
+    on", and only the product knows which.
+    """
+    ui_sign_in(page, base_url, demo_member)
+    page.goto(f"{base_url}/dashboard/month?on=2030-04-15")
+
+    expect(page.get_by_text("No calendar events have been read")).to_be_visible()

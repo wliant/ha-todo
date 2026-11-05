@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status
 
 **Everything specified so far is built, as of 2026-11-06.** Build, local stack, deploy scripts and all
-three test harnesses are real and passing: 233 backend unit tests, 224 integration tests, 219 frontend
-tests, 79 end-to-end.
+three test harnesses are real and passing: 236 backend unit tests, 225 integration tests, 228 frontend
+tests, 83 end-to-end.
 
 Implemented: **accounts and administration (R8-R12)** — username identity, optional per-user passwords, a
 pick-a-user sign-in screen, and a single admin who adds and deletes users. **The PWA (R13, R14)** —
@@ -70,8 +70,8 @@ through, with its detail and completion note one tap away.
 
 **R62-R72 are implemented.** `docs/requirements/0007` and `docs/design/0007` add **calendar feeds**:
 a member subscribes somebody else's calendar by its iCalendar URL (Google's secret iCal address,
-Outlook's published link), grants other members access to it per feed, and its events appear on My day
-*merged* with the chores. Nothing here authors an event, there is no Calendar menu, and there is no OAuth
+Outlook's published link), grants other members access to it per feed, and its events appear on the
+agenda *merged* with the chores. Nothing here authors an event, there is no Calendar menu, and there is no OAuth
 — `docs/adr/0034` records why a read-only `.ics` subscription beats two application registrations for a
 household of four, and what it costs (the copy lags its source by up to hours, which is why there is a
 refresh button). Subscriptions live in the **profile**, not behind a menu entry.
@@ -92,8 +92,8 @@ it across four server zones.
 
 **The household now has one timezone** (`docs/adr/0036`): `app.timezone` (`APP_TIMEZONE`, default
 `Asia/Singapore`) replaced `app.recurrence.zone`, is served to the SPA on `/api/me`, and governs the day
-bucketing of **items** too — one merged grid cannot have two definitions of Thursday, so My day no longer
-follows the device's zone. `occurs_on` is application-maintained rather than generated, because
+bucketing of **items** too — one merged grid cannot have two definitions of Thursday, so the agenda no
+longer follows the device's zone. `occurs_on` is application-maintained rather than generated, because
 `AT TIME ZONE` is STABLE rather than IMMUTABLE and Postgres refuses it in a generation expression.
 
 Recurrence is expanded at parse time, one row per occurrence, and **collapsing is per occurrence**
@@ -107,7 +107,7 @@ shows up **once**. That is what dropping unmatched overrides looked like from th
 
 A refresh **replaces a feed's rows wholesale** — there is no identity to preserve, so a moved, edited or
 deleted event is just a different set of rows next time. A failed refresh **keeps the rows it has** and
-records a phrase written for the owner's screen; R71's staleness notice on My day is what stops that
+records a phrase written for the owner's screen; R71's staleness notice on the agenda is what stops that
 being a silent lie, so do not quietly drop it. Collapsing two feeds' copies of one appointment happens
 **per request, after the access filter**, because which feeds a caller may read decides whether two rows
 are one entry. Cross-provider dedup is not guaranteed: Exchange does not always preserve the originating
@@ -122,6 +122,34 @@ subscribe-fetch-store path is covered by `CalendarFeedApiIntegrationTest`, which
 because `deployment/docker-compose.local.yml` sets `RECURRENCE_CATCH_UP_DAYS=7` while they assert
 "Added 1."; they pass with `RECURRENCE_CATCH_UP_DAYS=0` and against dev, which uses 0.
 
+**R73-R78 are implemented.** `docs/requirements/0008` and `docs/design/0008` make the agenda
+**navigable**,
+which is the open question 0007 left. The tabs are named for the range - **Day, Week, Month** - rather
+than for the present, there are previous/next controls and one that returns to the current period, and
+`docs/adr/0037` puts the period on screen in the address as `?on=YYYY-MM-DD`, omitted when it is today.
+Nothing became stateful: `adr/0015`'s rule still holds, with `AppShell` owning the only layout state.
+
+**The surface is now called "Agenda"**, not "My day" (R78) — the old name was wrong in both words once
+the period could move: it showed a week or a month, and its default scope is the whole household with
+"Mine" as a toggle. **The route is still `/dashboard`** and must stay: the manifest's `start_url` points
+at it (`adr/0007`). Deliberately *not* "Calendar", which would promise that a member can add an event —
+the one thing 0007 R63 permanently refuses. Documents written before this (0005, 0007 and their ADRs)
+say "My day" throughout and mean the agenda; they are left alone, because an accepted document records
+what was decided when it was decided.
+
+**The mistake this makes available** is conflating two things that used to be the same: the period being
+*looked at* (the anchor, from the URL) and the period we are *in* (the clock). Layout reads the anchor;
+today's highlight in the week and month grids, and whether the return control is enabled, read
+`now(zone)`. A new reader that takes "today" from the anchor will be right every day except the ones
+somebody navigated away on. `?on=` is parsed defensively and falls back to today, because this is the
+landing page and a mangled address must not be a member who cannot get in.
+
+**And navigating past what the poller has read is now possible**, so `ScheduledResponse` carries
+`eventWindow` (from `CalendarWindow`, i.e. `CALENDAR_WINDOW_BACK`/`_FORWARD`) and the agenda says when the
+range on screen falls outside it. Items have no such bound, so a member four months out sees their
+chores and none of the appointments; the notice names the half the product knows it does not know. An
+empty February that means "nobody looked" must never read as "nothing is on".
+
 Keep this file true: when a decision here turns out wrong, update it in the same change.
 
 ## What this product is
@@ -135,8 +163,8 @@ Design every API and UI around "multiple people touching the same list concurren
 single-user todo app.
 
 A household also has a **day to fit the work into**, and that lives in Google Calendar or Outlook. A
-member subscribes those calendars by their published iCalendar address and the events appear on My day
-beside the chores; nothing here authors an event (`docs/adr/0034`). The join with the todo domain is the
+member subscribes those calendars by their published iCalendar address and the events appear on the
+agenda beside the chores; nothing here authors an event (`docs/adr/0034`). The join with the todo domain is the
 whole value - the providers can already share a calendar between two people, and can never show it next
 to what the household owes today.
 

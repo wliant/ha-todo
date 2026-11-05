@@ -1,7 +1,7 @@
 """
 Subscribed calendars (requirements/0007 R62-R66).
 
-**What this file deliberately does not cover: events rendering on My day.** The
+**What this file deliberately does not cover: events rendering on the agenda.** The
 only way an event reaches the database is the poller fetching a feed, and a
 deployment's URL guard refuses every address on the machine running these tests
 (docs/adr/0035) - so there is no way to publish a fixture calendar that dev will
@@ -129,7 +129,7 @@ def test_an_address_that_is_not_a_web_address_is_refused_outright(
     expect(page.get_by_role("heading", name="Who can see this?")).to_have_count(0)
 
 
-def test_my_day_still_reads_as_a_day_with_no_calendars_subscribed(
+def test_the_agenda_still_reads_as_a_day_with_no_calendars_subscribed(
     page: Page, base_url: str
 ) -> None:
     """
@@ -140,5 +140,5 @@ def test_my_day_still_reads_as_a_day_with_no_calendars_subscribed(
     reading silence as a promise (R71's quieter cousin).
     """
     page.goto(f"{base_url}/dashboard/day")
-    expect(page.get_by_role("heading", name="My day")).to_be_visible()
+    expect(page.get_by_role("heading", name="Agenda")).to_be_visible()
     expect(page.get_by_role("heading", name="Today")).to_be_visible()

@@ -238,6 +238,29 @@ export function isSameDay(left: Date, right: Date): boolean {
   )
 }
 
+/**
+ * The day the address says we are looking at, or today.
+ *
+ * <p>Defensive on purpose: `?on=` is in a URL anybody can edit, truncate or
+ * copy badly, and the dashboard is the landing page - a thrown error here is a
+ * member who cannot get into the product at all. Anything unparseable is
+ * today.
+ */
+export function parseAnchor(value: string | null, zone: Zone): Civil {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value ?? '')
+  if (!match) {
+    return now(zone)
+  }
+  const [year, month, day] = match.slice(1).map(Number)
+  const civil = new Date(year, month - 1, day)
+  // Round-tripped rather than range-checked: new Date(2026, 12, 45) is a real
+  // date in 2027, and silently showing it would be worse than falling back.
+  if (civil.getFullYear() !== year || civil.getMonth() !== month - 1 || civil.getDate() !== day) {
+    return now(zone)
+  }
+  return civil
+}
+
 export function isSameMonth(left: Date, right: Date): boolean {
   return left.getFullYear() === right.getFullYear() && left.getMonth() === right.getMonth()
 }

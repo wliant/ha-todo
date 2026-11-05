@@ -3,6 +3,8 @@ package com.hatodo;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
@@ -262,5 +264,26 @@ class DashboardApiIntegrationTest extends ApiIntegrationTest {
                 "/api/dashboard/undated", HttpMethod.GET, HttpEntity.EMPTY, Map.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void saysHowFarEitherSideOfTodayEventsHaveBeenReadAtAll() {
+        // 0008 R77: My day can now be walked past the window the poller fills,
+        // and an empty February must not look like a quiet one. The client
+        // cannot hold its own copy of these numbers - they are deployment
+        // configuration - so the server reports them.
+        Member ana = givenMember("dash-window");
+        Instant from = Instant.now();
+        Instant to = from.plus(1, ChronoUnit.DAYS);
+
+        Map<String, Object> window =
+                (Map<String, Object>) scheduled(ana.session(), from, to, null).get("eventWindow");
+
+        assertThat(window).isNotNull();
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Singapore"));
+        assertThat(LocalDate.parse((String) window.get("from")))
+                .isEqualTo(today.minusDays(45));
+        assertThat(LocalDate.parse((String) window.get("to")))
+                .isEqualTo(today.plusDays(90));
     }
 }

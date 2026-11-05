@@ -75,7 +75,7 @@ function Picture() {
 
 /**
  * Where a calendar subscription lives: in the member's own settings, not behind
- * a Calendar menu entry. The events are read on My day, and a second navigation
+ * a Calendar menu entry. The events are read on the agenda, and a second navigation
  * surface for a read-only strip is how a feature nobody opens gets built
  * (requirements/0007).
  */
