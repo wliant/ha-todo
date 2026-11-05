@@ -21,4 +21,5 @@ markers = [
     "access: who can see a list - the rule two browser contexts exist to prove",
     "fields: what shape a list says its items take",
     "items: adding, completing and scoring items",
+    "activity: who did what on a list, lately",
 ]

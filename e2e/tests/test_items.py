@@ -126,6 +126,8 @@ def test_points_go_to_whoever_completed_it_not_the_assignee(
     # ...and completed by Ana.
     page.get_by_role("button", name="Complete Sweep up", exact=True).click()
 
+    # The standing lives on the Activity tab now (R43).
+    page.get_by_role("tab", name="Activity").click()
     points = page.get_by_role("heading", name="Points").locator("xpath=../..")
     expect(points.get_by_text(demo_member.display_name)).to_be_visible()
     expect(points.get_by_text("50")).to_be_visible()
@@ -395,16 +397,20 @@ def test_reopening_an_item_takes_its_points_back(
     page.get_by_role("button", name="Save").click()
 
     page.get_by_role("button", name="Complete Worth something", exact=True).click()
+
+    page.get_by_role("tab", name="Activity").click()
     points = page.get_by_role("heading", name="Points").locator("xpath=../..")
     expect(points.get_by_text("50")).to_be_visible()
 
+    page.get_by_role("tab", name="Items").click()
     page.get_by_role("button", name="Done").click()
     page.get_by_role("button", name="Reopen Worth something").click()
 
     # Back on the to-do list, and the points are gone with it.
     page.get_by_role("button", name="To do").click()
     expect(page.get_by_text("Worth something")).to_be_visible()
-    expect(points.get_by_text("50")).not_to_be_visible()
+    page.get_by_role("tab", name="Activity").click()
+    expect(page.get_by_text("50")).not_to_be_visible()
 
 
 @pytest.mark.items
@@ -449,3 +455,68 @@ def test_a_member_claims_several_items_and_everybody_sees_it(
     # Ana sees the same thing: claimed, not merely assigned.
     page.reload()
     expect(page.get_by_label(claimed)).to_have_count(2)
+
+
+@pytest.mark.activity
+def test_the_activity_tab_shows_who_did_what_this_week(
+    page: Page,
+    second_member_page: Page,
+    base_url: str,
+    demo_member: DemoMember,
+    passwordless_member: DemoMember,
+    test_data: TestData,
+    cleanup_lists,
+) -> None:
+    """R43: a list reports the last seven days, per member.
+
+    Two contexts because the question is about more than one person: "who did
+    what" on a shared list is only interesting once two people have.
+    """
+    name = test_data.name("Weekly")
+    cleanup_lists(name)
+    ui_sign_in(page, base_url, demo_member)
+    list_id = create_list(page, name, share_with=passwordless_member.display_name)
+    add_item(page, "Ana's two: one")
+    add_item(page, "Ana's two: two")
+    add_item(page, "Ben's one")
+
+    page.get_by_role("button", name="Complete Ana's two: one", exact=True).click()
+    page.get_by_role("button", name="Complete Ana's two: two", exact=True).click()
+
+    ui_sign_in(second_member_page, base_url, passwordless_member)
+    second_member_page.goto(f"{base_url}/lists/{list_id}")
+    second_member_page.get_by_role("button", name="Complete Ben's one", exact=True).click()
+
+    # Either member sees the same week, because it is a fact about the list.
+    second_member_page.get_by_role("tab", name="Activity").click()
+    # One level up, not two: two levels reaches the container that also holds
+    # the all-time Points panel, where every name appears a second time.
+    week = second_member_page.get_by_role("heading", name="This week").locator("xpath=..")
+    expect(week.get_by_text(f"{demo_member.display_name}", exact=True)).to_be_visible()
+    expect(week.get_by_text("2 items")).to_be_visible()
+    expect(week.get_by_text("1 item", exact=True)).to_be_visible()
+    # And the feed names the work itself, not just the totals.
+    expect(week.get_by_text("Ben's one")).to_be_visible()
+
+
+@pytest.mark.activity
+def test_the_activity_tab_is_its_own_url(
+    page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
+) -> None:
+    """The tabs are routes, so a tab can be linked to and the back button works."""
+    name = test_data.name("Linkable")
+    cleanup_lists(name)
+    ui_sign_in(page, base_url, demo_member)
+    list_id = create_list(page, name)
+
+    page.goto(f"{base_url}/lists/{list_id}/activity")
+
+    expect(page.get_by_role("heading", name="This week")).to_be_visible()
+    expect(page.get_by_role("tab", name="Activity")).to_have_attribute(
+        "aria-selected", "true"
+    )
+
+    page.get_by_role("tab", name="Items").click()
+    expect(page.get_by_role("heading", name="Items")).to_be_visible()
+    page.go_back()
+    expect(page.get_by_role("heading", name="This week")).to_be_visible()

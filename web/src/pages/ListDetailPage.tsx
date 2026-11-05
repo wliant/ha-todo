@@ -1,23 +1,45 @@
 import { useEffect } from 'react'
-import { Link as RouterLink, useParams } from 'react-router-dom'
+import {
+  Link as RouterLink,
+  Outlet,
+  useLocation,
+  useOutletContext,
+  useParams,
+} from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Avatar from '@mui/material/Avatar'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Stack from '@mui/material/Stack'
+import Tab from '@mui/material/Tab'
+import Tabs from '@mui/material/Tabs'
 import Typography from '@mui/material/Typography'
 import SettingsRounded from '@mui/icons-material/SettingsRounded'
 import { isNotFound } from '../api/http'
 import { ListAudience } from '../lists/ListAudience'
+import { ActivitySection } from '../items/ActivitySection'
 import { ItemsSection } from '../items/ItemsSection'
-import { PointsPanel } from '../items/PointsPanel'
 import { ListIcon } from '../lists/listIcons'
 import { PinButton } from '../lists/PinButton'
+import type { ListDetail, ListField } from '../api/lists'
 import { useList, useListFields, useTouchList } from '../lists/queries'
 
-/** One list: what is on it, with its audience in the header. */
+/** What the tabs below the header are handed, so neither refetches the list. */
+type ListContext = { list: ListDetail; fields: ListField[] }
+
+/**
+ * One list: a header, and a tab for each way of looking at it.
+ *
+ * <p>The tabs are bound to the pathname rather than to state, so they are
+ * deep-linkable, correct under the back button, and have nothing to keep in
+ * sync. `/lists/:listId` stays the index route, so every existing link, the
+ * sidebar's selected check and the e2e suite's URLs are unaffected.
+ */
 export function ListDetailPage() {
   const { listId } = useParams()
+  const { pathname } = useLocation()
+  // Derived from the path, so there is no tab state to disagree with the URL.
+  const tab = pathname.endsWith('/activity') ? 'activity' : 'items'
   const { data: list, isPending, error } = useList(listId)
   const { data: fields } = useListFields(listId)
   const touch = useTouchList()
@@ -105,9 +127,29 @@ export function ListDetailPage() {
         </Stack>
       </Stack>
 
-      <ItemsSection list={list} fields={fields ?? []} />
+      <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+        <Tabs value={tab} aria-label="How to look at this list">
+          <Tab label="Items" value="items" component={RouterLink} to={`/lists/${list.id}`} />
+          <Tab
+            label="Activity"
+            value="activity"
+            component={RouterLink}
+            to={`/lists/${list.id}/activity`}
+          />
+        </Tabs>
+      </Box>
 
-      <PointsPanel listId={list.id} />
+      <Outlet context={{ list, fields: fields ?? [] } satisfies ListContext} />
     </Stack>
   )
+}
+
+export function ItemsTab() {
+  const { list, fields } = useOutletContext<ListContext>()
+  return <ItemsSection list={list} fields={fields} />
+}
+
+export function ActivityTab() {
+  const { list } = useOutletContext<ListContext>()
+  return <ActivitySection listId={list.id} />
 }

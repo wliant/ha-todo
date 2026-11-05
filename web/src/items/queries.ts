@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   assignItems,
   createItem,
+  fetchActivity,
   deleteItem,
   fetchItems,
   fetchPoints,
@@ -21,6 +22,8 @@ export const itemKeys = {
   filtered: (listId: string, status: ItemStatus) =>
     ['lists', 'detail', listId, 'items', status] as const,
   points: (listId: string) => ['lists', 'detail', listId, 'points'] as const,
+  activity: (listId: string, from: string, to: string) =>
+    ['lists', 'detail', listId, 'activity', from, to] as const,
 }
 
 export function useItems(listId: string | undefined, status: ItemStatus) {
@@ -35,6 +38,20 @@ export function usePoints(listId: string | undefined) {
   return useQuery({
     queryKey: itemKeys.points(listId ?? 'none'),
     queryFn: () => fetchPoints(listId!),
+    enabled: Boolean(listId),
+  })
+}
+
+/**
+ * The last seven days on one list (R43).
+ *
+ * <p>Inside the item key hierarchy on purpose, so completing something
+ * invalidates the feed along with everything else.
+ */
+export function useActivity(listId: string | undefined, from: string, to: string) {
+  return useQuery({
+    queryKey: itemKeys.activity(listId ?? 'none', from, to),
+    queryFn: () => fetchActivity(listId!, from, to),
     enabled: Boolean(listId),
   })
 }

@@ -16,6 +16,8 @@ import com.hatodo.images.StoredImageRepository;
 import com.hatodo.richtext.HtmlSanitizer;
 import com.hatodo.user.CurrentUserProvider;
 import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -24,6 +26,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -240,6 +243,42 @@ public class TodoItemService {
                 .map(row -> new ListPointsResponse((UUID) row[0], (String) row[1],
                         ((Number) row[2]).longValue()))
                 .toList();
+    }
+
+    /** A week is the window a household can actually feel (R43). */
+    private static final Duration ACTIVITY_WINDOW = Duration.ofDays(7);
+    /** Enough for a busy week; a feed is read, not paged through. */
+    private static final int ACTIVITY_EVENTS = 200;
+
+    /**
+     * Who did what on this list, lately (R43).
+     *
+     * <p>The window is the caller's, because only they know where their own
+     * midnight is; absent, it is the last seven days so a bare request works.
+     */
+    @Transactional(readOnly = true)
+    public ActivityResponse activity(UUID listId, Instant from, Instant to) {
+        lists.requireReadable(listId);
+        Instant until = to == null ? Instant.now() : to;
+        Instant since = from == null ? until.minus(ACTIVITY_WINDOW) : from;
+
+        List<ActivityResponse.Member> members = items.activityByMember(listId, since, until)
+                .stream()
+                // The avatar comes through the grouping rather than a second
+                // query: a face is how a member is recognised at a glance
+                // (R32), and it is functionally dependent on the id anyway.
+                .map(row -> new ActivityResponse.Member((UUID) row[0], (String) row[1],
+                        (UUID) row[2], ((Number) row[3]).longValue(),
+                        ((Number) row[4]).longValue()))
+                .toList();
+
+        List<ActivityResponse.Event> events =
+                items.activityEvents(listId, since, until, PageRequest.of(0, ACTIVITY_EVENTS))
+                        .stream()
+                        .map(ActivityResponse.Event::of)
+                        .toList();
+
+        return new ActivityResponse(since, until, members, events);
     }
 
     /**
