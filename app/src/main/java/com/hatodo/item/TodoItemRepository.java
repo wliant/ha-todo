@@ -88,6 +88,68 @@ public interface TodoItemRepository extends JpaRepository<TodoItem, UUID> {
                                   Pageable limit);
 
     /**
+     * Everything due in a window, across every list the caller can see (R44).
+     *
+     * <p>The EXISTS is the same guard TodoListRepository.findVisibleById uses,
+     * and it is in SQL for the reason that one is: a predicate applied after
+     * fetching passes every unit test and leaks the household's private lists
+     * onto one member's dashboard. This is the first query where getting it
+     * wrong would leak several lists at once.
+     *
+     * <p>Half-open on [from, to), with both bounds supplied by the client -
+     * only the browser knows where this member's midnight is.
+     */
+    @Query("""
+            SELECT i FROM TodoItem i
+            WHERE i.done = FALSE
+              AND i.dueAt >= :from AND i.dueAt < :to
+              AND (:mineOnly = FALSE OR i.assignee.id = :userId)
+              AND EXISTS (
+                  SELECT 1 FROM ListAccess a WHERE a.list = i.list AND a.user.id = :userId
+              )
+            ORDER BY i.dueAt ASC, i.list.name ASC, i.position ASC
+            """)
+    List<TodoItem> findScheduledFor(@Param("userId") UUID userId,
+                                    @Param("from") Instant from, @Param("to") Instant to,
+                                    @Param("mineOnly") boolean mineOnly, Pageable limit);
+
+    /**
+     * The items nobody has dated (R45), shown beside every range.
+     *
+     * <p>Separate from the ranged query rather than folded into it: the panel
+     * sits beside all three views, so sharing their key would refetch it on
+     * every tab change.
+     */
+    @Query("""
+            SELECT i FROM TodoItem i
+            WHERE i.done = FALSE AND i.dueAt IS NULL
+              AND (:mineOnly = FALSE OR i.assignee.id = :userId)
+              AND EXISTS (
+                  SELECT 1 FROM ListAccess a WHERE a.list = i.list AND a.user.id = :userId
+              )
+            ORDER BY i.list.name ASC, i.position ASC
+            """)
+    List<TodoItem> findUndatedFor(@Param("userId") UUID userId,
+                                  @Param("mineOnly") boolean mineOnly, Pageable limit);
+
+    /**
+     * How many undated items there really are.
+     *
+     * <p>Counted apart from the page, because after adr/0022's backfill every
+     * list declares a due date and nobody has filled most of them in - so the
+     * panel is capped and has to be able to say "and 37 more".
+     */
+    @Query("""
+            SELECT COUNT(i) FROM TodoItem i
+            WHERE i.done = FALSE AND i.dueAt IS NULL
+              AND (:mineOnly = FALSE OR i.assignee.id = :userId)
+              AND EXISTS (
+                  SELECT 1 FROM ListAccess a WHERE a.list = i.list AND a.user.id = :userId
+              )
+            """)
+    long countUndatedFor(@Param("userId") UUID userId, @Param("mineOnly") boolean mineOnly);
+
+    /**
      * Whether a rule has already produced this occurrence (R42).
      *
      * <p>Asked before inserting rather than catching the unique index's

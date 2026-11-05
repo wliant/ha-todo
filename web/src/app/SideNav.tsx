@@ -9,6 +9,7 @@ import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
 import AddRounded from '@mui/icons-material/AddRounded'
 import ChecklistRounded from '@mui/icons-material/ChecklistRounded'
+import TodayRounded from '@mui/icons-material/TodayRounded'
 import GroupRounded from '@mui/icons-material/GroupRounded'
 import LogoutRounded from '@mui/icons-material/LogoutRounded'
 import IconButton from '@mui/material/IconButton'
@@ -89,6 +90,19 @@ export function SideNav({
         subheader={<ListSubheader disableSticky>Menu</ListSubheader>}
         sx={{ px: 1 }}
       >
+        {/* Above Lists, because it is what a member opens to (R44). */}
+        <ListItemButton
+          component={NavLink}
+          to="/dashboard"
+          onClick={onNavigate}
+          selected={pathname.startsWith('/dashboard')}
+        >
+          <ListItemIcon sx={{ minWidth: 40 }}>
+            <TodayRounded />
+          </ListItemIcon>
+          <ListItemText primary="My day" />
+        </ListItemButton>
+
         <ListItemButton
           component={NavLink}
           to="/lists"

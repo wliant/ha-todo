@@ -15,6 +15,9 @@ from conftest import DemoMember, TestData, ui_sign_in
 
 
 def create_list(page: Page, name: str, share_with: str | None = None) -> str:
+    # "New list" lives on the list of lists, and signing in no longer lands
+    # there - the dashboard does (R44). The sidebar is always present.
+    page.get_by_role("link", name="Lists").first.click()
     page.get_by_role("link", name="New list").click()
     page.get_by_role("textbox", name="Name", exact=True).fill(name)
     if share_with:
@@ -41,6 +44,9 @@ def test_a_list_shared_with_nobody_is_invisible_to_everyone_else(
     list_id = create_list(page, name)
 
     ui_sign_in(second_member_page, base_url, passwordless_member)
+    # The search is on the list of lists, and signing in lands on the dashboard
+    # (R44).
+    second_member_page.get_by_role("link", name="Lists").first.click()
     results = second_member_page.get_by_role("main")
     results.get_by_role("textbox", name="Search lists").fill(name)
     expect(results.get_by_text("No lists match that.")).to_be_visible()
@@ -70,6 +76,9 @@ def test_sharing_a_list_makes_it_appear_and_revoking_takes_it_away(
     list_id = create_list(page, name, share_with=passwordless_member.display_name)
 
     ui_sign_in(second_member_page, base_url, passwordless_member)
+    # The search is on the list of lists, and signing in lands on the dashboard
+    # (R44).
+    second_member_page.get_by_role("link", name="Lists").first.click()
     results = second_member_page.get_by_role("main")
     results.get_by_role("textbox", name="Search lists").fill(name)
     expect(results.get_by_text(name)).to_be_visible()

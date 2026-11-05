@@ -18,7 +18,8 @@ export function AdminRoute({ children }: { children: ReactNode }) {
   }
 
   if (user.role !== 'ADMIN') {
-    return <Navigate to="/lists" replace />
+    // Where they would normally be, which is the dashboard now (R44).
+    return <Navigate to="/dashboard" replace />
   }
 
   return <>{children}</>

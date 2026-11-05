@@ -71,7 +71,8 @@ export function AllListsPage() {
         spacing={1}
         sx={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}
       >
-        {/* e2e's ui_sign_in waits on this heading; it is a shared contract. */}
+        {/* Kept as this page's own h1. ui_sign_in no longer waits on it - that
+            moved to the dashboard's heading - but the list-page tests do. */}
         <Typography component="h1" variant="h5">
           Lists
         </Typography>

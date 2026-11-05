@@ -28,8 +28,8 @@ def sign_out(page: Page, base_url: str) -> None:
     pick-a-user step finds no roster at all.
     """
     # From /lists, not from wherever we were. ProtectedRoute remembers the
-    # screen you were sent away from, so signing in again resumes there - and
-    # conftest's ui_sign_in waits for the Lists heading.
+    # screen you were sent away from, so signing in again resumes there rather
+    # than on the dashboard, which is where a fresh sign-in lands.
     page.goto(f"{base_url}/lists")
     expect(page.get_by_role("heading", name="Lists")).to_be_visible()
     page.get_by_role("button", name="Sign out").click()

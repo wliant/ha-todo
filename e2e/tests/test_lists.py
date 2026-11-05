@@ -21,6 +21,9 @@ def test_member_creates_a_list_and_then_finds_it_by_name(
     cleanup_lists(name)
     ui_sign_in(page, base_url, demo_member)
 
+    # Signing in lands on the dashboard (R44), and "New list" is on the list of
+    # lists - so get there first.
+    page.get_by_role("link", name="Lists").first.click()
     page.get_by_role("link", name="New list").click()
     page.get_by_role("textbox", name="Name", exact=True).fill(name)
     page.get_by_role("textbox", name="Description").fill("Jobs outside")
@@ -51,6 +54,9 @@ def test_pinning_a_list_puts_it_in_the_sidebar(
     cleanup_lists(name)
     ui_sign_in(page, base_url, demo_member)
 
+    # Signing in lands on the dashboard (R44), and "New list" is on the list of
+    # lists - so get there first.
+    page.get_by_role("link", name="Lists").first.click()
     page.get_by_role("link", name="New list").click()
     page.get_by_role("textbox", name="Name", exact=True).fill(name)
     page.get_by_role("button", name="Create list").click()
@@ -76,6 +82,9 @@ def test_a_list_can_be_renamed_and_deleted_by_its_owner(
     cleanup_lists(renamed)
     ui_sign_in(page, base_url, demo_member)
 
+    # Signing in lands on the dashboard (R44), and "New list" is on the list of
+    # lists - so get there first.
+    page.get_by_role("link", name="Lists").first.click()
     page.get_by_role("link", name="New list").click()
     page.get_by_role("textbox", name="Name", exact=True).fill(name)
     page.get_by_role("button", name="Create list").click()
