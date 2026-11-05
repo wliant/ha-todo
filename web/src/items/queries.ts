@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  assignItems,
   createItem,
   deleteItem,
   fetchItems,
   fetchPoints,
   setItemCompleted,
   updateItem,
+  type AssignmentResult,
   type Item,
   type ItemStatus,
   type SaveItem,
@@ -91,8 +93,15 @@ export function useToggleCompletion(
   const invalidate = useItemInvalidation(listId)
 
   return useMutation({
-    mutationFn: ({ item, completed }: { item: Item; completed: boolean }) =>
-      setItemCompleted(item.id, item.version, completed),
+    mutationFn: ({
+      item,
+      completed,
+      noteHtml,
+    }: {
+      item: Item
+      completed: boolean
+      noteHtml?: string | null
+    }) => setItemCompleted(item.id, item.version, completed, noteHtml),
 
     onMutate: async ({ item, completed }) => {
       await queryClient.cancelQueries({ queryKey: itemKeys.all(listId) })
@@ -125,5 +134,43 @@ export function useToggleCompletion(
     },
 
     onSettled: invalidate,
+  })
+}
+
+/**
+ * Claiming several items at once (R46).
+ *
+ * <p>Not optimistic: a bulk write can half-succeed, and guessing which half
+ * then has to be unguessed. Both halves of the server's answer are written into
+ * the caches instead - the assigned items and the server's version of each
+ * conflicted one - so a second attempt carries fresh versions for exactly the
+ * items that need retrying.
+ */
+export function useAssignItems(listId: string) {
+  const queryClient = useQueryClient()
+  const invalidate = useItemInvalidation(listId)
+
+  return useMutation({
+    mutationFn: ({
+      assigneeId,
+      items,
+    }: {
+      assigneeId: string | null
+      items: { id: string; version: number }[]
+    }) => assignItems(listId, assigneeId, items),
+
+    onSuccess: (result: AssignmentResult) => {
+      const fresh = new Map<string, Item>()
+      result.assigned.forEach((item) => fresh.set(item.id, item))
+      result.conflicts.forEach((conflict) => {
+        if (conflict.item) {
+          fresh.set(conflict.item.id, conflict.item)
+        }
+      })
+      queryClient.setQueriesData<Item[]>({ queryKey: itemKeys.all(listId) }, (items) =>
+        items?.map((candidate) => fresh.get(candidate.id) ?? candidate),
+      )
+      invalidate()
+    },
   })
 }

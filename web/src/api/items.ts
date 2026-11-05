@@ -104,3 +104,34 @@ export function conflictingItem(error: unknown): Item | null {
   const body = (error as { response?: { data?: { item?: Item } } })?.response?.data
   return body?.item ?? null
 }
+
+export interface AssignmentConflict {
+  id: string
+  error: string
+  /** Absent when the item is no longer there at all. */
+  item: Item | null
+}
+
+export interface AssignmentResult {
+  assigned: Item[]
+  conflicts: AssignmentConflict[]
+}
+
+/**
+ * Assigning several of one list's items at once (R46).
+ *
+ * <p>Partial success, always 200: one item touched by somebody else must not
+ * discard the member's unambiguous intent for the rest. The conflicts carry the
+ * server's version of each item, so a second attempt retries exactly those.
+ */
+export async function assignItems(
+  listId: string,
+  assigneeId: string | null,
+  items: { id: string; version: number }[],
+): Promise<AssignmentResult> {
+  const { data } = await api.post<AssignmentResult>(`/lists/${listId}/items/assignment`, {
+    assigneeId,
+    items,
+  })
+  return data
+}

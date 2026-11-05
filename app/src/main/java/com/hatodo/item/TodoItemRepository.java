@@ -35,13 +35,20 @@ public interface TodoItemRepository extends JpaRepository<TodoItem, UUID> {
      * <p>No stored counter: one would be a second source of truth, and it
      * disagrees with the items the first time a delete path forgets to
      * decrement it.
+     *
+     * <p>{@code done = TRUE}, not {@code completedBy IS NOT NULL}: a reopened
+     * item keeps who completed it (R49) while its points are taken back, so the
+     * older predicate matched a group whose whole sum was null - which is a 500
+     * on this endpoint, not merely a wrong number. The COALESCE is the belt to
+     * that braces. Standing credit is what this answers; the activity feed asks
+     * a different question and keys on completedAt instead.
      */
     @Query("""
-            SELECT i.completedBy.id, i.completedBy.displayName, SUM(i.pointsEarned)
+            SELECT i.completedBy.id, i.completedBy.displayName, COALESCE(SUM(i.pointsEarned), 0)
             FROM TodoItem i
-            WHERE i.list.id = :listId AND i.completedBy IS NOT NULL
+            WHERE i.list.id = :listId AND i.done = TRUE AND i.completedBy IS NOT NULL
             GROUP BY i.completedBy.id, i.completedBy.displayName
-            ORDER BY SUM(i.pointsEarned) DESC, i.completedBy.displayName ASC
+            ORDER BY COALESCE(SUM(i.pointsEarned), 0) DESC, i.completedBy.displayName ASC
             """)
     List<Object[]> pointsByMember(@Param("listId") UUID listId);
 

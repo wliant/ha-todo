@@ -20,7 +20,11 @@ const ACCEPTED = ['image/png', 'image/jpeg', 'image/webp']
 const MAX_BYTES = 5 * 1024 * 1024
 
 /**
- * The detail field (R21): steps, notes, and pictures.
+ * A rich-text body: steps, notes, and pictures.
+ *
+ * <p>Used for the detail field (R21) and for a completion note (R37). The label
+ * is a prop because two of these can be on screen at once, and two controls
+ * both called "Detail" are indistinguishable to a screen reader and to a test.
  *
  * <p>Pictures are uploaded and referenced by URL, never inlined as base64 -
  * which would put megabytes into a column every item read returns. If that
@@ -31,10 +35,14 @@ export function DetailEditor({
   value,
   required,
   onChange,
+  label = 'Detail',
+  helperText = 'Steps, notes, and pictures. Paste or drop an image straight in.',
 }: {
   value: string
   required: boolean
   onChange: (html: string) => void
+  label?: string
+  helperText?: string
 }) {
   const [problem, setProblem] = useState<string | null>(null)
 
@@ -46,7 +54,7 @@ export function DetailEditor({
     content: value,
     onUpdate: ({ editor: current }) => onChange(current.getHTML()),
     editorProps: {
-      attributes: { 'aria-label': 'Detail', role: 'textbox' },
+      attributes: { 'aria-label': label, role: 'textbox' },
       handlePaste: (_view, event) => insertFiles(event.clipboardData?.files),
       handleDrop: (_view, event) => insertFiles((event as DragEvent).dataTransfer?.files),
     },
@@ -100,7 +108,8 @@ export function DetailEditor({
   return (
     <Box>
       <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 0.5 }}>
-        Detail{required ? ' (required)' : ''}
+        {label}
+        {required ? ' (required)' : ''}
       </Typography>
 
       <Stack direction="row" spacing={0.5} sx={{ mb: 0.5, flexWrap: 'wrap' }}>
@@ -150,7 +159,7 @@ export function DetailEditor({
       </Box>
 
       <FormHelperText error={problem !== null}>
-        {problem ?? 'Steps, notes, and pictures. Paste or drop an image straight in.'}
+        {problem ?? helperText}
       </FormHelperText>
     </Box>
   )

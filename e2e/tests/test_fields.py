@@ -134,8 +134,10 @@ def test_a_brand_new_list_already_offers_a_due_date(
     ui_sign_in(page, base_url, demo_member)
     list_id = create_list(page, name)
 
-    # Nothing configured, straight to adding an item.
+    # Nothing configured, straight to adding an item. The due date is optional
+    # by default, so it waits behind the form's toggle (R39).
     page.get_by_role("button", name="Add item").click()
+    page.get_by_role("button", name="More fields").click()
     page.get_by_role("textbox", name="Description").fill("Pay the rent")
     page.get_by_role("textbox", name="Due").fill("2026-12-01T09:00")
     page.get_by_role("button", name="Save").click()

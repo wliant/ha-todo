@@ -165,6 +165,74 @@ public class TodoItemService {
         return ItemResponse.of(item);
     }
 
+    /**
+     * Assigning several of one list's items in one request (R46).
+     *
+     * <p>Scoped to the list so there is one readable check and one
+     * assignee-audience check (R24); a cross-list version would need N of each
+     * and could silently span lists the caller sees differently.
+     *
+     * <p>Partial success. Stale items are skipped into {@code conflicts}
+     * without being mutated, which covers the common case - a tab left open -
+     * deterministically. A genuine concurrent flush is a different matter: it
+     * cannot be isolated per item without flushing inside the loop, and a
+     * failed flush poisons the session, so it fails the whole batch as an
+     * ordinary 409. See adr/0026.
+     */
+    @Transactional
+    public AssignmentResponse assign(UUID listId, AssignmentRequest request) {
+        TodoList list = lists.requireReadable(listId);
+        AppUser me = requireCurrentUser();
+
+        AppUser assignee = null;
+        if (request.assigneeId() != null) {
+            // Once for the batch, not once per item - and before anything is
+            // written, so an assignee nobody granted is a clean refusal.
+            if (!access.exists(listId, request.assigneeId())) {
+                throw new AssigneeWithoutAccessException();
+            }
+            assignee = users.findById(request.assigneeId())
+                    .orElseThrow(AssigneeWithoutAccessException::new);
+        }
+
+        List<ItemResponse> assigned = new ArrayList<>();
+        List<AssignmentResponse.Conflict> conflicts = new ArrayList<>();
+
+        for (AssignmentRequest.ItemVersion wanted : request.items()) {
+            TodoItem item = items.findById(wanted.id()).orElse(null);
+            if (item == null || !item.getListId().equals(listId)) {
+                // An id on another list answers as a deleted one does: it must
+                // not reveal that a list the caller cannot see exists (R19).
+                conflicts.add(new AssignmentResponse.Conflict(wanted.id(),
+                        "That item is no longer here.", null));
+                continue;
+            }
+            if (!isFreshView(item, wanted.version())) {
+                conflicts.add(new AssignmentResponse.Conflict(wanted.id(),
+                        describeStale(item), ItemResponse.of(item)));
+                continue;
+            }
+            item.assignTo(assignee, me);
+            assigned.add(ItemResponse.of(item));
+        }
+
+        if (!assigned.isEmpty()) {
+            lists.recordInteraction(list, me);
+        }
+        return new AssignmentResponse(assigned, conflicts);
+    }
+
+    /** Names the other member where it can, as the single-item 409 does. */
+    private static String describeStale(TodoItem item) {
+        if (item.isCompleted() && item.getCompletedBy() != null) {
+            return "%s completed this first.".formatted(item.getCompletedBy().getDisplayName());
+        }
+        if (item.getAssignee() != null) {
+            return "Somebody gave this to %s first.".formatted(item.getAssignee().getDisplayName());
+        }
+        return "Somebody else changed this item while you were looking at it.";
+    }
+
     @Transactional(readOnly = true)
     public List<ListPointsResponse> points(UUID listId) {
         lists.requireReadable(listId);
@@ -392,9 +460,18 @@ public class TodoItemService {
      * 409 rather than one that depends on when Hibernate happens to flush.
      */
     private void requireFreshView(TodoItem item, Long seenVersion) {
-        if (seenVersion == null || item.getVersion() != seenVersion) {
+        if (!isFreshView(item, seenVersion)) {
             throw new StaleItemException(item.getId());
         }
+    }
+
+    /**
+     * The same question without the throw, for the bulk path: one stale item
+     * out of eight is reported rather than abandoning the other seven, and
+     * catching the throwing variant would leave the transaction rollback-only.
+     */
+    private boolean isFreshView(TodoItem item, Long seenVersion) {
+        return seenVersion != null && item.getVersion() == seenVersion;
     }
 
     private AppUser requireCurrentUser() {

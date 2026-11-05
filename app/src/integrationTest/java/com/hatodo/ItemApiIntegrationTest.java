@@ -570,4 +570,179 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
                 .map(item -> (String) item.get("description"))
                 .toList();
     }
+
+    @Test
+    void reopeningTakesTheMemberOffTheLeaderboardRatherThanBreakingIt() {
+        // The regression R49 created and no unit test could: a reopened item
+        // keeps who completed it, so a leaderboard filtered on "has a
+        // completer" matched a group whose entire sum was null - a 500 on the
+        // points endpoint. Standing credit is `done`, not `completed_by`.
+        Member ana = givenMember("points-reopen");
+        String listId = newList(ana);
+        configure(ana, listId, """
+                [{"kind":"COST","label":"Time","costMode":"NUMERIC","costUnitLabel":"hour",
+                  "pointsPerUnit":50}]
+                """);
+        String fieldId = (String) costField(ana, listId).get("id");
+        Map created = addItem(ana, listId, """
+                {"description":"Worth something","costValues":[{"fieldId":"%s","amount":1}]}
+                """.formatted(fieldId)).getBody();
+
+        Map completed = setCompleted(ana, (String) created.get("id"),
+                ((Number) created.get("version")).longValue(), true).getBody();
+        assertThat(points(ana, listId)).extracting(row -> row.get("points")).containsExactly(50);
+
+        setCompleted(ana, (String) created.get("id"),
+                ((Number) completed.get("version")).longValue(), false);
+
+        // Off the board entirely, and the endpoint still answers.
+        assertThat(points(ana, listId)).isEmpty();
+    }
+
+    private List<Map<String, Object>> points(Member member, String listId) {
+        ResponseEntity<List> response = rest.exchange("/api/lists/" + listId + "/points",
+                HttpMethod.GET, new HttpEntity<>(headersFor(member.session())), List.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        return response.getBody();
+    }
+
+    private ResponseEntity<Map> assign(Member member, String listId, String body) {
+        return rest.exchange("/api/lists/" + listId + "/items/assignment", HttpMethod.POST,
+                new HttpEntity<>(body, headersFor(member.session())), Map.class);
+    }
+
+    @Test
+    void claimsSeveralItemsInOneRequest() {
+        Member ana = givenMember("bulk-claim");
+        String listId = newList(ana);
+        configure(ana, listId, "[{\"kind\":\"ASSIGNEE\"}]");
+        Map first = addItem(ana, listId, "{\"description\":\"Upstairs\"}").getBody();
+        Map second = addItem(ana, listId, "{\"description\":\"Downstairs\"}").getBody();
+
+        ResponseEntity<Map> response = assign(ana, listId, """
+                {"assigneeId":"%s","items":[{"id":"%s","version":%d},{"id":"%s","version":%d}]}
+                """.formatted(ana.id(), first.get("id"),
+                        ((Number) first.get("version")).longValue(), second.get("id"),
+                        ((Number) second.get("version")).longValue()));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat((List<Map<String, Object>>) response.getBody().get("assigned"))
+                .hasSize(2)
+                .allSatisfy(item -> assertThat(item).containsEntry("selfAssigned", true));
+        assertThat((List<?>) response.getBody().get("conflicts")).isEmpty();
+    }
+
+    @Test
+    void assignsWhatItCanAndReportsWhatItCouldNot() {
+        // R46 with partial success: one item somebody else touched must not
+        // discard the member's unambiguous intent for the rest (adr/0026).
+        Member ana = givenMember("partial-owner");
+        Member ben = givenMember("partial-peer");
+        String listId = newList(ana, ben.id().toString());
+        configure(ana, listId, "[{\"kind\":\"ASSIGNEE\"}]");
+        Map fresh = addItem(ana, listId, "{\"description\":\"Still fresh\"}").getBody();
+        Map contended = addItem(ana, listId, "{\"description\":\"Contended\"}").getBody();
+
+        // Ben gets there first, which moves the version Ana is holding.
+        setCompleted(ben, (String) contended.get("id"),
+                ((Number) contended.get("version")).longValue(), true);
+
+        ResponseEntity<Map> response = assign(ana, listId, """
+                {"assigneeId":"%s","items":[{"id":"%s","version":%d},{"id":"%s","version":%d}]}
+                """.formatted(ana.id(), fresh.get("id"),
+                        ((Number) fresh.get("version")).longValue(), contended.get("id"),
+                        ((Number) contended.get("version")).longValue()));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat((List<Map<String, Object>>) response.getBody().get("assigned"))
+                .extracting(item -> item.get("description")).containsExactly("Still fresh");
+
+        List<Map<String, Object>> conflicts =
+                (List<Map<String, Object>>) response.getBody().get("conflicts");
+        assertThat(conflicts).hasSize(1);
+        assertThat(conflicts.get(0)).containsEntry("id", contended.get("id"));
+        assertThat((String) conflicts.get(0).get("error")).contains("completed this first");
+        // The server's version of it, so a second attempt retries exactly this
+        // one with a version that will work.
+        assertThat((Map<String, Object>) conflicts.get(0).get("item"))
+                .containsEntry("completed", true);
+    }
+
+    @Test
+    void refusesToAssignToSomebodyWhoCannotSeeTheList() {
+        // R24, checked once for the batch and before anything is written.
+        Member ana = givenMember("bulk-r24-owner");
+        Member stranger = givenMember("bulk-r24-stranger");
+        String listId = newList(ana);
+        configure(ana, listId, "[{\"kind\":\"ASSIGNEE\"}]");
+        Map item = addItem(ana, listId, "{\"description\":\"Not for them\"}").getBody();
+
+        ResponseEntity<Map> response = assign(ana, listId, """
+                {"assigneeId":"%s","items":[{"id":"%s","version":%d}]}
+                """.formatted(stranger.id(), item.get("id"),
+                        ((Number) item.get("version")).longValue()));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        // Nothing was written: the check runs before the loop.
+        assertThat(rest.exchange("/api/items/" + item.get("id"), HttpMethod.GET,
+                new HttpEntity<>(headersFor(ana.session())), Map.class).getBody().get("assignee"))
+                .isNull();
+    }
+
+    @Test
+    void anItemFromAnotherListIsSimplyNoLongerHere() {
+        // An id on a list the caller cannot see must answer exactly as a
+        // deleted one does, or the response reveals that the list exists (R19).
+        Member ana = givenMember("bulk-elsewhere");
+        Member ben = givenMember("bulk-elsewhere-peer");
+        String mine = newList(ana);
+        String theirs = newList(ben);
+        configure(ana, mine, "[{\"kind\":\"ASSIGNEE\"}]");
+        Map hidden = addItem(ben, theirs, "{\"description\":\"Ben's own\"}").getBody();
+
+        ResponseEntity<Map> response = assign(ana, mine, """
+                {"assigneeId":"%s","items":[{"id":"%s","version":%d}]}
+                """.formatted(ana.id(), hidden.get("id"),
+                        ((Number) hidden.get("version")).longValue()));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        List<Map<String, Object>> conflicts =
+                (List<Map<String, Object>>) response.getBody().get("conflicts");
+        assertThat(conflicts).hasSize(1);
+        assertThat(conflicts.get(0).get("item")).isNull();
+        assertThat((String) conflicts.get(0).get("error")).isEqualTo("That item is no longer here.");
+    }
+
+    @Test
+    void assigningToNobodyClearsTheClaimAsWell() {
+        Member ana = givenMember("bulk-unassign");
+        String listId = newList(ana);
+        configure(ana, listId, "[{\"kind\":\"ASSIGNEE\"}]");
+        Map item = addItem(ana, listId, "{\"description\":\"Mine\",\"assigneeId\":\"%s\"}"
+                .formatted(ana.id())).getBody();
+        assertThat(item.get("selfAssigned")).isEqualTo(true);
+
+        ResponseEntity<Map> response = assign(ana, listId, """
+                {"assigneeId":null,"items":[{"id":"%s","version":%d}]}
+                """.formatted(item.get("id"), ((Number) item.get("version")).longValue()));
+
+        Map<String, Object> cleared =
+                ((List<Map<String, Object>>) response.getBody().get("assigned")).get(0);
+        assertThat(cleared.get("assignee")).isNull();
+        assertThat(cleared.get("selfAssigned")).isEqualTo(false);
+    }
+
+    @Test
+    void aStrangerCannotAssignOnAListTheyCannotSee() {
+        Member ana = givenMember("bulk-guard-owner");
+        Member stranger = givenMember("bulk-guard-stranger");
+        String listId = newList(ana);
+        Map item = addItem(ana, listId, "{\"description\":\"Private\"}").getBody();
+
+        ResponseEntity<Map> response = assign(stranger, listId, """
+                {"assigneeId":null,"items":[{"id":"%s","version":%d}]}
+                """.formatted(item.get("id"), ((Number) item.get("version")).longValue()));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
 }
