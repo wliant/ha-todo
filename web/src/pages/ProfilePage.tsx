@@ -13,6 +13,7 @@ import { errorMessage } from '../api/http'
 import { useCurrentUser } from '../auth/useCurrentUser'
 import { useOwnPassword } from '../auth/useOwnPassword'
 import { AvatarUpload } from '../profile/AvatarUpload'
+import { CalendarFeeds } from '../profile/CalendarFeeds'
 import { useThemePreference } from '../theme/useThemePreference'
 import type { ThemePreference } from '../api/profile'
 
@@ -25,6 +26,7 @@ export function ProfilePage() {
       </Typography>
       <Picture />
       <Appearance />
+      <Calendars />
       <PasswordSection />
     </Stack>
   )
@@ -67,6 +69,20 @@ function Picture() {
   return (
     <Section title="Your picture">
       <AvatarUpload user={user} />
+    </Section>
+  )
+}
+
+/**
+ * Where a calendar subscription lives: in the member's own settings, not behind
+ * a Calendar menu entry. The events are read on My day, and a second navigation
+ * surface for a read-only strip is how a feature nobody opens gets built
+ * (requirements/0007).
+ */
+function Calendars() {
+  return (
+    <Section title="Your calendars">
+      <CalendarFeeds />
     </Section>
   )
 }

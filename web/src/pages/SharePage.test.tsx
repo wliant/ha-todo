@@ -44,6 +44,7 @@ function renderShare(query: string) {
     username: 'ana',
     displayName: 'Ana',
     role: 'MEMBER',
+    timezone: 'Asia/Singapore',
     avatarImageId: null,
   })
   const queryClient = new QueryClient({

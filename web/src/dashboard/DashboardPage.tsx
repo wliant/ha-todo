@@ -8,11 +8,16 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
 import { Link as RouterLink, Outlet, useLocation, useSearchParams } from 'react-router-dom'
 import type { DashboardScope } from '../api/dashboard'
+import type { CalendarEvent } from '../api/calendars'
+import { DashboardEventDialog } from './DashboardEventDialog'
 import { DashboardItemDialog } from './DashboardItemDialog'
+import { StaleFeedsNotice } from './StaleFeedsNotice'
 import { ViewContext } from './dashboardView'
 import { UndatedPanel } from './UndatedPanel'
 import { useScheduled, useUndated } from './queries'
-import { monthRange, now } from './calendar'
+import { useHouseholdZone } from '../app/useHouseholdZone'
+import { useState } from 'react'
+import { dayRange, monthRange, now, weekRange, windowOf } from './calendar'
 
 /**
  * What a member needs to do, across every list they can see (R44, R45).
@@ -26,14 +31,33 @@ import { monthRange, now } from './calendar'
  */
 export function DashboardPage() {
   const { pathname } = useLocation()
+  // The one place this page asks what zone it is in; every view reads it from
+  // the context rather than calling the hook again.
+  const zone = useHouseholdZone()
+  // Held in state rather than the URL, unlike the item popup: a collapsed event
+  // has no id of its own to link to, and the whole event is already in hand.
+  const [openedEvent, setOpenedEvent] = useState<CalendarEvent | null>(null)
   const [params, setParams] = useSearchParams()
   const scope: DashboardScope = params.get('scope') === 'mine' ? 'mine' : 'all'
   const tab = pathname.endsWith('/week') ? 'week' : pathname.endsWith('/month') ? 'month' : 'day'
+  const activeWindow = useMemo(() => {
+    const today = now(zone)
+    const range =
+      tab === 'week' ? weekRange(today) : tab === 'month' ? monthRange(today) : dayRange(today)
+    return windowOf(range, zone)
+  }, [tab, zone])
 
   function open(itemId: string) {
+    setOpenedEvent(null)
     const next = new URLSearchParams(params)
     next.set('item', itemId)
     setParams(next)
+  }
+
+  /** One popup at a time, as on a list (0005 R38). */
+  function openEvent(event: CalendarEvent) {
+    close()
+    setOpenedEvent(event)
   }
 
   function close() {
@@ -55,7 +79,7 @@ export function DashboardPage() {
   const openId = params.get('item')
 
   return (
-    <ViewContext.Provider value={{ scope, open }}>
+    <ViewContext.Provider value={{ scope, zone, open, openEvent }}>
       <Stack spacing={2.5}>
         <Stack
           direction={{ xs: 'column', sm: 'row' }}
@@ -76,6 +100,10 @@ export function DashboardPage() {
             <ToggleButton value="mine">Mine</ToggleButton>
           </ToggleButtonGroup>
         </Stack>
+
+        {/* The active tab's own window, so this shares the view's cache entry
+            and costs no request of its own. */}
+        <StaleFeeds window={activeWindow} scope={scope} />
 
         <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
           <Tabs value={tab} aria-label="Which range">
@@ -101,7 +129,14 @@ export function DashboardPage() {
         </Stack>
       </Stack>
 
-      {openId && <OpenItem id={openId} scope={scope} onClose={close} />}
+      {openId && <OpenItem id={openId} scope={scope} zone={zone} onClose={close} />}
+      {openedEvent && (
+        <DashboardEventDialog
+          event={openedEvent}
+          zone={zone}
+          onClose={() => setOpenedEvent(null)}
+        />
+      )}
     </ViewContext.Provider>
   )
 }
@@ -117,21 +152,19 @@ export function DashboardPage() {
 function OpenItem({
   id,
   scope,
+  zone,
   onClose,
 }: {
   id: string
   scope: DashboardScope
+  zone: string
   onClose: () => void
 }) {
   // Once per mount. Every range here snaps to a midnight, so recomputing would
   // usually give the same value - but "usually" is how phase C's activity
   // window ended up as a query key that moved under its own refetch.
-  const month = useMemo(() => monthRange(now()), [])
-  const { data: scheduled } = useScheduled(
-    month.from.toISOString(),
-    month.to.toISOString(),
-    scope,
-  )
+  const month = useMemo(() => windowOf(monthRange(now(zone)), zone), [zone])
+  const { data: scheduled } = useScheduled(month.from, month.to, scope)
   const { data: undated } = useUndated(scope)
 
   const item =
@@ -142,4 +175,22 @@ function OpenItem({
     return null
   }
   return <DashboardItemDialog item={item} onClose={onClose} />
+}
+
+/**
+ * The staleness notice (0007 R71).
+ *
+ * <p>Asks for the window the visible view is already asking for - the same
+ * query key, so the same cache entry - because the warnings do not depend on
+ * the window and a second range here would double every page load's requests.
+ */
+function StaleFeeds({
+  window,
+  scope,
+}: {
+  window: { from: string; to: string }
+  scope: DashboardScope
+}) {
+  const { data } = useScheduled(window.from, window.to, scope)
+  return <StaleFeedsNotice feeds={data?.staleFeeds ?? []} />
 }

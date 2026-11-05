@@ -36,6 +36,7 @@ function renderShell(role: UserRole, { wide = true } = {}) {
     username: 'ana',
     displayName: 'Ana',
     role,
+    timezone: 'Asia/Singapore',
     avatarImageId: null,
   })
   const queryClient = new QueryClient({

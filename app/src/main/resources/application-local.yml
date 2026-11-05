@@ -20,6 +20,11 @@ app:
     # Local only, so the stack comes up with no setup. dev and prod inherit the
     # no-default behaviour from application.yml and refuse to start without it.
     password: ${ADMIN_PASSWORD:admin}
+  calendar:
+    # Local only, so a fixture .ics can be served from this machine. dev and
+    # prod inherit false, which is what keeps a pasted address from reaching the
+    # registry on the LAN - see docs/adr/0035.
+    allow-private-hosts: ${CALENDAR_ALLOW_PRIVATE_HOSTS:true}
 
 logging:
   level:

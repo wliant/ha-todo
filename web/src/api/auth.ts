@@ -8,6 +8,12 @@ export interface CurrentUser {
   username: string
   displayName: string
   role: UserRole
+  /**
+   * The *household's* zone, not this account's: one household has one
+   * definition of Thursday, and the browser never guesses it. See
+   * docs/adr/0036.
+   */
+  timezone: string
   avatarImageId: string | null
 }
 

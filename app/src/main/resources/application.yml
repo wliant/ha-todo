@@ -1,6 +1,11 @@
 # Shared defaults. Every environment-specific value comes from the environment,
 # so no hostnames or secrets live in this repo.
 app:
+  # The household's zone, and therefore the whole product's: one household has
+  # one definition of Thursday. Read by the recurrence job and by every
+  # date-to-day decision, and served to the SPA on /api/me so the browser never
+  # uses the device's zone. See docs/adr/0036.
+  timezone: ${APP_TIMEZONE:Asia/Singapore}
   # The single admin account, reconciled on every startup. No password default:
   # startup fails rather than leaving a deployment nobody can administer.
   # See docs/adr/0006-admin-account-from-environment.md.
@@ -28,10 +33,24 @@ app:
     cron: ${RECURRENCE_CRON:0 5 1 * * *}
     # Zero: a chore that was due last Tuesday is not worth creating on Friday.
     catch-up-days: ${RECURRENCE_CATCH_UP_DAYS:0}
-    # The zone a rule's time of day means, and the zone the cron is read in.
-    # Unset, every container image is UTC and "the bins go out at 7pm" is wrong
-    # by the offset.
-    zone: ${APP_TIMEZONE:UTC}
+  # Subscribed calendar feeds (requirements/0007). Read-only .ics, no OAuth:
+  # see docs/adr/0034.
+  calendar:
+    enabled: ${CALENDAR_SYNC_ENABLED:true}
+    # Every 20 minutes, offset off the hour so it never shares a minute with
+    # anything else. Providers regenerate their published .ics on their own
+    # schedule, so polling harder buys nothing.
+    cron: ${CALENDAR_SYNC_CRON:0 7/20 * * * *}
+    # Wide enough to cover the widest view My day can ask for: the month grid
+    # reaches 36 days back on the 31st of a month that began on a Sunday.
+    window-days-back: ${CALENDAR_WINDOW_BACK:45}
+    window-days-forward: ${CALENDAR_WINDOW_FORWARD:90}
+    # A feed quiet for longer than this is called out on My day (R71).
+    stale-after: ${CALENDAR_STALE_AFTER:PT6H}
+    # False everywhere but local and the integration tests, which serve fixture
+    # feeds from localhost. A member-supplied URL fetched by this server is a
+    # request-forgery primitive otherwise - see docs/adr/0035.
+    allow-private-hosts: ${CALENDAR_ALLOW_PRIVATE_HOSTS:false}
 
 spring:
   application:

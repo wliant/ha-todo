@@ -1,8 +1,12 @@
 package com.hatodo.dashboard;
 
+import com.hatodo.calendar.CalendarEventQuery;
+import com.hatodo.calendar.CalendarFeedService;
+import com.hatodo.household.HouseholdProperties;
 import com.hatodo.item.TodoItemRepository;
 import com.hatodo.user.CurrentUserProvider;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -25,21 +29,49 @@ public class DashboardService {
     private static final int LIMIT = 500;
 
     private final TodoItemRepository items;
+    private final CalendarEventQuery events;
+    private final CalendarFeedService feeds;
+    private final HouseholdProperties household;
     private final CurrentUserProvider currentUser;
 
-    public DashboardService(TodoItemRepository items, CurrentUserProvider currentUser) {
+    public DashboardService(TodoItemRepository items, CalendarEventQuery events,
+                            CalendarFeedService feeds, HouseholdProperties household,
+                            CurrentUserProvider currentUser) {
         this.items = items;
+        this.events = events;
+        this.feeds = feeds;
+        this.household = household;
         this.currentUser = currentUser;
     }
 
     @Transactional(readOnly = true)
     public ScheduledResponse scheduled(Instant from, Instant to, String scope) {
         UUID me = currentUser.requireUserId();
+        boolean mineOnly = mineOnly(scope);
         return new ScheduledResponse(from, to,
-                items.findScheduledFor(me, from, to, mineOnly(scope), PageRequest.ofSize(LIMIT))
+                items.findScheduledFor(me, from, to, mineOnly, PageRequest.ofSize(LIMIT))
                         .stream()
                         .map(DashboardItemResponse::of)
-                        .toList());
+                        .toList(),
+                events.visible(me, firstDay(from), lastDay(to), mineOnly),
+                feeds.staleFor(me));
+    }
+
+    /*
+     * The window arrives as two instants because that is what an item's due
+     * date is. An event is placed on a *day* in the household's zone, so the
+     * bounds are read back in that zone - the same zone the client used to
+     * build them, which is why both ends land on the days the member is
+     * looking at. See adr/0036.
+     */
+
+    private LocalDate firstDay(Instant from) {
+        return from.atZone(household.zone()).toLocalDate();
+    }
+
+    /** Exclusive at the top, so a window ending at midnight does not drag in the next day. */
+    private LocalDate lastDay(Instant to) {
+        return to.minusMillis(1).atZone(household.zone()).toLocalDate();
     }
 
     @Transactional(readOnly = true)

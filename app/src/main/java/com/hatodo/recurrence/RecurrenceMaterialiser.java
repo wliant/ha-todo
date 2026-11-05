@@ -1,5 +1,6 @@
 package com.hatodo.recurrence;
 
+import com.hatodo.household.HouseholdProperties;
 import com.hatodo.item.ItemCostValueRequest;
 import com.hatodo.item.SaveItemRequest;
 import com.hatodo.item.TodoItemRepository;
@@ -39,18 +40,21 @@ public class RecurrenceMaterialiser {
     private final TodoItemRepository occurrences;
     private final ListAccessRepository access;
     private final RecurrenceProperties properties;
+    private final HouseholdProperties household;
     private final Clock clock;
 
     public RecurrenceMaterialiser(RecurrenceRuleRepository rules,
                                   RecurrenceCalculator calculator, TodoItemService items,
                                   TodoItemRepository occurrences, ListAccessRepository access,
-                                  RecurrenceProperties properties, Clock clock) {
+                                  RecurrenceProperties properties,
+                                  HouseholdProperties household, Clock clock) {
         this.rules = rules;
         this.calculator = calculator;
         this.items = items;
         this.occurrences = occurrences;
         this.access = access;
         this.properties = properties;
+        this.household = household;
         this.clock = clock;
     }
 
@@ -61,7 +65,7 @@ public class RecurrenceMaterialiser {
     }
 
     public LocalDate today() {
-        return LocalDate.now(clock.withZone(ZoneId.of(properties.zoneOrUtc())));
+        return LocalDate.now(clock.withZone(household.zone()));
     }
 
     /**
@@ -165,13 +169,13 @@ public class RecurrenceMaterialiser {
      *
      * <p>A rule's time of day is a wall clock: "the bins go out at 7pm" is 7pm
      * where the household lives, whatever the server's own zone happens to be.
-     * Without {@code app.household.zone} this would be 7pm UTC in every
+     * Without {@code app.timezone} this would be 7pm UTC in every
      * container image.
      */
     private Instant dueAt(RecurrenceRule rule, LocalDate date) {
         if (rule.getDueTime() == null) {
             return null;
         }
-        return date.atTime(rule.getDueTime()).atZone(ZoneId.of(properties.zoneOrUtc())).toInstant();
+        return date.atTime(rule.getDueTime()).atZone(household.zone()).toInstant();
     }
 }

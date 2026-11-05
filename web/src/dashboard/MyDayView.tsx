@@ -6,90 +6,174 @@ import Chip from '@mui/material/Chip'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
+import EventRounded from '@mui/icons-material/EventRounded'
 import { MemberAvatar } from '../app/MemberAvatar'
 import { ListIcon } from '../lists/listIcons'
 import { useDashboardView } from './dashboardView'
-import { dayRange, now } from './calendar'
+import { civilIn, dayKey, dayRange, now, windowOf, type Zone } from './calendar'
+import { byDayEntries, eventSources, eventTime, type DayEntry } from './entries'
 import { useScheduled } from './queries'
 
-/** What today holds, in full rows - this is the view a member acts from. */
+/**
+ * What today holds, in full rows - this is the view a member acts from.
+ *
+ * <p>Chores and events in one sequence rather than two sections
+ * (requirements/0007 R67): what matters at breakfast is the shape of the day,
+ * and an appointment at seven is why nobody can take the seven o'clock chore.
+ */
 export function MyDayView() {
-  const { scope, open } = useDashboardView()
+  const { scope, zone, open, openEvent } = useDashboardView()
   // Once per mount; see WeekView for why this is not computed during render.
-  const range = useMemo(() => dayRange(now()), [])
-  const { data, isPending } = useScheduled(
-    range.from.toISOString(),
-    range.to.toISOString(),
-    scope,
-  )
+  const today = useMemo(() => now(zone), [zone])
+  const window = useMemo(() => windowOf(dayRange(today), zone), [today, zone])
+  const { data, isPending } = useScheduled(window.from, window.to, scope)
+
+  const entries =
+    byDayEntries(data?.items ?? [], data?.events ?? [], zone).get(dayKey(today)) ?? []
 
   return (
     <Stack spacing={1.5}>
       <Typography component="h2" variant="h6">
-        Due today
+        Today
       </Typography>
 
       {isPending && <Typography role="status">Loading…</Typography>}
 
-      {data && data.items.length === 0 && (
+      {data && entries.length === 0 && (
         <Typography role="status" color="text.secondary">
-          Nothing is due today.
+          Nothing is due today, and nothing is happening.
         </Typography>
       )}
 
-      {data?.items.map((item) => (
-        <Paper key={item.id} variant="outlined">
-          <ButtonBase
-            onClick={() => open(item.id)}
-            aria-label={`${item.description}, on ${item.listName}`}
-            sx={{ width: '100%', p: 1.5, justifyContent: 'flex-start', textAlign: 'left' }}
-          >
-            <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', width: '100%' }}>
-              <Avatar
-                aria-hidden
-                variant="rounded"
-                sx={{
-                  bgcolor: 'primary.main',
-                  color: 'primary.contrastText',
-                  width: 32,
-                  height: 32,
-                }}
-              >
-                <ListIcon token={item.listIcon} />
-              </Avatar>
-              <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography sx={{ overflowWrap: 'anywhere' }}>{item.description}</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {item.listName}
-                  {item.dueAt ? ` · ${formatTime(item.dueAt)}` : ''}
-                </Typography>
-              </Box>
-              {item.assignee && (
-                <Chip
-                  size="small"
-                  avatar={
-                    <MemberAvatar
-                      displayName={item.assignee.displayName}
-                      avatarImageId={item.assignee.avatarImageId}
-                      size={24}
-                    />
-                  }
-                  label={item.assignee.displayName}
-                  sx={
-                    item.selfAssigned
-                      ? { bgcolor: 'selfClaimed.main', color: 'selfClaimed.contrastText' }
-                      : undefined
-                  }
-                />
-              )}
-            </Stack>
-          </ButtonBase>
-        </Paper>
-      ))}
+      {entries.map((entry) =>
+        entry.kind === 'item' ? (
+          <ItemRow key={entry.key} entry={entry} zone={zone} onOpen={open} />
+        ) : (
+          <EventRow key={entry.key} entry={entry} zone={zone} onOpen={openEvent} />
+        ),
+      )}
     </Stack>
   )
 }
 
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+function ItemRow({
+  entry,
+  zone,
+  onOpen,
+}: {
+  entry: Extract<DayEntry, { kind: 'item' }>
+  zone: Zone
+  onOpen: (id: string) => void
+}) {
+  const item = entry.item
+  return (
+    <Paper variant="outlined">
+      <ButtonBase
+        onClick={() => onOpen(item.id)}
+        aria-label={`${item.description}, on ${item.listName}`}
+        sx={{ width: '100%', p: 1.5, justifyContent: 'flex-start', textAlign: 'left' }}
+      >
+        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', width: '100%' }}>
+          <Avatar
+            aria-hidden
+            variant="rounded"
+            sx={{
+              bgcolor: 'primary.main',
+              color: 'primary.contrastText',
+              width: 32,
+              height: 32,
+            }}
+          >
+            <ListIcon token={item.listIcon} />
+          </Avatar>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography sx={{ overflowWrap: 'anywhere' }}>{item.description}</Typography>
+            <Typography variant="caption" color="text.secondary">
+              {item.listName}
+              {item.dueAt ? ` · ${formatTime(item.dueAt, zone)}` : ''}
+            </Typography>
+          </Box>
+          {item.assignee && (
+            <Chip
+              size="small"
+              avatar={
+                <MemberAvatar
+                  displayName={item.assignee.displayName}
+                  avatarImageId={item.assignee.avatarImageId}
+                  size={24}
+                />
+              }
+              label={item.assignee.displayName}
+              sx={
+                item.selfAssigned
+                  ? { bgcolor: 'selfClaimed.main', color: 'selfClaimed.contrastText' }
+                  : undefined
+              }
+            />
+          )}
+        </Stack>
+      </ButtonBase>
+    </Paper>
+  )
+}
+
+/**
+ * An event's row.
+ *
+ * <p>Outlined where an item's is filled, and with no completion affordance at
+ * all - the two have to read differently at a glance or a member will try to
+ * tick somebody's dentist appointment.
+ */
+function EventRow({
+  entry,
+  zone,
+  onOpen,
+}: {
+  entry: Extract<DayEntry, { kind: 'event' }>
+  zone: Zone
+  onOpen: (event: Extract<DayEntry, { kind: 'event' }>['event']) => void
+}) {
+  const event = entry.event
+  return (
+    <Paper variant="outlined" sx={{ borderColor: 'primary.main', borderStyle: 'dashed' }}>
+      <ButtonBase
+        onClick={() => onOpen(event)}
+        aria-label={`${event.summary}, ${eventTime(event, zone)}, from ${eventSources(event)}`}
+        sx={{ width: '100%', p: 1.5, justifyContent: 'flex-start', textAlign: 'left' }}
+      >
+        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', width: '100%' }}>
+          <Avatar
+            aria-hidden
+            variant="rounded"
+            sx={{
+              bgcolor: 'transparent',
+              color: 'primary.main',
+              border: 1,
+              borderColor: 'primary.main',
+              width: 32,
+              height: 32,
+            }}
+          >
+            <EventRounded fontSize="small" />
+          </Avatar>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography sx={{ overflowWrap: 'anywhere' }}>{event.summary}</Typography>
+            <Typography variant="caption" color="text.secondary">
+              {eventTime(event, zone)}
+              {event.location ? ` · ${event.location}` : ''}
+              {` · ${eventSources(event)}`}
+            </Typography>
+          </Box>
+        </Stack>
+      </ButtonBase>
+    </Paper>
+  )
+}
+
+/** The household's clock, not the device's (adr/0036). */
+function formatTime(iso: string, zone: Zone): string {
+  return civilIn(new Date(iso), zone).toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }

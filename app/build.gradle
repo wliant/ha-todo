@@ -49,6 +49,15 @@ dependencies {
 	// Sanitizes the detail field server-side on write. Stored HTML rendered
 	// into our own origin is a stored XSS otherwise - see docs/adr/0018.
 	implementation 'com.googlecode.owasp-java-html-sanitizer:owasp-java-html-sanitizer:20240325.1'
+	// Reads subscribed .ics feeds. Pinned exactly, and chosen over ical4j on
+	// weight: this brings vinnie and a jackson-core the application already
+	// has, where ical4j brings commons-*, slf4j bridges and threeten-extra.
+	//
+	// Hand-rolling this was considered and lost on one line of RFC 5545:
+	// recurrence. adr/0025 refuses to implement RRULE for *generating* chores,
+	// where we choose the vocabulary; reading a calendar somebody else wrote is
+	// the case where we do not. See docs/adr/0034.
+	implementation 'net.sf.biweekly:biweekly:0.6.8'
 	runtimeOnly 'org.postgresql:postgresql'
 	testImplementation 'org.springframework.boot:spring-boot-starter-actuator-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'

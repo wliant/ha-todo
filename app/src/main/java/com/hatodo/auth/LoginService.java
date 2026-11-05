@@ -1,5 +1,6 @@
 package com.hatodo.auth;
 
+import com.hatodo.household.HouseholdProperties;
 import com.hatodo.user.AppUser;
 import com.hatodo.user.AppUserDetailsService;
 import com.hatodo.user.AppUserPrincipal;
@@ -27,10 +28,13 @@ public class LoginService {
 
     private final AuthenticationManager authenticationManager;
     private final AppUserRepository users;
+    private final HouseholdProperties household;
 
-    public LoginService(AuthenticationManager authenticationManager, AppUserRepository users) {
+    public LoginService(AuthenticationManager authenticationManager, AppUserRepository users,
+                        HouseholdProperties household) {
         this.authenticationManager = authenticationManager;
         this.users = users;
+        this.household = household;
     }
 
     /**
@@ -70,7 +74,7 @@ public class LoginService {
     @Transactional(readOnly = true)
     public CurrentUserResponse currentUser(String username) {
         return users.findByUsernameIgnoreCase(username)
-                .map(CurrentUserResponse::of)
+                .map(user -> CurrentUserResponse.of(user, household.zone()))
                 .orElseThrow(() -> new BadCredentialsException("Bad credentials"));
     }
 }

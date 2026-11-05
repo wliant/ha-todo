@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.hatodo.household.HouseholdProperties;
 import com.hatodo.user.AppUser;
 import com.hatodo.user.AppUserPrincipal;
 import com.hatodo.user.AppUserRepository;
@@ -34,7 +35,8 @@ class LoginServiceTest {
     private AppUserRepository users;
 
     private LoginService loginService() {
-        return new LoginService(authenticationManager, users);
+        return new LoginService(authenticationManager, users,
+                new HouseholdProperties("Asia/Singapore"));
     }
 
     @Test
@@ -118,5 +120,21 @@ class LoginServiceTest {
                 .extracting(java.lang.reflect.RecordComponent::getName)
                 .containsExactly("id", "username", "displayName", "avatarImageId");
         assertThat(roster.toString()).doesNotContain("$2y$10$hash");
+    }
+
+    @Test
+    void tellsTheClientTheHouseholdsZoneRatherThanLeavingItToTheDevice() {
+        AppUser ana = AppUser.member("ana", "Ana", null);
+        when(users.findByUsernameIgnoreCase("ana")).thenReturn(Optional.of(ana));
+
+        assertThat(loginService().currentUser("ana").timezone()).isEqualTo("Asia/Singapore");
+    }
+
+    @Test
+    void fallsBackToTheHouseholdsOwnZoneRatherThanToUtc() {
+        // An unset APP_TIMEZONE used to mean UTC, which put the household's
+        // evening in the wrong day - see docs/adr/0036.
+        assertThat(new HouseholdProperties(null).zone().getId()).isEqualTo("Asia/Singapore");
+        assertThat(new HouseholdProperties("  ").zone().getId()).isEqualTo("Asia/Singapore");
     }
 }

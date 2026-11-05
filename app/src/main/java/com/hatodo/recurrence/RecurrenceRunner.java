@@ -34,7 +34,7 @@ public class RecurrenceRunner {
         this.materialiser = materialiser;
     }
 
-    @Scheduled(cron = "${app.recurrence.cron}", zone = "${app.recurrence.zone:UTC}")
+    @Scheduled(cron = "${app.recurrence.cron}", zone = "${app.timezone:Asia/Singapore}")
     void scheduled() {
         RecurrenceRunResponse result = runEverything();
         log.info("Recurrence run: {} rules, {} generated, {} already there, {} failed",
