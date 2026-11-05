@@ -98,9 +98,12 @@ follows the device's zone. `occurs_on` is application-maintained rather than gen
 
 Recurrence is expanded at parse time, one row per occurrence, and **collapsing is per occurrence**
 (`uid` + day + minute) rather than per series — a weekly event keeps all its occurrences even when two
-members' feeds both carry it. An override the expansion never matches is **still emitted**: a feed whose
-series `DTSTART` was edited after an occurrence was moved leaves a `RECURRENCE-ID` that matches nothing,
-and dropping it shows a series with one occurrence quietly missing.
+members' feeds both carry it. An override the expansion never matches is **still emitted**, and this is load-bearing rather than an
+edge case: **not every publisher writes an `RRULE`.** Some expand a series into one `VEVENT` per
+occurrence sharing a UID, where every occurrence after the first carries a `RECURRENCE-ID` and the master
+carries no rule at all — expansion then yields one slot, every child matches nothing, and a weekly event
+shows up **once**. That is what dropping unmatched overrides looked like from the outside, and
+`IcsParserTest.readsASeriesWrittenAsOneMasterPlusRecurrenceIdChildren` is the regression.
 
 A refresh **replaces a feed's rows wholesale** — there is no identity to preserve, so a moved, edited or
 deleted event is just a different set of rows next time. A failed refresh **keeps the rows it has** and

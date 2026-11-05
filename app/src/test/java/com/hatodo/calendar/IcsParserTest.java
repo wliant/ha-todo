@@ -213,6 +213,26 @@ class IcsParserTest {
                 .containsExactly(LocalDate.of(2026, 11, 3), LocalDate.of(2026, 11, 10));
     }
 
+    @Test
+    void readsASeriesWrittenAsOneMasterPlusRecurrenceIdChildren() {
+        // Not every publisher writes an RRULE. Some expand a series into one
+        // VEVENT per occurrence, all sharing a UID, with every occurrence after
+        // the first carrying a RECURRENCE-ID and the master carrying no rule at
+        // all. Expansion then produces exactly one slot, every child matches
+        // nothing - and before unmatched overrides were kept, a weekly event
+        // showed up once and the member had no way to tell why.
+        List<ParsedEvent> events = parse("recurrence-id-children.ics");
+
+        assertThat(events).hasSize(6);
+        assertThat(events).extracting(ParsedEvent::occursOn).containsExactly(
+                LocalDate.of(2026, 11, 2),
+                LocalDate.of(2026, 11, 9),
+                LocalDate.of(2026, 11, 16),
+                LocalDate.of(2026, 11, 23),
+                LocalDate.of(2026, 11, 30),
+                LocalDate.of(2026, 12, 7));
+    }
+
     private ParsedEvent only(String fixture) {
         List<ParsedEvent> events = parse(fixture);
         assertThat(events).hasSize(1);
