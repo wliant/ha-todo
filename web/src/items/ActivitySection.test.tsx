@@ -99,17 +99,20 @@ describe('ActivitySection', () => {
     ).toBeVisible()
   })
 
-  it('asks for a seven-day window ending now', async () => {
+  it('asks for seven whole days, ending at the end of today', async () => {
+    // Not "ending now": a completion landing after this tab opened would fall
+    // outside the window for good, since the window is the query key. That is
+    // the bug a real deployment's latency found.
     const fetch = vi.spyOn(itemsApi, 'fetchActivity').mockResolvedValue(activity())
     renderActivity()
 
     await screen.findByText('Nothing finished on this list in the last seven days.')
 
     const [, from, to] = fetch.mock.calls[0]
-    const days = (Date.parse(to) - Date.parse(from)) / 86_400_000
-    // Seven days back, then to local midnight - so between seven and eight.
-    expect(days).toBeGreaterThanOrEqual(7)
-    expect(days).toBeLessThan(8)
+    expect((Date.parse(to) - Date.parse(from)) / 86_400_000).toBe(7)
+    // The upper bound is in the future, so work finishing a moment from now is
+    // still inside it.
+    expect(Date.parse(to)).toBeGreaterThan(Date.now())
   })
 
   it('refetches the week when an item is completed', async () => {

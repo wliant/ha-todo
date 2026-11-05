@@ -8,14 +8,28 @@ import { MemberAvatar } from '../app/MemberAvatar'
 import { PointsPanel } from './PointsPanel'
 import { useActivity } from './queries'
 
-/** Midnight seven days ago, in this member's own zone, to now. */
+/**
+ * The seven days ending today, bounded by this member's own midnights.
+ *
+ * <p>The upper bound is the end of today rather than "now", and that is the
+ * load-bearing part. Pinned to the moment the tab opened, anything completed
+ * afterwards falls outside the window permanently - refetching cannot help,
+ * because the window is the query key. A member watching this tab while
+ * somebody else finishes something would simply never see it. Only the latency
+ * of a real deployment made that visible: locally the write always landed
+ * before the tab mounted.
+ *
+ * <p>setDate and setHours throughout, never arithmetic on milliseconds: these
+ * have to cross a daylight-saving boundary without losing or gaining an hour.
+ */
 function lastSevenDays(): { from: string; to: string } {
   const to = new Date()
+  to.setHours(0, 0, 0, 0)
+  to.setDate(to.getDate() + 1)
+
   const from = new Date(to)
-  // setDate, never a subtraction of milliseconds: the arithmetic has to cross
-  // a daylight-saving boundary without losing or gaining an hour.
   from.setDate(from.getDate() - 7)
-  from.setHours(0, 0, 0, 0)
+
   return { from: from.toISOString(), to: to.toISOString() }
 }
 
