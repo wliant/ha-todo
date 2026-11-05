@@ -49,3 +49,34 @@ WHERE l.name = 'Groceries (demo)'
   AND NOT EXISTS (
       SELECT 1 FROM list_access a WHERE a.list_id = l.id AND a.user_id = ben.id
   );
+
+-- Both fields every list declares (R21, R40). The seed inserts rows directly
+-- rather than going through TodoListService, which is where that guarantee
+-- normally lives - so without this the demo lists are the only lists in the
+-- product with no description field, and they stopped being representative the
+-- moment the due date joined it (docs/adr/0022).
+--
+-- On a fresh database this is the only thing that gives these lists either
+-- field: repeatable migrations run after every versioned one, so V909's
+-- backfill has no lists to find yet. On a database that already had them,
+-- V909 has already added the due date, and the appended position is what keeps
+-- these inserts off it - ux_list_field_position is deferred, not absent.
+INSERT INTO list_field (list_id, kind, required, position)
+SELECT l.id, 'DESCRIPTION', TRUE,
+       (SELECT COALESCE(MAX(f.position), -1) + 1
+          FROM list_field f WHERE f.list_id = l.id)::smallint
+FROM todo_list l
+WHERE l.name IN ('Groceries (demo)', 'Ana''s workout (demo)')
+  AND NOT EXISTS (
+      SELECT 1 FROM list_field f WHERE f.list_id = l.id AND f.kind = 'DESCRIPTION'
+  );
+
+INSERT INTO list_field (list_id, kind, required, position)
+SELECT l.id, 'DUE_AT', FALSE,
+       (SELECT COALESCE(MAX(f.position), -1) + 1
+          FROM list_field f WHERE f.list_id = l.id)::smallint
+FROM todo_list l
+WHERE l.name IN ('Groceries (demo)', 'Ana''s workout (demo)')
+  AND NOT EXISTS (
+      SELECT 1 FROM list_field f WHERE f.list_id = l.id AND f.kind = 'DUE_AT'
+  );

@@ -1,9 +1,10 @@
 import type { CostChoice, CostMode, FieldKind, ListField } from '../api/lists'
 
 /**
- * The optional fields, in the order the editor offers them. Description is
- * absent on purpose: it is always on and always required, so it is not a
- * choice anybody makes.
+ * The optional fields, in the order the editor offers them. Description and the
+ * due date are absent on purpose: every list declares both. Description is also
+ * always required; the due date is not, and its Required checkbox is the one
+ * thing an owner changes about it (adr/0022).
  */
 export const OPTIONAL_KINDS: { kind: FieldKind; label: string; hint: string }[] = [
   {
@@ -12,7 +13,6 @@ export const OPTIONAL_KINDS: { kind: FieldKind; label: string; hint: string }[] 
     hint: 'Room for steps, notes and pictures',
   },
   { kind: 'ASSIGNEE', label: 'Assignee', hint: 'Who it is for' },
-  { kind: 'DUE_AT', label: 'Due date and time', hint: 'When it needs doing by' },
 ]
 
 /** The example the requirement itself opens with, so a cost starts usable. */

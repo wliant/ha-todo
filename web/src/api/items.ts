@@ -19,10 +19,16 @@ export interface Item {
   description: string
   detailHtml: string | null
   assignee: ItemMember | null
+  /** The assignee put themselves there, so everyone sees it as claimed. */
+  selfAssigned: boolean
   dueAt: string | null
   completed: boolean
   completedBy: ItemMember | null
   completedAt: string | null
+  /** How the work went. Only returned while the completion stands. */
+  completionNoteHtml: string | null
+  /** Set once an item has been reopened; the completion record is kept. */
+  reopenedAt: string | null
   /** Null while open; snapshotted at completion. */
   pointsEarned: number | null
   costValues: ItemCostValue[]
@@ -66,12 +72,22 @@ export async function deleteItem(id: string, version: number): Promise<void> {
   await api.delete(`/items/${id}`, { params: { version } })
 }
 
+/**
+ * Completing or reopening. The note rides the completion rather than taking a
+ * write of its own, so one gesture is one request; sending a note while
+ * reopening is a 400, not a silent drop.
+ */
 export async function setItemCompleted(
   id: string,
   version: number,
   completed: boolean,
+  noteHtml?: string | null,
 ): Promise<Item> {
-  const { data } = await api.put<Item>(`/items/${id}/completion`, { version, completed })
+  const { data } = await api.put<Item>(`/items/${id}/completion`, {
+    version,
+    completed,
+    noteHtml: completed ? (noteHtml ?? null) : null,
+  })
   return data
 }
 

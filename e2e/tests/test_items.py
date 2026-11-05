@@ -167,7 +167,7 @@ def test_an_item_cannot_be_saved_without_what_the_list_insists_on(
     list_id = create_list(page, name)
 
     page.goto(f"{base_url}/lists/{list_id}/settings")
-    page.get_by_role("switch", name="Due date and time").click()
+    # The due date is on every list; making it required is the one setting.
     page.get_by_role("checkbox", name="Due date and time is required").click()
     page.get_by_role("button", name="Save changes").click()
     expect(page.get_by_role("heading", name=name)).to_be_visible()

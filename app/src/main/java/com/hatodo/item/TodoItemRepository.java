@@ -9,12 +9,19 @@ import org.springframework.data.repository.query.Param;
 
 public interface TodoItemRepository extends JpaRepository<TodoItem, UUID> {
 
+    /*
+     * "Open" and "done" test the generated `done` column rather than
+     * completed_at, because a reopened item keeps its completion time (R49,
+     * adr/0024). Written as `i.done` and not the underlying expression so the
+     * partial indexes defined on it stay usable.
+     */
+
     @Query("""
             SELECT i FROM TodoItem i
             WHERE i.list.id = :listId
             AND (:status = 'all'
-                 OR (:status = 'open' AND i.completedAt IS NULL)
-                 OR (:status = 'done' AND i.completedAt IS NOT NULL))
+                 OR (:status = 'open' AND i.done = FALSE)
+                 OR (:status = 'done' AND i.done = TRUE))
             ORDER BY i.position ASC
             """)
     List<TodoItem> findForList(@Param("listId") UUID listId, @Param("status") String status);

@@ -53,6 +53,14 @@ public class TodoItem {
     @Column(name = "due_at")
     private Instant dueAt;
 
+    /**
+     * Who put the assignee there, so "they claimed it themselves" is a fact
+     * about the item rather than about whoever is looking (R47, adr/0026).
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_by")
+    private AppUser assignedBy;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "completed_by")
     private AppUser completedBy;
@@ -60,9 +68,39 @@ public class TodoItem {
     @Column(name = "completed_at")
     private Instant completedAt;
 
+    /** How the work went, written when it was finished (R37). Sanitized on write. */
+    @Column(name = "completion_note_html")
+    private String completionNoteHtml;
+
     /** Null while open. Snapshotted at completion, never recomputed. */
     @Column(name = "points_earned")
     private Integer pointsEarned;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "reopened_by")
+    private AppUser reopenedBy;
+
+    /**
+     * Set when the item is reopened; the completion columns are left alone
+     * (R49). This is why "finished" is no longer one column - see {@link #done}.
+     */
+    @Column(name = "reopened_at")
+    private Instant reopenedAt;
+
+    /**
+     * Computed by the database as {@code completed_at IS NOT NULL AND
+     * reopened_at IS NULL}, because a completion that survives a reopen means
+     * "has a completion time" no longer means "finished" (adr/0024).
+     *
+     * <p><strong>Use this only in query predicates and index definitions.</strong>
+     * Hibernate does not re-select a generated column after a write, so reading
+     * this field in Java straight after {@link #completeBy} sees a stale
+     * {@code false} - which would render a just-completed item as open in the
+     * very response that completed it. {@link #isCompleted()} is computed
+     * instead, and deliberately so.
+     */
+    @Column(name = "done", insertable = false, updatable = false)
+    private boolean done;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by")
@@ -140,10 +178,6 @@ public class TodoItem {
         return assignee;
     }
 
-    public void setAssignee(AppUser assignee) {
-        this.assignee = assignee;
-    }
-
     public Instant getDueAt() {
         return dueAt;
     }
@@ -152,8 +186,49 @@ public class TodoItem {
         this.dueAt = dueAt;
     }
 
+    public AppUser getAssignedBy() {
+        return assignedBy;
+    }
+
+    /**
+     * @param assignedBy whoever chose the assignee; equal to the assignee when
+     *                   they claimed the work themselves
+     */
+    public void assignTo(AppUser assignee, AppUser assignedBy) {
+        this.assignee = assignee;
+        this.assignedBy = assignee == null ? null : assignedBy;
+    }
+
+    /**
+     * True when the assignee put themselves there (R47).
+     *
+     * <p>Reference identity first, because Hibernate hands out one instance per
+     * row within a session and an unsaved entity has no id yet - comparing ids
+     * alone would throw on a brand new item and, worse, call two different
+     * unsaved members equal because both of their ids are null.
+     */
+    public boolean isSelfAssigned() {
+        if (assignee == null || assignedBy == null) {
+            return false;
+        }
+        return assignee == assignedBy
+                || (assignee.getId() != null && assignee.getId().equals(assignedBy.getId()));
+    }
+
     public AppUser getCompletedBy() {
         return completedBy;
+    }
+
+    public String getCompletionNoteHtml() {
+        return completionNoteHtml;
+    }
+
+    public Instant getReopenedAt() {
+        return reopenedAt;
+    }
+
+    public AppUser getReopenedBy() {
+        return reopenedBy;
     }
 
     public Instant getCompletedAt() {
@@ -164,24 +239,38 @@ public class TodoItem {
         return pointsEarned;
     }
 
+    /**
+     * Computed rather than read from {@link #done}, which is stale in memory
+     * immediately after a write. Same expression, in Java.
+     */
     public boolean isCompleted() {
-        return completedAt != null;
+        return completedAt != null && reopenedAt == null;
     }
 
     /**
      * @param points what the item was worth at this moment, snapshotted so a
      *               later change to the list's rates cannot rewrite history
+     * @param noteHtml how the work went, already sanitized, or null
      */
-    public void completeBy(AppUser member, int points) {
+    public void completeBy(AppUser member, int points, String noteHtml) {
         this.completedBy = member;
         this.completedAt = Instant.now();
         this.pointsEarned = points;
+        this.completionNoteHtml = noteHtml;
+        // Completing again after a reopen clears the stamp, or the item would
+        // still read as reopened and the generated column would stay false.
+        this.reopenedAt = null;
+        this.reopenedBy = null;
     }
 
-    /** The three completion columns move together, as the database insists. */
-    public void reopen() {
-        this.completedBy = null;
-        this.completedAt = null;
+    /**
+     * Reopening stamps rather than erases (R49): who completed it, when, and
+     * the note are all kept and simply stop being shown. Only the points come
+     * back, which is the one thing the requirement does take away.
+     */
+    public void reopen(AppUser member) {
+        this.reopenedBy = member;
+        this.reopenedAt = Instant.now();
         this.pointsEarned = null;
     }
 

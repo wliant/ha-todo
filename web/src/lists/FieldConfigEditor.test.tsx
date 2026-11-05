@@ -37,6 +37,34 @@ describe('FieldConfigEditor', () => {
     expect(screen.getByText('Always on, always required.')).toBeVisible()
   })
 
+  it('shows the due date as always on, because every list declares it', () => {
+    // R40: the dashboard reads dates across lists, so a list that could drop
+    // the field would be silently missing from it (adr/0022).
+    renderEditor()
+
+    const dueAt = screen.getByRole('switch', { name: 'Due date and time' })
+    expect(dueAt).toBeChecked()
+    expect(dueAt).toBeDisabled()
+  })
+
+  it('lets the owner insist on a due date without being able to remove it', async () => {
+    const onChange = renderEditor()
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Due date and time is required' }))
+
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({ kind: 'DUE_AT', required: true }),
+    ])
+  })
+
+  it('does not offer the due date as something to switch on', () => {
+    // It has a locked row of its own; offering it twice would let a member
+    // believe they had turned it off.
+    renderEditor()
+
+    expect(screen.getAllByRole('switch', { name: 'Due date and time' })).toHaveLength(1)
+  })
+
   it('adds a field by switching it on', async () => {
     const onChange = renderEditor()
 
