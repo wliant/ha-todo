@@ -260,6 +260,16 @@ public class TodoItemService {
             answered.put(value.fieldId(), value);
         }
 
+        // Matched on the field it answers and rewritten in place, exactly as a
+        // list's choices are: a row's identity is (item, field), so clearing
+        // the collection and adding a freshly built row for a field the item
+        // already answered is two objects for one identifier, which Hibernate
+        // refuses outright rather than treating as an update.
+        Map<UUID, ItemCostValue> existing = new HashMap<>();
+        for (ItemCostValue value : item.getCostValues()) {
+            existing.put(value.getField().getId(), value);
+        }
+
         List<ItemCostValue> replacement = new ArrayList<>();
         for (ListField field : costs.values()) {
             ItemCostValueRequest value = answered.get(field.getId());
@@ -270,14 +280,22 @@ public class TodoItemService {
                 }
                 continue;
             }
-            replacement.add(toCostValue(item, field, value));
+            ItemCostValue row = existing.get(field.getId());
+            if (row == null) {
+                row = ItemCostValue.on(item, field);
+            }
+            answer(row, field, value);
+            replacement.add(row);
         }
 
+        // orphanRemoval deletes the rows nobody put back; the ones that are
+        // put back are the same instances, so nothing is recreated.
         item.getCostValues().clear();
         item.getCostValues().addAll(replacement);
     }
 
-    private ItemCostValue toCostValue(TodoItem item, ListField field, ItemCostValueRequest value) {
+    /** Writes one answer onto a row, in whichever way its field is measured. */
+    private void answer(ItemCostValue row, ListField field, ItemCostValueRequest value) {
         if (field.getCostMode() == CostMode.FIXED) {
             if (value.choiceId() == null) {
                 throw new MissingRequiredFieldException(
@@ -288,7 +306,8 @@ public class TodoItemService {
                     .findFirst()
                     .orElseThrow(() -> new MissingRequiredFieldException(
                             "That choice is not on " + field.getLabel() + "."));
-            return ItemCostValue.chosen(item, field, choice);
+            row.choose(choice);
+            return;
         }
 
         BigDecimal amount = value.amount();
@@ -296,7 +315,7 @@ public class TodoItemService {
             throw new MissingRequiredFieldException(
                     "Put a number against " + field.getLabel() + ".");
         }
-        return ItemCostValue.measured(item, field, amount);
+        row.measure(amount);
     }
 
     /** What this item is worth right now, across every cost it answered. */

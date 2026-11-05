@@ -53,12 +53,19 @@ export function ListDetailPage() {
 
   return (
     <Stack spacing={2.5}>
+      {/* Below the breakpoint the actions sit under the name rather than
+          beside it: squeezed into the same row they do not shrink, and the
+          name is left wrapping one character per line. */}
       <Stack
-        direction="row"
+        direction={{ xs: 'column', sm: 'row' }}
         spacing={1.5}
         sx={{ alignItems: 'flex-start', justifyContent: 'space-between' }}
       >
-        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', minWidth: 0 }}>
+        <Stack
+          direction="row"
+          spacing={1.5}
+          sx={{ alignItems: 'center', minWidth: 0, maxWidth: '100%' }}
+        >
           <Avatar
             aria-hidden
             variant="rounded"
@@ -78,7 +85,11 @@ export function ListDetailPage() {
           </Box>
         </Stack>
 
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+        <Stack
+          direction="row"
+          spacing={1}
+          sx={{ alignItems: 'center', flexShrink: 0, flexWrap: 'wrap' }}
+        >
           <ListAudience members={list.members} />
           <PinButton id={list.id} name={list.name} pinned={list.pinned} />
           {list.owned && (

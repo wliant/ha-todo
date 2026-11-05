@@ -149,6 +149,13 @@ there can only be one. Position uniqueness is `DEFERRABLE INITIALLY DEFERRED` so
 every position in one statement; partial unique indexes cannot be deferred, which is why those are
 table constraints. See `docs/adr/0011` and `docs/adr/0012`.
 
+**An item's cost values merge the same way, and for a harder reason.** `item_cost_value`'s identity is
+`(item, field)`, so an edit matches each answer to the row already holding it and rewrites it in place.
+Clearing the collection and adding a freshly built row for a field the item already answered is two
+objects for one identifier, which Hibernate refuses with `NonUniqueObjectException` - a 500 on every
+edit of an item carrying a cost. Putting the *same* instances back after a `clear()` is fine, which is
+why the choices code reads as it does; building new ones is not.
+
 **Boxed types in request records.** Jackson rejects a *missing* primitive in a record, so optional
 `boolean`/`int` components are `Boolean`/`Integer` with a defaulting accessor (`isRequired()`,
 `pointsOrZero()`). In a request that replaces a configuration, "not mentioned" is genuinely different
@@ -349,6 +356,15 @@ Rules:
   exercised in the PR description.
   If the MCP server is unavailable (it needs one-time approval via `claude mcp list`), fall back to running
   `e2e/` against the local stack and say which you used — don't claim a browser check you didn't do.
+- **Then deploy to dev and run `e2e/` against it — before opening the PR, and before handing the work
+  back.** In order: `E2E_BASE_URL=http://localhost:5173 uv run pytest` against the local stack,
+  `./scripts/dev-down.sh`, `./scripts/deploy.sh dev`, then
+  `E2E_BASE_URL=https://todo-dev.wliant.org uv run pytest`. The suite exists to be run against a real
+  deployment (see Testing strategy): the local stack shares a machine, a scheme and a hostname with the
+  browser, so it cannot catch what the HTTPS front door, `X-Forwarded-Proto` and the `Secure` cookie do.
+  Export `E2E_ADMIN_PASSWORD` from `deployment/.env.dev`'s `ADMIN_PASSWORD`, or the admin tests skip
+  rather than run. Quote the two pass counts in the PR description. A deploy is outward-facing, so ask
+  before the first one in a session; dev only — `deploy.sh prod` is never part of this loop.
 - **Spec-driven**: before implementing a feature, write the requirement and design into `docs/`, and record
   non-obvious technical choices as an ADR (`docs/adr/NNNN-title.md` from `template.md`, immutable once
   accepted — supersede rather than edit). Implementation should be traceable back to a spec document.

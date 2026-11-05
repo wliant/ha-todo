@@ -44,20 +44,40 @@ public class ItemCostValue {
         // for JPA
     }
 
-    public static ItemCostValue chosen(TodoItem item, ListField field, ListFieldChoice choice) {
+    /** An unanswered row; one of {@link #choose} or {@link #measure} follows. */
+    public static ItemCostValue on(TodoItem item, ListField field) {
         ItemCostValue value = new ItemCostValue();
         value.item = item;
         value.field = field;
-        value.choice = choice;
+        return value;
+    }
+
+    public static ItemCostValue chosen(TodoItem item, ListField field, ListFieldChoice choice) {
+        ItemCostValue value = on(item, field);
+        value.choose(choice);
         return value;
     }
 
     public static ItemCostValue measured(TodoItem item, ListField field, BigDecimal amount) {
-        ItemCostValue value = new ItemCostValue();
-        value.item = item;
-        value.field = field;
-        value.amount = amount;
+        ItemCostValue value = on(item, field);
+        value.measure(amount);
         return value;
+    }
+
+    /**
+     * The two answers are mutually exclusive, and the database says so - so
+     * each one clears the other rather than only writing its own column. A
+     * cost switched from one mode to the other would otherwise leave a row
+     * claiming both.
+     */
+    public void choose(ListFieldChoice choice) {
+        this.choice = choice;
+        this.amount = null;
+    }
+
+    public void measure(BigDecimal amount) {
+        this.amount = amount;
+        this.choice = null;
     }
 
     public ListField getField() {
