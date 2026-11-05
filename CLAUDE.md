@@ -4,10 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-**Everything specified so far is built except `docs/requirements/0006`, as of 2026-11-05.** Build, local
-stack, deploy scripts and all three test harnesses are real and passing: 104 backend unit tests, 142
-integration tests, 167 frontend tests, 66 end-to-end. **0006 — data lists — is specified and not yet
-implemented**; see the paragraph below before starting on it.
+**Everything specified so far is built, as of 2026-11-05.** Build, local stack, deploy scripts and all
+three test harnesses are real and passing: 174 backend unit tests, 209 integration tests, 199 frontend
+tests, 73 end-to-end.
 
 Implemented: **accounts and administration (R8-R12)** — username identity, optional per-user passwords, a
 pick-a-user sign-in screen, and a single admin who adds and deletes users. **The PWA (R13, R14)** —
@@ -29,21 +28,35 @@ reopening keeps the record and returns the points; a list has tabs — items, st
 who did what lately; and **the dashboard is the landing page**, reading across every list a member can
 see.
 
-**R50-R61 are specified and not built.** `docs/requirements/0006` adds **data lists** — reference
-collections (recipes, restaurants, quotes, vocabulary) whose entries have a name, a description, a
-rich-text detail and free-form tags, and which are *never* assigned, dated, completed, scored or
-generated on a schedule. `docs/design/0006` lays out the build in eight steps and `docs/adr/0029`-`0033`
-record the decisions (`0033` supersedes `0030`). Three of those decisions are the ones to read first. A data list is **its own
-aggregate** — `data_list` / `data_list_access` / `data_entry`, not a `kind` column on `todo_list`, because
-nine existing readers of `todo_list` would otherwise have to remember to exclude it and the one that
-forgets is wrong without failing (`docs/adr/0029`). An entry's `search_vector` is a **generated**
-`tsvector` fed by **application-maintained** `detail_text` and `tags_text` columns, so `DataEntry` must
-expose one `setDetail(html, text)` and one `setTags(tags)` and never a setter for a single column
-(`docs/adr/0033`, which supersedes `0030` — `setweight` cannot weight the position-less lexemes
-`array_to_tsvector` produces, so the original expression was silently inert). And search is one
-native statement whose grant check is the driving `EXISTS`, with a `pg_trgm` arm that always ranks below
-a real full-text hit (`docs/adr/0031`). Collections deliberately have **no pins and no recency**, which is
-why the share picker cannot preselect one.
+**R50-R61 are implemented**, in the eight steps `docs/design/0006` lays out, with `docs/adr/0029`-`0033`
+recording the decisions (`0033` supersedes `0030`). **Data lists** — called *collections* in the UI — are
+reference lists: recipes, restaurants, quotes, vocabulary. An entry has a name, a description, a
+rich-text detail and free-form tags, and is *never* assigned, dated, completed, scored or generated on a
+schedule. Search reads the whole entry — name, description, the detail's text, tags — within one
+collection and across every collection a member can see, finding a word by its middle as well as its
+start. A shared link can become an entry as well as an item.
+
+**Four things in there are easy to break.** A data list is **its own aggregate** — `data_list` /
+`data_list_access` / `data_entry`, not a `kind` column on `todo_list` — because nine existing readers of
+`todo_list` would otherwise have to remember to exclude it, and the one that forgets is wrong without
+failing (`docs/adr/0029`). An entry's `search_vector` is a **generated** `tsvector` fed by
+**application-maintained** `detail_text` and `tags_text` columns, so `DataEntry` exposes one
+`setDetail(html, text)` and one `setTags(tags)` and **never a setter for a single column** — a caller
+able to write one half is a search index that quietly stops matching (`docs/adr/0033`). `search_vector`
+is deliberately **not mapped in JPA at all**. And `DataEntrySearchQuery`'s statement is assembled with
+`String.replace`, not `String.formatted`: it is full of SQL comments, and the first one to contain a
+per-cent sign makes it an invalid format string, which fails in a static initialiser and surfaces as an
+unsatisfied bean dependency with a null cause.
+
+**`setweight` over `array_to_tsvector` taught the general lesson** (`docs/adr/0033`): a generated column
+Postgres *accepts* is not a generated column that computes what was intended. The original expression
+created, indexed and queried without complaint and was inert, because a weight is a property of a
+position and `array_to_tsvector` emits none. Probe a real database before trusting a generation
+expression; a test written against the schema as described would have agreed with the description.
+
+Collections deliberately have **no pins and no recency** (`list_user_state.list_id` is an FK to
+`todo_list` and must not be loosened), which is why the share picker offers them by name and cannot
+preselect one.
 
 **Two things in there are easy to break.** "Finished" is no longer one column: a reopened item keeps its
 completion record, so the question is answered by a *generated* column (`docs/adr/0024`), and a new reader
@@ -66,6 +79,12 @@ a shared grocery list and a private workout log are both ordinary. Members add *
 can be **assigned** to a member, and any member with access can mark any of that list's items complete.
 Design every API and UI around "multiple people touching the same list concurrently", not around a
 single-user todo app.
+
+A household also keeps things it **looks up** rather than finishes, so there is a second kind of list:
+a **data list** (a *collection* in the UI) holds recipes, restaurants, quotes, vocabulary. Same grant
+model, entirely separate tables and package, and nothing that treats an entry as work — see
+`docs/adr/0029`. When adding anything that reads across "all the user's lists", decide deliberately
+which of the two kinds it means.
 
 ## Monorepo layout
 
@@ -152,8 +171,7 @@ migrations after every versioned one and re-runs them when their content changes
 edited freely and can never sit in front of a schema change. The old versioned seed at `V900` is why the
 schema series resumes at **V901** — a lower version would be out of order on any database that applied it,
 and why local/dev set `flyway.ignore-migration-patterns: "*:missing"`. Prod never applied it and keeps
-strict validation. The highest applied migration is **V911**; new ones continue from V912, and
-`docs/design/0006` claims V912-V915.
+strict validation. The highest applied migration is **V915**; new ones continue from V916.
 
 **Authorization is per-list access, not household-scoped.** Every read and write is checked against the
 caller's grant on that list, enforced in the service layer — not only in the controller and not only in
@@ -303,11 +321,19 @@ as mixed content — and it is a capability that outlives a revoked grant. The t
 sniffing the bytes, never the filename or `Content-Type`; PNG, JPEG and WebP only, and **SVG is refused
 by name**, because an SVG served same-origin is script execution in our own security context.
 
-**Who may read an image depends on its purpose.** An `AVATAR` is readable by anyone, including
+**Who may read an image depends on its owner.** An `AVATAR` is readable by anyone, including
 anonymously, because the sign-in screen draws faces before there is a session (`adr/0019`). A `DETAIL`
-picture is claimed by the item whose detail refers to it, so the item's list decides — a private list's
-pictures are as private as the list. Only the member who uploaded a picture can claim it, and only
-while it is unclaimed: an id alone must never drag somebody else's picture onto a list they can see.
+picture is claimed by the **item**, the **recurrence rule**, or the **collection entry** whose detail
+refers to it, so that owner's list or collection decides — a private list's pictures are as private as
+the list. `stored_image` therefore carries three nullable owner FKs under `num_nonnulls(...) <= 1`;
+`adr/0032` sets the threshold for replacing that shape with a join table at a **fourth** owner. An
+**unclaimed** picture is readable only by whoever uploaded it, which is what makes the editor's own
+preview work between pasting an image and saving — documented since the uploader was written, but not
+actually implemented until R61. Only the member who uploaded a picture can claim it, and only while
+nothing else owns it: an id alone must never drag somebody else's picture onto a list they can see.
+Note that `ImageController` injects `ImageAccess` **by type**, so a second implementation of it is a
+`NoUniqueBeanDefinitionException` at startup — a new owner kind needs its own one-method interface, as
+`DataEntryImageAccess` does.
 
 **Detail HTML is sanitized server-side on write** (`com.hatodo.richtext.HtmlSanitizer`, `adr/0018`),
 and `<img src>` is restricted to our own `/api/images/{uuid}` paths — which is also what makes the

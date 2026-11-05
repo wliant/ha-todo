@@ -4,6 +4,10 @@ import { AdminRoute } from './auth/AdminRoute'
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { AdminPage } from './pages/AdminPage'
 import { AllListsPage } from './pages/AllListsPage'
+import { CollectionDetailPage } from './pages/CollectionDetailPage'
+import { CollectionSettingsPage } from './pages/CollectionSettingsPage'
+import { CollectionsPage } from './pages/CollectionsPage'
+import { CreateCollectionPage } from './pages/CreateCollectionPage'
 import { CreateListPage } from './pages/CreateListPage'
 import { ActivityTab, ItemsTab, ListDetailPage, RecurringTab } from './pages/ListDetailPage'
 import { DashboardPage } from './dashboard/DashboardPage'
@@ -48,6 +52,13 @@ export function App() {
           <Route path="activity" element={<ActivityTab />} />
         </Route>
         <Route path="/lists/:listId/settings" element={<ListSettingsPage />} />
+        {/* Collections (R58): their own place in the menu, not a tab on a
+            list. The two are different enough that a member choosing where to
+            put something should not have to read carefully. */}
+        <Route path="/collections" element={<CollectionsPage />} />
+        <Route path="/collections/new" element={<CreateCollectionPage />} />
+        <Route path="/collections/:listId" element={<CollectionDetailPage />} />
+        <Route path="/collections/:listId/settings" element={<CollectionSettingsPage />} />
         {/* A share arriving while signed out comes back here afterwards,
             because ProtectedRoute remembers where it was going. */}
         <Route path="/share" element={<SharePage />} />

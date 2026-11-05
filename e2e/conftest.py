@@ -180,6 +180,38 @@ def cleanup_lists(base_url: str, demo_member: DemoMember, test_data: TestData):
     return remove
 
 
+@pytest.fixture
+def cleanup_collections(base_url: str, demo_member: DemoMember, test_data: TestData):
+    """
+    Registers a collection, by name, to be deleted at the end of the session
+    (requirements/0006).
+
+    The same shape as :func:`cleanup_lists`, and separate from it for the same
+    reason the backend keeps the two apart: a collection is not a list, and
+    deleting one through the other's endpoint would answer 404. Deleting a
+    collection takes its entries and their pictures with it, so nothing else
+    needs registering.
+    """
+
+    def remove(name: str) -> None:
+        def delete() -> None:
+            with httpx.Client(
+                base_url=base_url, timeout=20.0, follow_redirects=True
+            ) as client:
+                api_sign_in(client, demo_member)
+                found = client.get("/api/data-lists", params={"q": name})
+                found.raise_for_status()
+                for entry in found.json():
+                    response = client.delete(
+                        f"/api/data-lists/{entry['id']}", headers=api_csrf_header(client)
+                    )
+                    response.raise_for_status()
+
+        test_data.defer_cleanup(delete)
+
+    return remove
+
+
 def pick_user(page, member: DemoMember) -> None:
     """Choose a person on the sign-in screen, the way a family member does."""
     page.get_by_role("button", name=member.display_name).click()

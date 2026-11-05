@@ -9,6 +9,7 @@ import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
 import AddRounded from '@mui/icons-material/AddRounded'
 import ChecklistRounded from '@mui/icons-material/ChecklistRounded'
+import CollectionsBookmarkRounded from '@mui/icons-material/CollectionsBookmarkRounded'
 import TodayRounded from '@mui/icons-material/TodayRounded'
 import GroupRounded from '@mui/icons-material/GroupRounded'
 import LogoutRounded from '@mui/icons-material/LogoutRounded'
@@ -113,6 +114,22 @@ export function SideNav({
             <ChecklistRounded />
           </ListItemIcon>
           <ListItemText primary="Lists" />
+        </ListItemButton>
+
+        {/* Collections (R58). Below Lists, because work is what a member
+            opens the app for; a collection is what they come back to. No
+            Pinned or Recent section of its own: collections carry no
+            per-member state (adr/0029). */}
+        <ListItemButton
+          component={NavLink}
+          to="/collections"
+          onClick={onNavigate}
+          selected={pathname.startsWith('/collections')}
+        >
+          <ListItemIcon sx={{ minWidth: 40 }}>
+            <CollectionsBookmarkRounded />
+          </ListItemIcon>
+          <ListItemText primary="Collections" />
         </ListItemButton>
 
         {user.role === 'ADMIN' && (
