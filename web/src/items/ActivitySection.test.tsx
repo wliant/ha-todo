@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { ThemeProvider } from '@mui/material/styles'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ActivitySection } from './ActivitySection'
+import { itemKeys } from './queries'
 import * as itemsApi from '../api/items'
 import type { Activity } from '../api/items'
 import { theme } from '../theme/theme'
@@ -109,6 +110,32 @@ describe('ActivitySection', () => {
     // Seven days back, then to local midnight - so between seven and eight.
     expect(days).toBeGreaterThanOrEqual(7)
     expect(days).toBeLessThan(8)
+  })
+
+  it('refetches the week when an item is completed', async () => {
+    // The activity key is a sibling of the items key, not a descendant, so
+    // prefix invalidation of the items does not reach it. Getting that wrong
+    // left the feed stale after a completion, and only the latency of a real
+    // deployment made the race visible - hence this test rather than another
+    // round of hoping.
+    const fetch = vi.spyOn(itemsApi, 'fetchActivity').mockResolvedValue(activity())
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider theme={theme} defaultMode="light">
+          <ActivitySection listId="id-list" />
+        </ThemeProvider>
+      </QueryClientProvider>,
+    )
+    await screen.findByText('Nothing finished on this list in the last seven days.')
+    expect(fetch).toHaveBeenCalledOnce()
+
+    // Exactly what useItemInvalidation does after a completion settles.
+    await queryClient.invalidateQueries({ queryKey: itemKeys.activityAll('id-list') })
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
   })
 
   it('shows the all-time standing beside the week, not instead of it', async () => {

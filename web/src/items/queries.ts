@@ -22,6 +22,7 @@ export const itemKeys = {
   filtered: (listId: string, status: ItemStatus) =>
     ['lists', 'detail', listId, 'items', status] as const,
   points: (listId: string) => ['lists', 'detail', listId, 'points'] as const,
+  activityAll: (listId: string) => ['lists', 'detail', listId, 'activity'] as const,
   activity: (listId: string, from: string, to: string) =>
     ['lists', 'detail', listId, 'activity', from, to] as const,
 }
@@ -45,8 +46,11 @@ export function usePoints(listId: string | undefined) {
 /**
  * The last seven days on one list (R43).
  *
- * <p>Inside the item key hierarchy on purpose, so completing something
- * invalidates the feed along with everything else.
+ * <p>Its key is a sibling of the items key rather than a descendant, so it is
+ * invalidated explicitly - see useItemInvalidation. Prefix invalidation of
+ * `itemKeys.all` does not reach it, which is subtle enough to have been got
+ * wrong once already: a completion left the feed stale, and only the latency
+ * of a real deployment made the race visible.
  */
 export function useActivity(listId: string | undefined, from: string, to: string) {
   return useQuery({
@@ -66,6 +70,10 @@ function useItemInvalidation(listId: string) {
   return () => {
     void queryClient.invalidateQueries({ queryKey: itemKeys.all(listId) })
     void queryClient.invalidateQueries({ queryKey: itemKeys.points(listId) })
+    // The activity feed is a sibling of the items key, not a descendant, so
+    // the prefix above does not reach it. Invalidated by its own prefix,
+    // without the window, so whichever window is cached is refetched.
+    void queryClient.invalidateQueries({ queryKey: itemKeys.activityAll(listId) })
     void queryClient.invalidateQueries({ queryKey: listKeys.all })
   }
 }
