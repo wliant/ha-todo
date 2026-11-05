@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react'
+import type { CalendarEvent } from '../api/calendars'
 import type { DashboardScope } from '../api/dashboard'
 import type { Zone } from './calendar'
 
@@ -8,6 +9,12 @@ export interface DashboardView {
   /** The household's zone (adr/0036): every day boundary on this page. */
   zone: Zone
   open: (itemId: string) => void
+  /**
+   * The event itself rather than an id: a collapsed event has no single row
+   * behind it, and the payload is already in hand - so there is nothing to look
+   * up and nothing to fetch.
+   */
+  openEvent: (event: CalendarEvent) => void
 }
 
 export const ViewContext = createContext<DashboardView | null>(null)
