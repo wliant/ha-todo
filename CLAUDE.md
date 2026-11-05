@@ -17,9 +17,18 @@ object storage; and items — values for every declared field, assignment bounde
 with points credited to whoever did the work, the detail field's rich text and embedded pictures, and a
 shared link becoming a real item.
 
-`docs/design/0004` describes the whole feature and `docs/adr/0010`-`0021` record the decisions. The
-open questions left in `docs/requirements/0004` are genuinely open: where a completed item should go,
-whether earned points can be revoked, and whether a list should show who else has it open.
+`docs/design/0004` describes that feature and `docs/adr/0010`-`0021` record its decisions.
+
+**Specified but not yet built: `docs/requirements/0005` (R36-R49)** — completion detail with expandable
+rows, a collapsed add form, recurring items, a per-list activity tab, a day/week/month dashboard, and a
+claim-and-complete rework of the item row. `docs/design/0005` is the design and `docs/adr/0022`-`0028`
+record the decisions. Nothing in `app/`, `web/` or `e2e/` implements it yet; the design's phases A-E are
+the intended order, and phase B is the one that must land atomically with its test changes.
+
+The open questions left in `docs/requirements/0004` are now two, not three: whether earned points can be
+revoked **by a list's owner** (0005 R49 settles only the reopen path), and whether a list should show who
+else has it open. Where a completed item goes is **answered** by 0005 R38 — it stays in place, struck
+through, with its detail and completion note one tap away.
 
 Keep this file true: when a decision here turns out wrong, update it in the same change.
 
@@ -118,7 +127,7 @@ migrations after every versioned one and re-runs them when their content changes
 edited freely and can never sit in front of a schema change. The old versioned seed at `V900` is why the
 schema series resumes at **V901** — a lower version would be out of order on any database that applied it,
 and why local/dev set `flyway.ignore-migration-patterns: "*:missing"`. Prod never applied it and keeps
-strict validation. New schema migrations continue from V902.
+strict validation. The highest applied migration is **V907**; new ones continue from V908.
 
 **Authorization is per-list access, not household-scoped.** Every read and write is checked against the
 caller's grant on that list, enforced in the service layer — not only in the controller and not only in
@@ -140,6 +149,13 @@ member's back. Two browser contexts cover it in `e2e/tests/test_items.py`.
 Changing a list's children — its grants, its fields — calls `TodoListService.markChanged`, because
 Hibernate will not dirty-check a parent whose own columns are untouched and a second editor would
 otherwise never be told.
+
+**The due date is declared on every list, and cannot be removed.** `DUE_AT` joins `DESCRIPTION` as a
+kind every list has, with `required` defaulting to false and the owner free to toggle it — because a
+dashboard that reads across lists (0005 R44) can only answer from the lists that declared the field, and
+"the dashboard silently ignores this list" is not a behaviour anybody would choose. Enforced in
+`ListFieldService.normalise`, not in SQL, for the reason `DESCRIPTION` is: SQL cannot say "every row here
+has a child of this kind" without a trigger. See `docs/adr/0022`.
 
 **A list's field configuration is typed rows, replaced by merging on id.** `list_field` (+
 `list_field_choice`) rather than JSONB: the kinds are closed, and item values will reference a field and
@@ -235,6 +251,18 @@ host — because MinIO's own images stopped allowing anonymous pulls; nothing in
 either, and the client library is still minio-java used as a plain S3 client. See `docs/adr/0013` and
 `docs/adr/0021`. Redis remains deferred on `docs/adr/0003`'s reasoning, and still needs a concrete need
 and a new ADR; its likeliest trigger is a second backend instance, where in-memory sessions break.
+
+**The recurrence scheduler assumes exactly one backend instance (specified, not yet built).** `docs/adr/0025`
+puts a `@Scheduled` job behind `app.recurrence.enabled` with its cron in the environment, and takes no
+lock and elects no leader: both compose files run one `app` service with one replica. A second instance
+would double-run every rule, which `ux_todo_item_occurrence (rule_id, occurrence_on)` turns into logged
+constraint violations rather than duplicate chores — so the failure is noisy and harmless. This is the
+*same* assumption Redis's deferral rests on, and sessions break before recurrence does, so recurrence is
+not what blocks a second instance. Two consequences to keep true: `@EnableScheduling` lives on the
+feature's own `@Configuration` so disabling the feature disables the job, and **integration tests must
+set `app.recurrence.enabled: false`** or a Testcontainers run can fire the job mid-assertion. A scheduled
+run has no caller and must not manufacture one — `TodoItemService.createFromRule` is the one entry point
+that does not consult `CurrentUserProvider`, because nobody is calling.
 
 **The app creates its own bucket at startup and fails closed.** `S3_BUCKET` is named explicitly per
 environment, never derived from the Spring profile, so a misconfigured profile cannot put prod's images
