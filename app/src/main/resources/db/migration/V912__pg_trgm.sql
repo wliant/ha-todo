@@ -1,0 +1,13 @@
+-- Substring search on short fields: requirements/0006 R55 says "avi" finds
+-- "avian" and so does "vian". Full text answers the first for free - GIN on a
+-- tsvector supports a prefix lexeme - and cannot answer the second at all,
+-- because a lexeme either matches or it does not. The fallback arm of the entry
+-- search is therefore trigram similarity (docs/adr/0031).
+--
+-- Its own migration because it is the only statement in this feature needing
+-- more than table ownership. pg_trgm has been a *trusted* extension since
+-- Postgres 13, so the owner of a database may install it without superuser,
+-- which is what hatodo_dev and hatodo_prod are. If a deployment ever refuses,
+-- this failing on its own says so clearly; failing halfway through a table
+-- definition does not.
+CREATE EXTENSION IF NOT EXISTS pg_trgm;

@@ -13,6 +13,7 @@ import com.hatodo.user.AppUserRepository;
 import com.hatodo.images.ImageService;
 import com.hatodo.images.StoredImage;
 import com.hatodo.images.StoredImageRepository;
+import com.hatodo.richtext.DetailImages;
 import com.hatodo.richtext.HtmlSanitizer;
 import com.hatodo.user.CurrentUserProvider;
 import java.math.BigDecimal;
@@ -25,8 +26,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -51,16 +50,13 @@ public class TodoItemService {
     private final HtmlSanitizer sanitizer;
     private final StoredImageRepository storedImages;
     private final ImageService images;
-
-    /** Matches exactly what the sanitizer is willing to keep in an {@code img}. */
-    private static final Pattern DETAIL_IMAGE =
-            Pattern.compile("/api/images/([0-9a-fA-F-]{36})");
+    private final DetailImages detailImages;
 
     public TodoItemService(TodoItemRepository items, ListFieldRepository fields,
                            ListAccessRepository access, AppUserRepository users,
                            TodoListService lists, CurrentUserProvider currentUser,
                            HtmlSanitizer sanitizer, StoredImageRepository storedImages,
-                           ImageService images) {
+                           ImageService images, DetailImages detailImages) {
         this.items = items;
         this.fields = fields;
         this.access = access;
@@ -70,6 +66,7 @@ public class TodoItemService {
         this.sanitizer = sanitizer;
         this.storedImages = storedImages;
         this.images = images;
+        this.detailImages = detailImages;
     }
 
     @Transactional(readOnly = true)
@@ -491,20 +488,12 @@ public class TodoItemService {
      * tolerates.
      */
     private void claimImages(TodoItem item, UUID uploaderId) {
-        Set<UUID> referenced = new java.util.HashSet<>();
         // Both rich-text bodies, because stored_image keys a claim on the item
         // alone and does not know which field referred to the picture. Scanning
         // only the detail leaves the note's pictures unclaimed, and therefore
         // readable by nobody but whoever uploaded them (adr/0023).
-        for (String html : new String[] {item.getDetailHtml(), item.getCompletionNoteHtml()}) {
-            if (html == null) {
-                continue;
-            }
-            Matcher matcher = DETAIL_IMAGE.matcher(html);
-            while (matcher.find()) {
-                referenced.add(UUID.fromString(matcher.group(1)));
-            }
-        }
+        Set<UUID> referenced =
+                detailImages.referencedIn(item.getDetailHtml(), item.getCompletionNoteHtml());
 
         for (UUID imageId : referenced) {
             storedImages.findById(imageId)

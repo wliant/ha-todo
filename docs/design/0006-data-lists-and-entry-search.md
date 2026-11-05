@@ -3,7 +3,8 @@
 Implements [requirements/0006](../requirements/0006-data-lists-and-entry-search.md)
 R50-R61. Decisions recorded in
 [adr/0029](../adr/0029-a-data-list-is-its-own-aggregate.md),
-[adr/0030](../adr/0030-an-entrys-searchable-document.md),
+[adr/0030](../adr/0030-an-entrys-searchable-document.md) (superseded by
+[adr/0033](../adr/0033-tags-enter-the-search-document-stemmed.md)),
 [adr/0031](../adr/0031-entry-search-is-one-statement-with-a-trigram-fallback.md)
 and [adr/0032](../adr/0032-a-detail-pictures-owner-is-a-third-foreign-key.md).
 
@@ -72,8 +73,8 @@ closed set of drawings with no behaviour, and the frontend mirror in
 ### V914 - entries
 
 `data_entry` carries `id`, `data_list_id`, `name`, `description`, `detail_html`,
-`detail_text`, `tags text[]`, `version`, `created_by`, `created_at`,
-`updated_at`.
+`detail_text`, `tags text[]`, `tags_text`, `version`, `created_by`,
+`created_at`, `updated_at`.
 
 The invariants, and who holds each:
 
@@ -82,22 +83,30 @@ The invariants, and who holds each:
 | Name present and not blank | `CHECK (btrim(name) <> '')` and `@NotBlank` |
 | Detail HTML sanitized, images only `/api/images/{uuid}` | `HtmlSanitizer`, on write (adr/0018) |
 | `detail_text` is `detail_html` with the markup taken out | `DataEntry.setDetail(html, text)` - the only writer of either |
+| `tags_text` is `tags` joined by a space | `DataEntry.setTags(tags)` - the only writer of either |
 | Tags lowercase, trimmed, deduped, sorted | `TagNormaliser` - SQL cannot say it without a trigger |
 | No NULL tag element; at most twenty tags | `CHECK` constraints |
-| `search_vector` reflects all four sources | the generated column itself |
+| `search_vector` reflects all four sources, weighted | the generated column itself; `aTagHitOutranksADetailHit` proves the weights are live |
 | An entry belongs to a collection the writer can read | `DataListService.requireReadable` |
 
-Then the search document, per adr/0030:
+Then the search document, per adr/0033:
 
 ```sql
 ALTER TABLE data_entry ADD COLUMN search_vector tsvector
     GENERATED ALWAYS AS (
         setweight(to_tsvector('english', coalesce(name, '')),        'A')
-     || setweight(array_to_tsvector(tags),                           'B')
+     || setweight(to_tsvector('english', coalesce(tags_text, '')),   'B')
      || setweight(to_tsvector('english', coalesce(description, '')), 'C')
      || setweight(to_tsvector('english', coalesce(detail_text, '')), 'D')
     ) STORED;
 ```
+
+Tags are stemmed into the document through `tags_text` rather than entered
+verbatim by `array_to_tsvector`, because `setweight` cannot weight a
+position-less lexeme and an unstemmed tag cannot be matched by a member typing
+it - both measured against a real Postgres rather than assumed. adr/0033 has the
+numbers. The `tags` array itself is untouched and is still what R56's chips
+filter with `@>`, exactly.
 
 with four indexes: GIN on `search_vector`, GIN on `tags` (for `@>` filtering and
 the suggestion endpoint's `unnest`), GIN on `lower(name) gin_trgm_ops` (the
@@ -108,11 +117,19 @@ collection in display order.
 
 *A generation expression must be `IMMUTABLE`.* The explicit-config
 `to_tsvector('english', …)` is; the one-argument form is only `STABLE` and is
-refused. `array_to_string(tags, ' ')` is `STABLE` too, so the natural way to
-fold tags into stemmed text fails at `ALTER TABLE` - hence `array_to_tsvector`.
-Before writing this migration, confirm
-`SELECT provolatile FROM pg_proc WHERE proname = 'array_to_tsvector'` answers
-`i`; adr/0030 records the fallback if it ever does not.
+refused. So are `array_to_string(tags, ' ')` and the `tags::text` cast, both for
+the same reason - an element's output function may depend on session settings -
+which is why the tags reach the vector through a column the application writes
+rather than through an expression over the array. Verified on Postgres 17:
+`array_to_string` and `to_tsvector(text)` report `provolatile = 's'`, and
+attempting the generated column with either is refused outright with
+"generation expression is not immutable".
+
+*A generated column that Postgres accepts is not a generated column that works.*
+`setweight(array_to_tsvector(tags), 'B')` creates, indexes and queries without a
+complaint, and is inert - adr/0033. Probe the expression against a real database
+before trusting it; a test written against the schema as described would have
+agreed with the description.
 
 *`detail_text` is app-maintained, not generated.* The only HTML-stripping
 expression available inside a generated column is a regexp, and
@@ -552,8 +569,9 @@ rejected design creeping back), `refusesADuplicateNamePerOwner`,
 `claimsOnlyUnclaimedPicturesTheCallerUploaded`, `doesNotClaimAnItemsPicture`,
 `deleteForgetsThePictures`.
 
-`data/DataEntryTest` - `settingDetailWritesBothColumns`, and
-`thereIsNoWayToWriteDetailTextAlone`: cheap, and it is the invariant the whole
+`data/DataEntryTest` - `settingDetailWritesBothColumns`,
+`settingTagsWritesBothColumns`, `thereIsNoWayToWriteDetailTextAlone` and
+`thereIsNoWayToWriteTagsTextAlone`: cheap, and they are the invariant the whole
 search design rests on.
 
 ### Integration - `app/src/integrationTest/java/com/hatodo/`
@@ -575,7 +593,7 @@ job mid-assertion.
 `DataEntryApiIntegrationTest` - `anyGrantHolderMayAddEditAndDeleteAnEntry`,
 `detailHtmlIsSanitizedOnWrite`, `detailTextTracksDetailHtml` (asserted on the
 column directly, including that a word boundary survives),
-`tagsAreStoredLowercasedDedupedAndSorted`,
+`tagsTextTracksTheTagsArray`, `tagsAreStoredLowercasedDedupedAndSorted`,
 `tagSuggestionsComeFromTheCollectionAndCarryCounts`,
 `aStaleEditAnswers409WithTheCurrentEntry`,
 `anEntryOnAnInvisibleCollectionAnswers404`.
@@ -588,6 +606,8 @@ none of adr/0031's SQL has a unit-testable form. `scopedSearchMatchesName`,
 `globalSearchSkipsCollectionsTheCallerHoldsNoGrantOn`,
 `prefixMatchingFindsAvianFromAvi`, `substringFallbackFindsAvianFromVian`,
 `aFullTextHitOutranksASubstringHit`, `aNameHitOutranksADetailHit`,
+`aTagHitOutranksADetailHit` (adr/0033's regression guard - the superseded form
+ranked these equal), `aTagIsFoundByItsSingularAndItsPlural`,
 `aQuotedPhraseMatchesOnlyThePhrase`, `aNegatedTermExcludes`,
 `aStopwordOnlyQueryReturnsNothingRatherThanFailing`,
 `aPercentSignInTheQueryIsNotAWildcard`, `tagFiltersNarrowRatherThanWiden`,

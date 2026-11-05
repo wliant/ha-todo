@@ -64,6 +64,18 @@ public class StoredImage {
     @Column(name = "rule_id")
     private UUID ruleId;
 
+    /**
+     * The collection entry that owns this picture, if an entry does
+     * (requirements/0006 R61).
+     *
+     * <p>A third nullable owner beside {@code itemId} and {@code ruleId}, which
+     * the database constrains with {@code num_nonnulls(...) <= 1}. The shape
+     * does not scale forever: adr/0032 says a fourth owner is the point to
+     * replace it with a join table rather than add a fifth column.
+     */
+    @Column(name = "entry_id")
+    private UUID entryId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -124,6 +136,27 @@ public class StoredImage {
 
     public void claimFor(UUID itemId) {
         this.itemId = itemId;
+    }
+
+    public UUID getEntryId() {
+        return entryId;
+    }
+
+    /**
+     * Claimed by a collection entry, so from now on that entry's collection
+     * decides who may read it.
+     */
+    public void claimForEntry(UUID entryId) {
+        this.entryId = entryId;
+    }
+
+    /** No owner at all: uploaded into something that was never saved. */
+    public boolean isUnclaimed() {
+        return itemId == null && ruleId == null && entryId == null;
+    }
+
+    public boolean wasUploadedBy(UUID userId) {
+        return uploadedBy != null && uploadedBy.getId().equals(userId);
     }
 
     public Instant getCreatedAt() {

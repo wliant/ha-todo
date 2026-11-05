@@ -32,13 +32,15 @@ see.
 **R50-R61 are specified and not built.** `docs/requirements/0006` adds **data lists** — reference
 collections (recipes, restaurants, quotes, vocabulary) whose entries have a name, a description, a
 rich-text detail and free-form tags, and which are *never* assigned, dated, completed, scored or
-generated on a schedule. `docs/design/0006` lays out the build in eight steps and `docs/adr/0029`-`0032`
-record the decisions. Three of those decisions are the ones to read first. A data list is **its own
+generated on a schedule. `docs/design/0006` lays out the build in eight steps and `docs/adr/0029`-`0033`
+record the decisions (`0033` supersedes `0030`). Three of those decisions are the ones to read first. A data list is **its own
 aggregate** — `data_list` / `data_list_access` / `data_entry`, not a `kind` column on `todo_list`, because
 nine existing readers of `todo_list` would otherwise have to remember to exclude it and the one that
 forgets is wrong without failing (`docs/adr/0029`). An entry's `search_vector` is a **generated**
-`tsvector` fed by an **application-maintained** `detail_text` column, so `DataEntry` must expose one
-`setDetail(html, text)` and never a setter for either column alone (`docs/adr/0030`). And search is one
+`tsvector` fed by **application-maintained** `detail_text` and `tags_text` columns, so `DataEntry` must
+expose one `setDetail(html, text)` and one `setTags(tags)` and never a setter for a single column
+(`docs/adr/0033`, which supersedes `0030` — `setweight` cannot weight the position-less lexemes
+`array_to_tsvector` produces, so the original expression was silently inert). And search is one
 native statement whose grant check is the driving `EXISTS`, with a `pg_trgm` arm that always ranks below
 a real full-text hit (`docs/adr/0031`). Collections deliberately have **no pins and no recency**, which is
 why the share picker cannot preselect one.
