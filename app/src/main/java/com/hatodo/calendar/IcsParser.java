@@ -13,9 +13,11 @@ import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TimeZone;
 import org.springframework.stereotype.Component;
 
@@ -87,8 +89,14 @@ public class IcsParser {
                             event);
                 }
             }
+            Set<String> matched = new HashSet<>();
+            boolean seriesCancelled = false;
             for (VEvent master : masters) {
-                expand(uid, master, overrides, zone, household, from, to, parsed);
+                seriesCancelled |= isCancelled(master);
+                expand(uid, master, overrides, matched, zone, household, from, to, parsed);
+            }
+            if (!seriesCancelled) {
+                emitUnmatched(uid, overrides, matched, household, from, to, parsed);
             }
         }
         return parsed;
@@ -131,9 +139,38 @@ public class IcsParser {
         return byUid;
     }
 
+    /**
+     * Overrides the expansion never asked for.
+     *
+     * <p>An override says "the occurrence that was at <em>this</em> time is now
+     * at that one", and matching it needs the expansion to produce that exact
+     * original slot. Feeds routinely contain overrides where it does not: a
+     * series whose own DTSTART was edited after an occurrence had been moved
+     * leaves the old RECURRENCE-ID behind, and an occurrence moved <em>into</em>
+     * the window from outside it is never generated here at all.
+     *
+     * <p>Such an override is a real appointment the member moved, so it is
+     * emitted on its own terms rather than dropped. Dropping it is the
+     * behaviour this replaced, and it is invisible: the member sees a series
+     * with one occurrence quietly missing and has no way to tell.
+     */
+    private void emitUnmatched(String uid, Map<String, VEvent> overrides, Set<String> matched,
+                               ZoneId household, LocalDate from, LocalDate to,
+                               List<ParsedEvent> into) {
+        for (Map.Entry<String, VEvent> override : overrides.entrySet()) {
+            if (matched.contains(override.getKey()) || isCancelled(override.getValue())) {
+                continue;
+            }
+            ParsedEvent orphan = single(uid, override.getValue(), household);
+            if (!orphan.occursOn().isBefore(from) && !orphan.occursOn().isAfter(to)) {
+                into.add(orphan);
+            }
+        }
+    }
+
     private void expand(String uid, VEvent master, Map<String, VEvent> overrides,
-                        TimeZone zone, ZoneId household, LocalDate from, LocalDate to,
-                        List<ParsedEvent> into) {
+                        Set<String> matched, TimeZone zone, ZoneId household,
+                        LocalDate from, LocalDate to, List<ParsedEvent> into) {
         if (isCancelled(master)) {
             return;
         }
@@ -163,7 +200,12 @@ public class IcsParser {
                 continue;
             }
 
-            VEvent override = overrides.get(allDay ? "date:" + day : "time:" + occurrence.getTime());
+            String key = allDay ? "date:" + day : "time:" + occurrence.getTime();
+            VEvent override = overrides.get(key);
+            if (override != null) {
+                // Claimed, so emitUnmatched leaves it alone.
+                matched.add(key);
+            }
             VEvent source = override == null ? master : override;
             if (isCancelled(source)) {
                 continue;

@@ -289,7 +289,14 @@ What it does, in the order the hard cases appear:
 4. **Apply overrides.** A moved or edited single occurrence arrives as a second
    `VEVENT` with the same `UID` and a `RECURRENCE-ID`; it replaces the expanded
    occurrence with that key. `STATUS:CANCELLED` and `METHOD:CANCEL` drop the
-   occurrence instead.
+   occurrence instead. **An override the expansion never matches is still
+   emitted**, on its own terms: feeds routinely carry one whose original slot no
+   longer exists - a series whose own `DTSTART` was edited after an occurrence
+   had been moved leaves the old `RECURRENCE-ID` behind, and an occurrence moved
+   *into* the window from outside it is never generated here at all. Dropping it
+   shows a series with one occurrence quietly missing, which is exactly the
+   failure this feature is not allowed to have. A cancelled series is the
+   exception: its leftovers go with it.
 5. **Clamp and default.** A missing `SUMMARY` becomes `(No title)` rather than a
    null; `summary`, `location` and `description` are truncated to their column
    widths; an occurrence outside the window is discarded here rather than

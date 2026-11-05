@@ -185,6 +185,34 @@ class IcsParserTest {
         }
     }
 
+    @Test
+    void keepsAMovedOccurrenceWhoseOriginalSlotNoLongerExists() {
+        // Feeds routinely carry an override the expansion cannot match: a
+        // series whose own DTSTART was edited after an occurrence had been
+        // moved leaves the old RECURRENCE-ID behind. The appointment is real
+        // and the member moved it, so dropping it shows a series with one
+        // occurrence quietly missing - and nothing says so.
+        List<ParsedEvent> events = parse("stale-override.ics");
+
+        assertThat(events).extracting(ParsedEvent::occursOn).containsExactly(
+                LocalDate.of(2026, 11, 3),
+                LocalDate.of(2026, 11, 10),
+                LocalDate.of(2026, 11, 12),
+                LocalDate.of(2026, 11, 17));
+        assertThat(events).filteredOn(event -> event.occursOn().equals(LocalDate.of(2026, 11, 12)))
+                .singleElement()
+                .satisfies(event -> assertThat(event.summary()).startsWith("Swimming (moved"));
+    }
+
+    @Test
+    void leavesAnUnmatchedOverrideOutWhenItFallsOutsideTheWindow() {
+        List<ParsedEvent> events = parser.parse(fixture("stale-override.ics"), HOUSEHOLD,
+                LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 11));
+
+        assertThat(events).extracting(ParsedEvent::occursOn)
+                .containsExactly(LocalDate.of(2026, 11, 3), LocalDate.of(2026, 11, 10));
+    }
+
     private ParsedEvent only(String fixture) {
         List<ParsedEvent> events = parse(fixture);
         assertThat(events).hasSize(1);

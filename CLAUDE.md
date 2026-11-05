@@ -96,6 +96,12 @@ bucketing of **items** too — one merged grid cannot have two definitions of Th
 follows the device's zone. `occurs_on` is application-maintained rather than generated, because
 `AT TIME ZONE` is STABLE rather than IMMUTABLE and Postgres refuses it in a generation expression.
 
+Recurrence is expanded at parse time, one row per occurrence, and **collapsing is per occurrence**
+(`uid` + day + minute) rather than per series — a weekly event keeps all its occurrences even when two
+members' feeds both carry it. An override the expansion never matches is **still emitted**: a feed whose
+series `DTSTART` was edited after an occurrence was moved leaves a `RECURRENCE-ID` that matches nothing,
+and dropping it shows a series with one occurrence quietly missing.
+
 A refresh **replaces a feed's rows wholesale** — there is no identity to preserve, so a moved, edited or
 deleted event is just a different set of rows next time. A failed refresh **keeps the rows it has** and
 records a phrase written for the owner's screen; R71's staleness notice on My day is what stops that
