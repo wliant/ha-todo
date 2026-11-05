@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-**Everything specified so far is built, as of 2026-11-05.** Build, local stack, deploy scripts and all
-three test harnesses are real and passing: 174 backend unit tests, 209 integration tests, 199 frontend
-tests, 73 end-to-end.
+**Everything specified so far is built, as of 2026-11-06.** Build, local stack, deploy scripts and all
+three test harnesses are real and passing: 233 backend unit tests, 224 integration tests, 219 frontend
+tests, 79 end-to-end.
 
 Implemented: **accounts and administration (R8-R12)** — username identity, optional per-user passwords, a
 pick-a-user sign-in screen, and a single admin who adds and deletes users. **The PWA (R13, R14)** —
@@ -68,21 +68,50 @@ revoked **by a list's owner** (0005 R49 settles only the reopen path), and wheth
 else has it open. Where a completed item goes is **answered** by 0005 R38 — it stays in place, struck
 through, with its detail and completion note one tap away.
 
-**R62-R72 are specified and not yet built.** `docs/requirements/0007` and `docs/design/0007` add
-**calendar feeds**: a member subscribes somebody else's calendar by its iCalendar URL (Google's secret
-iCal address, Outlook's published link), grants other members access to it per feed, and its events appear
-on My day *merged* with the chores. Nothing here authors an event, there is no Calendar menu, and there is
-no OAuth - `docs/adr/0034` records why a read-only `.ics` subscription beats two application
-registrations for a household of four, and what it costs (the copy lags its source by up to hours).
-`docs/adr/0035` makes the feed address a **write-only** secret - no response record has a `url` component
-at all - and puts every fetch behind an egress guard, because the app container can otherwise be made to
-GET the insecure registry on `192.168.1.248:5000` and hand the response back in the preview screen.
-`docs/adr/0036` gives the household **one timezone**: `app.timezone` (`APP_TIMEZONE`, now defaulting to
-`Asia/Singapore`) replaces `app.recurrence.zone`, and it governs the day bucketing of items too - one
-merged grid cannot have two definitions of Thursday, so My day stops following the device's zone. Two
-traps are written down there: an all-day event is a **date**, never an instant (a parser that resolves it
-against a UTC JVM default puts the school play on the previous evening), and `occurs_on` cannot be a
-generated column because `AT TIME ZONE` is STABLE rather than IMMUTABLE and Postgres refuses it.
+**R62-R72 are implemented.** `docs/requirements/0007` and `docs/design/0007` add **calendar feeds**:
+a member subscribes somebody else's calendar by its iCalendar URL (Google's secret iCal address,
+Outlook's published link), grants other members access to it per feed, and its events appear on My day
+*merged* with the chores. Nothing here authors an event, there is no Calendar menu, and there is no OAuth
+— `docs/adr/0034` records why a read-only `.ics` subscription beats two application registrations for a
+household of four, and what it costs (the copy lags its source by up to hours, which is why there is a
+refresh button). Subscriptions live in the **profile**, not behind a menu entry.
+
+**Four things in there are easy to break.** The feed address is a **bearer capability** for somebody's
+whole calendar, so `CalendarFeedResponse` has **no component** it could be returned in — a stronger
+guarantee than remembering not to populate one, and `CalendarFeedServiceTest` asserts over the record's
+components so adding one fails a test rather than leaks a calendar (`docs/adr/0035`). Every fetch passes
+`FeedUrlGuard`: https, no credentials, no port, every resolved address public, **re-checked on each
+redirect** — a public host redirecting to `127.0.0.1` is the whole trick, and the app container can
+otherwise be made to GET the unauthenticated registry on `192.168.1.248:5000` and hand the response back
+in the preview. `app.calendar.allow-private-hosts` relaxes scheme, port *and* host together (a fixture
+`.ics` is plain HTTP on an ephemeral port) and is true only in `local` and `itest`. And **biweekly
+resolves `DTSTART;VALUE=DATE` against `TimeZone.getDefault()`**, ignoring both the parser's
+`defaultTimezone` and the zone given to `getDateIterator` — probed, not assumed — so an all-day
+occurrence is the **raw date plus the iterator's day offset** and never an instant; `IcsParserTest` pins
+it across four server zones.
+
+**The household now has one timezone** (`docs/adr/0036`): `app.timezone` (`APP_TIMEZONE`, default
+`Asia/Singapore`) replaced `app.recurrence.zone`, is served to the SPA on `/api/me`, and governs the day
+bucketing of **items** too — one merged grid cannot have two definitions of Thursday, so My day no longer
+follows the device's zone. `occurs_on` is application-maintained rather than generated, because
+`AT TIME ZONE` is STABLE rather than IMMUTABLE and Postgres refuses it in a generation expression.
+
+A refresh **replaces a feed's rows wholesale** — there is no identity to preserve, so a moved, edited or
+deleted event is just a different set of rows next time. A failed refresh **keeps the rows it has** and
+records a phrase written for the owner's screen; R71's staleness notice on My day is what stops that
+being a silent lie, so do not quietly drop it. Collapsing two feeds' copies of one appointment happens
+**per request, after the access filter**, because which feeds a caller may read decides whether two rows
+are one entry. Cross-provider dedup is not guaranteed: Exchange does not always preserve the originating
+`UID`.
+
+**One e2e gap is deliberate**: a deployment's guard refuses every address on the machine running the
+suite, so `e2e/tests/test_calendars.py` covers the profile screen and the refusals, and the
+subscribe-fetch-store path is covered by `CalendarFeedApiIntegrationTest`, which serves itself a real
+`.ics` over HTTP.
+
+**Unrelated, pre-existing**: two `e2e/tests/test_recurring.py` tests fail against the **local** stack
+because `deployment/docker-compose.local.yml` sets `RECURRENCE_CATCH_UP_DAYS=7` while they assert
+"Added 1."; they pass with `RECURRENCE_CATCH_UP_DAYS=0` and against dev, which uses 0.
 
 Keep this file true: when a decision here turns out wrong, update it in the same change.
 
@@ -95,6 +124,12 @@ a shared grocery list and a private workout log are both ordinary. Members add *
 can be **assigned** to a member, and any member with access can mark any of that list's items complete.
 Design every API and UI around "multiple people touching the same list concurrently", not around a
 single-user todo app.
+
+A household also has a **day to fit the work into**, and that lives in Google Calendar or Outlook. A
+member subscribes those calendars by their published iCalendar address and the events appear on My day
+beside the chores; nothing here authors an event (`docs/adr/0034`). The join with the todo domain is the
+whole value - the providers can already share a calendar between two people, and can never show it next
+to what the household owes today.
 
 A household also keeps things it **looks up** rather than finishes, so there is a second kind of list:
 a **data list** (a *collection* in the UI) holds recipes, restaurants, quotes, vocabulary. Same grant
@@ -187,7 +222,7 @@ migrations after every versioned one and re-runs them when their content changes
 edited freely and can never sit in front of a schema change. The old versioned seed at `V900` is why the
 schema series resumes at **V901** — a lower version would be out of order on any database that applied it,
 and why local/dev set `flyway.ignore-migration-patterns: "*:missing"`. Prod never applied it and keeps
-strict validation. The highest applied migration is **V915**; new ones continue from V916.
+strict validation. The highest applied migration is **V916**; new ones continue from V917.
 
 **Authorization is per-list access, not household-scoped.** Every read and write is checked against the
 caller's grant on that list, enforced in the service layer — not only in the controller and not only in
