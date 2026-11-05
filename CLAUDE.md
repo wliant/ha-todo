@@ -4,8 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-**Accounts, the app shell and Material Design, as of 2026-11-05.** Build, local stack, deploy scripts and
-all three test harnesses are real and passing.
+**Everything specified so far is built, as of 2026-11-05.** Build, local stack, deploy scripts and all
+three test harnesses are real and passing: 104 backend unit tests, 142 integration tests, 167 frontend
+tests, 66 end-to-end.
 
 Implemented: **accounts and administration (R8-R12)** — username identity, optional per-user passwords, a
 pick-a-user sign-in screen, and a single admin who adds and deletes users. **The PWA (R13, R14)** —
@@ -19,11 +20,18 @@ shared link becoming a real item.
 
 `docs/design/0004` describes that feature and `docs/adr/0010`-`0021` record its decisions.
 
-**Specified but not yet built: `docs/requirements/0005` (R36-R49)** — completion detail with expandable
-rows, a collapsed add form, recurring items, a per-list activity tab, a day/week/month dashboard, and a
-claim-and-complete rework of the item row. `docs/design/0005` is the design and `docs/adr/0022`-`0028`
-record the decisions. Nothing in `app/`, `web/` or `e2e/` implements it yet; the design's phases A-E are
-the intended order, and phase B is the one that must land atomically with its test changes.
+**R36-R49 are implemented too**, in the five phases `docs/design/0005` lays out, with
+`docs/adr/0022`-`0028` recording the decisions. Completion stores and shows how the work went, including a
+rich-text note and its pictures; an item row opens to explain itself, one at a time; the add form starts
+with only what the list insists on; work is claimed in bulk and the claim reads the same to everybody;
+reopening keeps the record and returns the points; a list has tabs — items, standing instructions, and
+who did what lately; and **the dashboard is the landing page**, reading across every list a member can
+see.
+
+**Two things in there are easy to break.** "Finished" is no longer one column: a reopened item keeps its
+completion record, so the question is answered by a *generated* column (`docs/adr/0024`), and a new reader
+written against `completed_at` will compile, pass, and be wrong. And the recurrence job is the only thing
+in the product that acts without being asked — see the scheduler paragraph below.
 
 The open questions left in `docs/requirements/0004` are now two, not three: whether earned points can be
 revoked **by a list's owner** (0005 R49 settles only the reopen path), and whether a list should show who
@@ -209,7 +217,8 @@ path. `/api/admin/**` is `hasRole("ADMIN")`, and the service refuses to delete t
 caller. See `docs/adr/0006-admin-account-from-environment.md`.
 
 **The app is an installable PWA whose service worker caches nothing.** `web/public/manifest.webmanifest`
-(name "List", standalone, `start_url: /lists`), the iOS-only meta tags in `index.html`, and
+(name "List", standalone, `start_url: /dashboard` since R44 made the dashboard the landing page — it
+moves in three places at once: the manifest, `App.tsx`'s catch-all and `LoginPage`'s fallback), the iOS-only meta tags in `index.html`, and
 `public/sw.js`, which exists solely to satisfy the install criteria. Offline use is out of scope, and a
 precaching worker would serve a stale `index.html` behind nginx's `no-store` — so do not add caching to
 it without replacing `docs/adr/0007-installable-pwa-without-offline-caching.md`. Icons are drawn by
@@ -252,7 +261,7 @@ either, and the client library is still minio-java used as a plain S3 client. Se
 `docs/adr/0021`. Redis remains deferred on `docs/adr/0003`'s reasoning, and still needs a concrete need
 and a new ADR; its likeliest trigger is a second backend instance, where in-memory sessions break.
 
-**The recurrence scheduler assumes exactly one backend instance (specified, not yet built).** `docs/adr/0025`
+**The recurrence scheduler assumes exactly one backend instance.** `docs/adr/0025`
 puts a `@Scheduled` job behind `app.recurrence.enabled` with its cron in the environment, and takes no
 lock and elects no leader: both compose files run one `app` service with one replica. A second instance
 would double-run every rule, which `ux_todo_item_occurrence (rule_id, occurrence_on)` turns into logged
@@ -371,6 +380,13 @@ Rules:
   run a unique prefix (`TestData.name()`) so parallel and repeated runs cannot collide, and
   `defer_cleanup()` registers teardown that runs at session end. Seed through the API with
   `authenticated_api`. Never assume pre-existing data in dev, and never leave residue behind.
+  **The prefix namespaces runs, not labels** — `test_data` is session-scoped, so two modules both asking
+  for `name("Private")` get the same string and the second create fails with "You already have a list with
+  that name". Label for the module, not the concept.
+- **`ui_sign_in` asserts being signed in, not being anywhere.** A fresh sign-in lands on the dashboard, but
+  `ProtectedRoute` resumes wherever a member was sent away from, so waiting on one page's heading makes the
+  fixture wrong for half its callers. Equally: "New list" lives only on `/lists`, so a helper that creates a
+  list has to navigate there first rather than assuming sign-in landed on it.
 - Two members acting at once is the suite's reason to exist: the `second_member_page` fixture gives a second
   browser context with its own session.
 
