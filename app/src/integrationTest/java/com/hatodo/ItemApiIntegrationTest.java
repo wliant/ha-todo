@@ -299,6 +299,38 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
     }
 
     @Test
+    void editingAnItemKeepsTheCostsItAlreadyAnswered() {
+        // Re-sending a cost the item already carries must not be an error: the
+        // row is matched on its (item, field) key and updated in place.
+        Member ana = givenMember("cost-edit");
+        String listId = newList(ana);
+        configure(ana, listId, """
+                [{"kind":"COST","label":"Time","costMode":"NUMERIC","costUnitLabel":"hour",
+                  "pointsPerUnit":100}]
+                """);
+        String fieldId = (String) costField(ana, listId).get("id");
+
+        Map created = addItem(ana, listId, """
+                {"description":"An hour","costValues":[{"fieldId":"%s","amount":1}]}
+                """.formatted(fieldId)).getBody();
+
+        ResponseEntity<Map> edited = rest.exchange("/api/items/" + created.get("id"),
+                HttpMethod.PATCH, new HttpEntity<>("""
+                        {"version":%d,"description":"Two hours",
+                         "costValues":[{"fieldId":"%s","amount":2}]}
+                        """.formatted(((Number) created.get("version")).longValue(), fieldId),
+                        headersFor(ana.session())), Map.class);
+
+        assertThat(edited.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(edited.getBody().get("description")).isEqualTo("Two hours");
+        assertThat((List<Map<String, Object>>) edited.getBody().get("costValues"))
+                .singleElement()
+                .satisfies(value ->
+                        assertThat(Double.parseDouble(value.get("amount").toString()))
+                                .isEqualTo(2.0));
+    }
+
+    @Test
     void refusesAStaleEdit() {
         Member ana = givenMember("stale-edit");
         String listId = newList(ana);
