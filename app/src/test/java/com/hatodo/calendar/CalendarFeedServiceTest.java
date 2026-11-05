@@ -1,6 +1,7 @@
 package com.hatodo.calendar;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -181,6 +182,19 @@ class CalendarFeedServiceTest {
 
         assertThatThrownBy(() -> service.preview(FEED.toString()))
                 .isInstanceOf(PreviewTooOftenException.class);
+    }
+
+    @Test
+    void aRefusedAddressDoesNotCostTheMemberTheirNextAttempt() {
+        // The throttle bounds outbound fetches, and a refusal makes none - so a
+        // member who mistypes once must not have to wait to correct it.
+        when(fetcher.fetch(any())).thenReturn("BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR\n");
+        CalendarFeedService deployed = serviceWith(false);
+
+        assertThatThrownBy(() -> deployed.preview("http://10.0.0.1/basic.ics"))
+                .isInstanceOf(FeedUrlNotAllowedException.class);
+
+        assertThatCode(() -> service.preview(FEED.toString())).doesNotThrowAnyException();
     }
 
     @Test

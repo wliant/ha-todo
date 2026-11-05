@@ -105,9 +105,12 @@ public class CalendarFeedService {
     @Transactional(readOnly = true)
     public CalendarPreviewResponse preview(String rawUrl) {
         UUID me = currentUser.requireUserId();
-        throttle(me);
-
+        // Guarded first, then throttled: the throttle exists to bound what this
+        // server fetches, and an address the guard refuses is never fetched.
+        // Counting a refusal would make a member who mistypes once wait before
+        // they can correct it, for no safety at all.
         URI url = parseUrl(rawUrl);
+        throttle(me);
         List<ParsedEvent> parsed = parser.parse(fetcher.fetch(url), household.zone(),
                 window.from(), window.to());
         List<ParsedEvent> upcoming = parsed.stream()

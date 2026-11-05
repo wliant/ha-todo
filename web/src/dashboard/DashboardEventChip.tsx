@@ -8,9 +8,15 @@ import type { Zone } from './calendar'
  * One event in the week or month view.
  *
  * <p>Deliberately not a {@link DashboardItemChip} in another colour: it has an
- * outline rather than a fill and leads with its time, so nobody scanning a
- * crowded day mistakes an appointment for a chore they could tick. There is
- * nothing to do to an event, so there is no affordance suggesting otherwise.
+ * outline where an item has a fill, so nobody scanning a crowded day mistakes
+ * an appointment for a chore they could tick. There is nothing to do to an
+ * event, so there is no affordance suggesting otherwise.
+ *
+ * <p>**The summary and nothing else**, for the reason R44 gives about items: a
+ * week column is about six characters wide on a phone, and a chip that leads
+ * with "07:30 PM" spends all of them on the time and truncates away the one
+ * thing that identifies the event. The time is in the accessible name and in
+ * the popup, which is one tap away.
  */
 export function DashboardEventChip({
   event,
@@ -49,9 +55,6 @@ export function DashboardEventChip({
           whiteSpace: 'nowrap',
         }}
       >
-        <Typography component="span" variant="caption" sx={{ fontWeight: 700, mr: 0.5 }}>
-          {event.allDay ? '•' : time}
-        </Typography>
         {event.summary}
       </Typography>
     </ButtonBase>
