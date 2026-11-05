@@ -20,9 +20,10 @@ for layout, commands, environments, deployment and workflow.
 ## Quick start
 
 ```bash
-./scripts/dev-up.sh      # postgres + app + web on Docker
+./scripts/dev-up.sh      # postgres + object store + app + web on Docker
 # web http://localhost:5173, api http://localhost:8080
-# demo sign-in: ana@example.com / password123
+# sign-in is a list of people: pick Ana (password123), or Ben - no password
+# admin / admin administers accounts
 ./scripts/dev-down.sh
 ```
 
@@ -30,6 +31,10 @@ Per-module commands live in [CLAUDE.md](CLAUDE.md#commands).
 
 ## Status
 
-Skeleton. Authentication, health, build, local stack, deploy scripts and the
-test harnesses are in place; the household / list / item domain is not yet
-implemented.
+Built and running on dev. Accounts, the installable shell, lists with per-list
+access, items with the fields each list declares, completion with points and a
+note about how the work went, standing instructions that make their own items,
+and a dashboard that reads across every list a member can see.
+
+See [CLAUDE.md](CLAUDE.md#status) for what that means in detail, and `docs/` for
+the requirements, designs and decisions behind it.
