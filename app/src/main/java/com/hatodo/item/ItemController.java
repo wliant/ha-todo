@@ -47,6 +47,16 @@ public class ItemController {
         return todoItems.create(listId, request);
     }
 
+    /**
+     * Under the list, not under /items: every item in one request must be on
+     * one list, so the grant and the assignee's audience are checked once.
+     */
+    @PostMapping("/lists/{listId}/items/assignment")
+    public AssignmentResponse assign(@PathVariable UUID listId,
+                                     @Valid @RequestBody AssignmentRequest request) {
+        return todoItems.assign(listId, request);
+    }
+
     @GetMapping("/lists/{listId}/points")
     public List<ListPointsResponse> points(@PathVariable UUID listId) {
         return todoItems.points(listId);

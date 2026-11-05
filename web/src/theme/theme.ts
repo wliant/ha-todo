@@ -12,6 +12,30 @@ import { createTheme } from '@mui/material/styles'
 const BRAND_LIGHT = '#1f5c3f'
 const BRAND_DARK = '#2f8f63'
 
+/**
+ * Work somebody took for themselves (R47).
+ *
+ * A named semantic entry rather than `secondary`, which is MUI's generic second
+ * brand colour and would be reached for by something unrelated within a
+ * release; and not `primary`, which already marks a completed item, because one
+ * colour meaning two things is the drift adr/0014 exists to prevent.
+ *
+ * Deliberately not the only signal - the chip also carries an icon and says
+ * "<name> claimed this" - so a colour-blind member and a screen reader read the
+ * same fact.
+ */
+const CLAIMED_LIGHT = '#8a4b16'
+const CLAIMED_DARK = '#e0a06a'
+
+declare module '@mui/material/styles' {
+  interface Palette {
+    selfClaimed: Palette['primary']
+  }
+  interface PaletteOptions {
+    selfClaimed?: PaletteOptions['primary']
+  }
+}
+
 export const theme = createTheme({
   // Emits --mui-palette-* for both schemes, which is what lets the hand-written
   // token block be deleted rather than mapped.
@@ -20,6 +44,7 @@ export const theme = createTheme({
     light: {
       palette: {
         primary: { main: BRAND_LIGHT, contrastText: '#ffffff' },
+        selfClaimed: { main: CLAIMED_LIGHT, contrastText: '#ffffff' },
         error: { main: '#a32020' },
         background: { default: '#f6f7f5', paper: '#ffffff' },
         text: { primary: '#1a1d1b', secondary: '#5d655f' },
@@ -29,6 +54,7 @@ export const theme = createTheme({
     dark: {
       palette: {
         primary: { main: BRAND_DARK, contrastText: '#06130d' },
+        selfClaimed: { main: CLAIMED_DARK, contrastText: '#1a0f04' },
         error: { main: '#ff8a80' },
         background: { default: '#121513', paper: '#1b1f1d' },
         text: { primary: '#e9ece9', secondary: '#a3aca6' },

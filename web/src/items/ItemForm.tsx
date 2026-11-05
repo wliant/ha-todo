@@ -1,7 +1,9 @@
 import Alert from '@mui/material/Alert'
+import Button from '@mui/material/Button'
 import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
+import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded'
 import type { ListField, ListMember } from '../api/lists'
 import { Suspense, lazy } from 'react'
 import Skeleton from '@mui/material/Skeleton'
@@ -25,22 +27,39 @@ const DetailEditor = lazy(() =>
  * Built from the list's configuration rather than from a fixed set, so a field
  * the list never declared is not merely hidden - it is never rendered, and the
  * server drops it if sent anyway.
+ *
+ * <p>Collapsed, it shows only the fields the list marks required (R39): most
+ * items on most lists are a line of text, and a form asking six questions for
+ * "milk" is why somebody reaches for paper instead. Keyed off `required`
+ * rather than a fixed list of kinds, because that is what stops the form
+ * becoming unsubmittable with a hidden required field left empty.
  */
 export function ItemForm({
   fields,
   members,
   value,
   onChange,
+  expanded = true,
+  onExpand,
 }: {
   fields: ListField[]
   members: ListMember[]
   value: SaveItem
   onChange: (value: SaveItem) => void
+  expanded?: boolean
+  onExpand?: () => void
 }) {
   const detail = fields.find((field) => field.kind === 'DETAIL')
   const assignee = fields.find((field) => field.kind === 'ASSIGNEE')
   const dueAt = fields.find((field) => field.kind === 'DUE_AT')
   const costs = fields.filter((field) => field.kind === 'COST')
+
+  /** Shown while collapsed only if the list insists on an answer. */
+  const asked = (field: ListField | undefined) =>
+    Boolean(field) && (expanded || field!.required)
+  const hidden = fields.filter(
+    (field) => field.kind !== 'DESCRIPTION' && !field.required,
+  ).length
 
   function setCost(fieldId: string, next: Partial<ItemCostValue>) {
     const others = value.costValues.filter((cost) => cost.fieldId !== fieldId)
@@ -69,7 +88,7 @@ export function ItemForm({
         slotProps={{ htmlInput: { maxLength: 300 } }}
       />
 
-      {detail && (
+      {asked(detail) && detail && (
         <Suspense fallback={<Skeleton variant="rounded" height={180} />}>
           <DetailEditor
             value={value.detailHtml ?? ''}
@@ -79,7 +98,7 @@ export function ItemForm({
         </Suspense>
       )}
 
-      {assignee && (
+      {asked(assignee) && assignee && (
         <TextField
           select
           label="Assignee"
@@ -98,7 +117,7 @@ export function ItemForm({
         </TextField>
       )}
 
-      {dueAt && (
+      {asked(dueAt) && dueAt && (
         <TextField
           label="Due"
           type="datetime-local"
@@ -111,7 +130,9 @@ export function ItemForm({
         />
       )}
 
-      {costs.map((cost) =>
+      {costs
+        .filter((cost) => expanded || cost.required)
+        .map((cost) =>
         cost.costMode === 'FIXED' ? (
           <TextField
             key={cost.id}
@@ -155,7 +176,19 @@ export function ItemForm({
         ),
       )}
 
-      {fields.length === 1 && (
+      {!expanded && hidden > 0 && (
+        <Button
+          size="small"
+          sx={{ alignSelf: 'flex-start' }}
+          aria-expanded={false}
+          endIcon={<ExpandMoreRounded />}
+          onClick={onExpand}
+        >
+          More fields
+        </Button>
+      )}
+
+      {expanded && fields.length === 1 && (
         <Alert severity="info">
           This list only asks for a description. Add fields in its settings.
         </Alert>

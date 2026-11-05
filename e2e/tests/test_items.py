@@ -8,6 +8,8 @@ session and is wrong across two.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -53,6 +55,18 @@ def add_item(page: Page, description: str) -> None:
     expect(page.get_by_text(description)).to_be_visible()
 
 
+def open_add_form(page: Page) -> None:
+    """Opens the add form with every field the list declares showing.
+
+    The form starts collapsed and shows only what the list insists on (R39), so
+    anything optional - a detail, an assignee, a cost - is behind this toggle.
+    """
+    page.get_by_role("button", name="Add item").click()
+    more = page.get_by_role("button", name="More fields")
+    if more.is_visible():
+        more.click()
+
+
 @pytest.mark.items
 def test_a_member_adds_an_item_and_ticks_it_off(
     page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
@@ -63,9 +77,9 @@ def test_a_member_adds_an_item_and_ticks_it_off(
     create_list(page, name)
 
     add_item(page, "Buy milk")
-    # click, not check: a completed item leaves the "To do" view, so the
-    # checkbox is gone by the time check() would assert its new state.
-    page.get_by_role("checkbox", name="Complete Buy milk").click()
+    # A button, not a checkbox: the row's checkbox selects now, and completing
+    # is its own control (R48, adr/0027).
+    page.get_by_role("button", name="Complete Buy milk", exact=True).click()
 
     # "To do" is the default view, so a finished item leaves it.
     expect(page.get_by_text("Buy milk")).not_to_be_visible()
@@ -100,7 +114,7 @@ def test_points_go_to_whoever_completed_it_not_the_assignee(
     expect(page.get_by_role("heading", name=name)).to_be_visible()
 
     # Assigned to Ben...
-    page.get_by_role("button", name="Add item").click()
+    open_add_form(page)
     page.get_by_role("textbox", name="Description").fill("Sweep up")
     page.get_by_role("combobox", name="Assignee").click()
     page.get_by_role("option", name=passwordless_member.display_name).click()
@@ -110,7 +124,7 @@ def test_points_go_to_whoever_completed_it_not_the_assignee(
     expect(page.get_by_text("Sweep up")).to_be_visible()
 
     # ...and completed by Ana.
-    page.get_by_role("checkbox", name="Complete Sweep up").click()
+    page.get_by_role("button", name="Complete Sweep up", exact=True).click()
 
     points = page.get_by_role("heading", name="Points").locator("xpath=../..")
     expect(points.get_by_text(demo_member.display_name)).to_be_visible()
@@ -144,11 +158,13 @@ def test_the_second_member_to_tick_an_item_is_told_who_got_there_first(
     expect(second_member_page.get_by_text("Take the bins out")).to_be_visible()
 
     # Ben gets there first.
-    second_member_page.get_by_role("checkbox", name="Complete Take the bins out").click()
+    second_member_page.get_by_role(
+        "button", name="Complete Take the bins out", exact=True
+    ).click()
     expect(second_member_page.get_by_text("Take the bins out")).not_to_be_visible()
 
-    # Ana ticks the item her screen still shows as open.
-    page.get_by_role("checkbox", name="Complete Take the bins out").click()
+    # Ana completes the item her screen still shows as open.
+    page.get_by_role("button", name="Complete Take the bins out", exact=True).click()
 
     expect(page.get_by_text(f"{passwordless_member.display_name} completed this first")
            ).to_be_visible()
@@ -197,7 +213,7 @@ def test_detail_keeps_its_formatting_and_refuses_an_attack(
     page.get_by_role("button", name="Save changes").click()
     expect(page.get_by_role("heading", name=name)).to_be_visible()
 
-    page.get_by_role("button", name="Add item").click()
+    open_add_form(page)
     page.get_by_role("textbox", name="Description").fill("Lemon pie")
     # Type the steps, then format the selection. Clicking the toolbar first
     # and typing afterwards races the editor's own focus handling, and the
@@ -211,6 +227,9 @@ def test_detail_keeps_its_formatting_and_refuses_an_attack(
     page.get_by_role("button", name="Save").click()
 
     expect(page.get_by_text("Lemon pie")).to_be_visible()
+    # The detail is behind the row's disclosure now (R38), so a long list draws
+    # no pictures until somebody asks for one.
+    page.get_by_role("button", name="Lemon pie", exact=True).click()
     # The steps survive as a list rather than as flattened text.
     expect(page.locator("li", has_text="Heat the oven")).to_be_visible()
     expect(page.locator("li", has_text="Then wait")).to_be_visible()
@@ -234,7 +253,7 @@ def test_adding_a_picture_does_not_swallow_what_was_written(
     page.get_by_role("button", name="Save changes").click()
     expect(page.get_by_role("heading", name=name)).to_be_visible()
 
-    page.get_by_role("button", name="Add item").click()
+    open_add_form(page)
     page.get_by_role("textbox", name="Description").fill("Lemon pie")
     page.get_by_role("textbox", name="Detail").click()
     page.keyboard.type("Heat the oven")
@@ -248,6 +267,9 @@ def test_adding_a_picture_does_not_swallow_what_was_written(
 
     page.get_by_role("button", name="Save").click()
     expect(page.get_by_text("Lemon pie")).to_be_visible()
+
+    # The detail is behind the row's disclosure now (R38).
+    page.get_by_role("button", name="Lemon pie", exact=True).click()
 
     # Both the words and the picture survive.
     expect(page.get_by_text("Heat the oven")).to_be_visible()
@@ -294,3 +316,136 @@ def test_a_script_in_the_detail_never_comes_back(
 
     page.reload()
     expect(page.get_by_text("Looks innocent")).to_be_visible()
+
+
+@pytest.mark.items
+def test_a_member_says_how_the_work_went_and_the_other_reads_it(
+    page: Page,
+    second_member_page: Page,
+    base_url: str,
+    demo_member: DemoMember,
+    passwordless_member: DemoMember,
+    test_data: TestData,
+    cleanup_lists,
+) -> None:
+    """R36, R37: a tick is not a record.
+
+    Two contexts because the point of a completion note is the *other* member
+    reading it. The picture matters most: it only renders for Ben if the note's
+    image was claimed for the item on the way through, which is the bug
+    adr/0023 exists to prevent.
+    """
+    name = test_data.name("Repairs")
+    cleanup_lists(name)
+    ui_sign_in(page, base_url, demo_member)
+    list_id = create_list(page, name, share_with=passwordless_member.display_name)
+    add_item(page, "Fix the tap")
+
+    # Ana completes it and says how it went, reaching the note by its own
+    # button - no press-and-hold, which a keyboard could not do anyway.
+    page.get_by_role("button", name="Complete Fix the tap with a note").click()
+    note = page.get_by_role("textbox", name="How Fix the tap went")
+    note.click()
+    page.keyboard.type("Washer was perished")
+    page.set_input_files("input[type=file]", files=[
+        {"name": "tap.png", "mimeType": "image/png", "buffer": tiny_png()},
+    ])
+    expect(page.get_by_role("dialog").locator("img")).to_be_visible()
+    page.get_by_role("dialog").get_by_role("button", name="Complete").click()
+
+    # Ben opens the same list and reads it.
+    ui_sign_in(second_member_page, base_url, passwordless_member)
+    second_member_page.goto(f"{base_url}/lists/{list_id}")
+    second_member_page.get_by_role("button", name="Done").click()
+    second_member_page.get_by_role("button", name="Fix the tap", exact=True).click()
+
+    expect(second_member_page.get_by_text("Washer was perished")).to_be_visible()
+    expect(
+        second_member_page.get_by_text(
+            re.compile(rf"Finished .*by {demo_member.display_name}")
+        )
+    ).to_be_visible()
+    # The picture is readable by somebody who did not upload it, which is the
+    # assertion that proves the claim happened.
+    picture = second_member_page.get_by_role("img").last
+    expect(picture).to_be_visible()
+
+
+@pytest.mark.items
+def test_reopening_an_item_takes_its_points_back(
+    page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
+) -> None:
+    """R49: reversing a completion returns the points it earned."""
+    name = test_data.name("Reopening")
+    cleanup_lists(name)
+    ui_sign_in(page, base_url, demo_member)
+    list_id = create_list(page, name)
+
+    page.goto(f"{base_url}/lists/{list_id}/settings")
+    page.get_by_role("button", name="Add a cost").click()
+    page.get_by_role("textbox", name="Cost name").fill("Time")
+    page.get_by_role("spinbutton", name="Points").nth(0).fill("50")
+    page.get_by_role("button", name="Save changes").click()
+    expect(page.get_by_role("heading", name=name)).to_be_visible()
+
+    open_add_form(page)
+    page.get_by_role("textbox", name="Description").fill("Worth something")
+    page.get_by_role("combobox", name="Time").click()
+    page.get_by_role("option", name="5 min", exact=False).click()
+    page.get_by_role("button", name="Save").click()
+
+    page.get_by_role("button", name="Complete Worth something", exact=True).click()
+    points = page.get_by_role("heading", name="Points").locator("xpath=../..")
+    expect(points.get_by_text("50")).to_be_visible()
+
+    page.get_by_role("button", name="Done").click()
+    page.get_by_role("button", name="Reopen Worth something").click()
+
+    # Back on the to-do list, and the points are gone with it.
+    page.get_by_role("button", name="To do").click()
+    expect(page.get_by_text("Worth something")).to_be_visible()
+    expect(points.get_by_text("50")).not_to_be_visible()
+
+
+@pytest.mark.items
+def test_a_member_claims_several_items_and_everybody_sees_it(
+    page: Page,
+    second_member_page: Page,
+    base_url: str,
+    demo_member: DemoMember,
+    passwordless_member: DemoMember,
+    test_data: TestData,
+    cleanup_lists,
+) -> None:
+    """R46, R47: claiming in bulk, and the claim reading the same to everyone.
+
+    The second context is the point: "Ben took this" has to be a fact about the
+    item, not about who is looking at it (adr/0026).
+    """
+    name = test_data.name("Dividing")
+    cleanup_lists(name)
+    ui_sign_in(page, base_url, demo_member)
+    list_id = create_list(page, name, share_with=passwordless_member.display_name)
+
+    page.goto(f"{base_url}/lists/{list_id}/settings")
+    page.get_by_role("switch", name="Assignee").click()
+    page.get_by_role("button", name="Save changes").click()
+    expect(page.get_by_role("heading", name=name)).to_be_visible()
+
+    add_item(page, "Upstairs")
+    add_item(page, "Downstairs")
+
+    # Ben takes both of them in one action.
+    ui_sign_in(second_member_page, base_url, passwordless_member)
+    second_member_page.goto(f"{base_url}/lists/{list_id}")
+    second_member_page.get_by_role("checkbox", name="Select Upstairs").click()
+    second_member_page.get_by_role("checkbox", name="Select Downstairs").click()
+    expect(second_member_page.get_by_text("2 selected")).to_be_visible()
+    second_member_page.get_by_role("button", name="Assign to me").click()
+
+    claimed = f"{passwordless_member.display_name} claimed this"
+    expect(second_member_page.get_by_label(claimed).first).to_be_visible()
+
+    # Ana sees the same thing: claimed, not merely assigned.
+    page.reload()
+    expect(page.get_by_label(claimed)).to_have_count(2)
