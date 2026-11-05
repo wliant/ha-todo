@@ -56,7 +56,7 @@ CREATE TABLE calendar_feed (
     url            TEXT         NOT NULL,
     -- sha256 of the URL, so the same feed cannot be added twice by one member
     -- without comparing secrets in an index we would then have to read.
-    url_digest     CHAR(64)     NOT NULL,
+    url_digest     VARCHAR(64)  NOT NULL,
     -- Inferred from the host for display only ('GOOGLE' | 'OUTLOOK' | 'OTHER').
     -- Nothing branches on it: one parser reads all of them.
     provider       VARCHAR(10)  NOT NULL,
@@ -75,8 +75,9 @@ CREATE TABLE calendar_feed (
 CREATE UNIQUE INDEX ux_calendar_feed_owner_label ON calendar_feed (owner_id, lower(label));
 CREATE UNIQUE INDEX ux_calendar_feed_owner_url ON calendar_feed (owner_id, url_digest);
 
--- Who else may read this feed's events (R64). Binary, as every grant in this
--- product is. The owner is not a row here, exactly as on todo_list.
+-- Who may read this feed's events (R64). Binary, as every grant in this product
+-- is, and the owner holds a row of their own - written in the same transaction,
+-- exactly as on data_list - so every later question is one table.
 CREATE TABLE calendar_feed_access (
     feed_id    UUID        NOT NULL REFERENCES calendar_feed (id) ON DELETE CASCADE,
     user_id    UUID        NOT NULL REFERENCES app_user (id) ON DELETE CASCADE,
@@ -249,8 +250,11 @@ one screen, which is the point.
 //      found there
 ```
 
-`app.calendar.allow-private-hosts` short-circuits step 3 only, and only in
-local and test profiles.
+`app.calendar.allow-private-hosts` short-circuits the scheme, the port **and**
+the host together, and only in the local and test profiles: a fixture `.ics` is
+served over plain HTTP on an ephemeral port, so relaxing the host alone would
+leave the feature unexercisable. Credentials in the authority stay refused, and
+the scheme must still be `http` or `https`.
 
 `FeedFetcher` uses `java.net.http.HttpClient` with
 `followRedirects(NEVER)` - redirects are followed by hand, at most three deep,
@@ -340,10 +344,10 @@ Two predicates, in SQL, in the repository - never a fetch-then-filter in Java:
   `/api/me/calendars` requires it. An id in a path is not proof; a feed that is
   not the caller's answers **404**, because an unshared feed must not be
   discoverable.
-- **readable**: `owner_id = :me OR EXISTS (SELECT 1 FROM calendar_feed_access
-  WHERE feed_id = calendar_feed.id AND user_id = :me)`. The event query joins
-  this, so revoking a grant takes the events out of that member's next read with
-  no cleanup at all (R72).
+- **readable**: a `calendar_feed_access` row, which the owner holds too - the
+  convention `data_list` already follows, so the join alone answers "can I see
+  it". The event query joins it, so revoking a grant takes the events out of
+  that member's next read with no cleanup at all (R72).
 
 There is deliberately no admin path. The admin administers accounts, not
 contents (`adr/0010`), and "which calendars does Ben publish" is not account

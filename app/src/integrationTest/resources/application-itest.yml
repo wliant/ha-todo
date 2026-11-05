@@ -10,6 +10,9 @@ spring:
     locations: classpath:db/migration,classpath:db/seed
 
 app:
+  # A fixed zone for the integration context, so a test asserting which day
+  # something lands on does not depend on where the machine running it is.
+  timezone: Asia/Singapore
   admin:
     # The initializer refuses to start without a password, so the integration
     # context has to supply one. It is also what the admin-API tests sign in with.
@@ -21,4 +24,11 @@ app:
   # materialiser is driven directly wherever it is actually under test.
   recurrence:
     enabled: false
-    zone: UTC
+  # Off for the same reason, and for one more: the poll would fetch whatever
+  # address a test just subscribed, mid-assertion. The sync service is driven
+  # directly wherever it is actually under test.
+  calendar:
+    enabled: false
+    # The fixture feed is served from this machine, which the guard refuses in
+    # any deployment. See docs/adr/0035.
+    allow-private-hosts: true

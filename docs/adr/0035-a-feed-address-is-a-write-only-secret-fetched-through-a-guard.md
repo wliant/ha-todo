@@ -58,6 +58,13 @@ Local development and the integration tests set
 `app.calendar.allow-private-hosts: true`, so a fixture feed can be served from
 `localhost`. It is **false** by default, and dev and prod leave it false.
 
+That flag deliberately relaxes the **scheme and the port along with the host**:
+a fixture `.ics` is served over plain HTTP on an ephemeral port, and relaxing
+the host alone would leave the whole feature unexercisable - which is the
+failure the flag exists to avoid. Two rules survive it, because neither has
+anything to do with reaching this machine: credentials in the authority are
+always refused, and the scheme must still be `http` or `https`.
+
 ## Consequences
 
 - **A mispaste or a hostile paste cannot read the LAN.** The registry, the
@@ -73,8 +80,15 @@ Local development and the integration tests set
   a field is omitted rather than shown carefully.
 - **The guard is a behaviour with a test, not a comment.** Refusing
   `http://`, a hostname resolving to a private address, a redirect to loopback,
-  and an oversized body are four integration tests; without them this decision
-  is an aspiration.
+  and an oversized body are tested directly; without them this decision is an
+  aspiration. `FeedUrlGuardTest` includes
+  `https://192.168.1.248:5000/v2/_catalog` by name, because that registry is
+  the concrete thing this closes.
+- **The escape hatch is one property and it is wide.** With it on, this server
+  will fetch any `http` address on any port, including its own. That is the
+  right trade for a laptop and the integration suite, and it is why the
+  property is false by default, documented in `.env.example` with a warning,
+  and set only in the `local` and `itest` profiles.
 - **DNS is resolved twice** - once by the guard, once by the HTTP client - so a
   determined rebinding attack has a window. Accepted for a household LAN;
   closing it means connecting to the vetted address with the hostname in the TLS
