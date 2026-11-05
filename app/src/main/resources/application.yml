@@ -8,6 +8,15 @@ app:
     username: ${ADMIN_USERNAME:admin}
     display-name: ${ADMIN_DISPLAY_NAME:Admin}
     password: ${ADMIN_PASSWORD:}
+  # Object storage for profile pictures and, later, the detail field's images.
+  # The bucket is named per environment rather than derived from the profile,
+  # so a profile misconfiguration cannot put prod's images in dev's bucket.
+  # See docs/adr/0013.
+  storage:
+    endpoint: ${S3_ENDPOINT:}
+    access-key: ${S3_ACCESS_KEY:}
+    secret-key: ${S3_SECRET_KEY:}
+    bucket: ${S3_BUCKET:}
 
 spring:
   application:
@@ -16,6 +25,12 @@ spring:
     url: ${DB_URL}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
+  servlet:
+    multipart:
+      # nginx must allow at least this much too, or an upload is refused before
+      # the application ever sees it - see web/nginx.conf.
+      max-file-size: 5MB
+      max-request-size: 6MB
   jpa:
     open-in-view: false
     hibernate:

@@ -8,9 +8,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.hatodo.user.AppUser;
+import com.hatodo.user.AppUserPrincipal;
 import com.hatodo.user.AppUserRepository;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -20,6 +22,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class LoginServiceTest {
@@ -68,6 +71,24 @@ class LoginServiceTest {
     }
 
     @Test
+    void givesThePasswordlessBranchAPrincipalCarryingTheUserId() {
+        // The two sign-in paths build their Authentication differently. If only
+        // the password path yields an AppUserPrincipal, password sign-in works
+        // and passwordless sign-in puts a principal in the session that every
+        // later authorization check rejects - visible only after sign-in, and
+        // only for the members who need no password. See adr/0016.
+        UUID id = UUID.randomUUID();
+        AppUser ben = AppUser.passwordlessMember("ben", "Ben");
+        ReflectionTestUtils.setField(ben, "id", id);
+        when(users.findByUsernameIgnoreCase("ben")).thenReturn(Optional.of(ben));
+
+        Authentication authentication = loginService().authenticate("ben", null);
+
+        assertThat(authentication.getPrincipal()).isInstanceOf(AppUserPrincipal.class);
+        assertThat(((AppUserPrincipal) authentication.getPrincipal()).getId()).isEqualTo(id);
+    }
+
+    @Test
     void refusesAnUnknownUsernameWithoutSayingSo() {
         when(users.findByUsernameIgnoreCase("ghost")).thenReturn(Optional.empty());
 
@@ -89,10 +110,13 @@ class LoginServiceTest {
                         org.assertj.core.groups.Tuple.tuple("ana", "Ana"),
                         org.assertj.core.groups.Tuple.tuple("ben", "Ben"));
         // Anyone who can reach the deployment reads this, so it must not say who
-        // is the admin, nor who needs no password (adr/0009).
+        // is the admin, nor who needs no password (adr/0009). The avatar is the
+        // single exception ever argued for - it says nothing about what an
+        // account is worth attacking for (adr/0019). Adding anything else to
+        // this list needs an ADR of its own, not just a passing test.
         assertThat(LoginUserResponse.class.getRecordComponents())
                 .extracting(java.lang.reflect.RecordComponent::getName)
-                .containsExactly("id", "username", "displayName");
+                .containsExactly("id", "username", "displayName", "avatarImageId");
         assertThat(roster.toString()).doesNotContain("$2y$10$hash");
     }
 }

@@ -1,9 +1,9 @@
 # Throwaway local infrastructure ONLY.
 #
-# Dev and prod use provided Postgres (and Redis/MinIO if they are ever needed);
-# this file exists so a developer can run the stack without them. See
-# docs/adr/0003-defer-redis-and-minio.md for why Redis and MinIO are commented
-# out rather than wired in speculatively.
+# Dev and prod use provided Postgres and object storage; this file exists so a
+# developer can run the stack without them. Redis is still deferred and still
+# commented out - see docs/adr/0003, which docs/adr/0013 supersedes for object
+# storage only.
 name: ha-todo-infra
 
 services:
@@ -24,6 +24,31 @@ services:
       timeout: 5s
       retries: 20
 
+  # Profile pictures, and later the detail field's images (docs/adr/0013).
+  # SeaweedFS rather than MinIO: MinIO's own images now refuse anonymous pulls,
+  # so neither a developer nor CI can get one without credentials
+  # (docs/adr/0021). Its S3 API is what the application talks to, so the code
+  # does not know the difference. In dev and prod this is provided
+  # infrastructure on the LAN; here it is throwaway, like the database beside
+  # it.
+  objectstore:
+    image: chrislusf/seaweedfs:4.50
+    command: server -s3 -dir=/data -master.volumeSizeLimitMB=1024
+    restart: unless-stopped
+    ports:
+      - "${S3_PORT:-8333}:8333"
+    volumes:
+      - objectstore-data:/data
+    healthcheck:
+      # The S3 API answering is the readiness that matters; the app refuses to
+      # start without it. Addressed by the container's own IP rather than
+      # localhost: SeaweedFS binds this port to the interface, not loopback,
+      # so a localhost probe is refused however healthy the server is.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://$$(hostname -i):8333/ || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   # Uncomment only alongside an ADR recording the concrete need.
   #
   # redis:
@@ -35,23 +60,10 @@ services:
   #     test: ["CMD", "redis-cli", "ping"]
   #     interval: 5s
   #     retries: 20
-  #
-  # minio:
-  #   image: minio/minio:latest
-  #   command: server /data --console-address ":9001"
-  #   restart: unless-stopped
-  #   environment:
-  #     MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-  #     MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
-  #   ports:
-  #     - "${MINIO_PORT:-9000}:9000"
-  #     - "${MINIO_CONSOLE_PORT:-9001}:9001"
-  #   volumes:
-  #     - minio-data:/data
 
 volumes:
   postgres-data:
-  # minio-data:
+  objectstore-data:
 
 networks:
   default:

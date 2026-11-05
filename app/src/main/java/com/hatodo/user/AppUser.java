@@ -4,10 +4,14 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import com.hatodo.images.StoredImage;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -40,6 +44,15 @@ public class AppUser {
 
     @Column(nullable = false)
     private boolean enabled = true;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "theme_preference", nullable = false)
+    private ThemePreference themePreference = ThemePreference.SYSTEM;
+
+    /** Null means initials are drawn instead. Nobody is obliged to have a face. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "avatar_image_id")
+    private StoredImage avatarImage;
 
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private Instant createdAt;
@@ -110,6 +123,27 @@ public class AppUser {
 
     public boolean isEnabled() {
         return enabled;
+    }
+
+    public StoredImage getAvatarImage() {
+        return avatarImage;
+    }
+
+    public void setAvatarImage(StoredImage avatarImage) {
+        this.avatarImage = avatarImage;
+    }
+
+    /** The id the client turns into /api/images/{id}, or null. */
+    public UUID getAvatarImageId() {
+        return avatarImage == null ? null : avatarImage.getId();
+    }
+
+    public ThemePreference getThemePreference() {
+        return themePreference;
+    }
+
+    public void setThemePreference(ThemePreference themePreference) {
+        this.themePreference = themePreference;
     }
 
     public Instant getCreatedAt() {

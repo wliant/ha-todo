@@ -13,6 +13,12 @@ services:
       DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-hatodo}
       DB_USERNAME: ${POSTGRES_USER:-hatodo}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-hatodo}
+      # The throwaway object store beside the throwaway database. Its own
+      # bucket, so nothing here can ever be confused with dev's or prod's.
+      S3_ENDPOINT: http://objectstore:8333
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-local}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-local-secret}
+      S3_BUCKET: ${S3_BUCKET:-ha-todo-local}
       SESSION_COOKIE_SECURE: "false"
       # Local convenience credentials; dev and prod must supply their own.
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}

@@ -3,6 +3,7 @@ package com.hatodo.config;
 import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.ProviderManager;
@@ -77,6 +78,11 @@ public class SecurityConfig {
                 // readable before anyone holds a session. The requirement document
                 // records that exposure deliberately (requirements/0002).
                 .requestMatchers("/api/auth/login", "/api/auth/csrf", "/api/auth/users").permitAll()
+                        // The sign-in screen draws each member's picture, and it
+                        // draws it before anyone has a session (adr/0019). The
+                        // controller still refuses every purpose but AVATAR, which
+                        // is what keeps a list's pictures behind its grant.
+                        .requestMatchers(HttpMethod.GET, "/api/images/*").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
                 .anyRequest().authenticated())

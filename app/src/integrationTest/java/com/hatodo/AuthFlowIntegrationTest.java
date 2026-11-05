@@ -51,9 +51,9 @@ class AuthFlowIntegrationTest extends ApiIntegrationTest {
                 .doesNotContain("ADMIN");
 
         assertThat(userNamed(response.getBody(), "ana"))
-                .containsOnlyKeys("id", "username", "displayName")
+                .containsOnlyKeys("id", "username", "displayName", "avatarImageId")
                 .containsEntry("displayName", "Ana");
-        assertThat(userNamed(response.getBody(), "admin")).containsOnlyKeys("id", "username", "displayName");
+        assertThat(userNamed(response.getBody(), "admin")).containsOnlyKeys("id", "username", "displayName", "avatarImageId");
     }
 
     @Test

@@ -1,7 +1,21 @@
 import { useState } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
-import { isUnauthorized, type LoginUser } from '../api/client'
+import Alert from '@mui/material/Alert'
+import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
+import CircularProgress from '@mui/material/CircularProgress'
+import List from '@mui/material/List'
+import ListItemAvatar from '@mui/material/ListItemAvatar'
+import ListItemButton from '@mui/material/ListItemButton'
+import ListItemText from '@mui/material/ListItemText'
+import Paper from '@mui/material/Paper'
+import Stack from '@mui/material/Stack'
+import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
+import { isUnauthorized } from '../api/http'
+import type { LoginUser } from '../api/auth'
 import { useCurrentUser, useLogin, useLoginUsers } from '../auth/useCurrentUser'
+import { MemberAvatar } from '../app/MemberAvatar'
 
 /**
  * Sign-in is picking yourself out of the household, not filling in a form.
@@ -25,9 +39,8 @@ export function LoginPage() {
 
   if (user) {
     // Back to wherever they were headed - a shared link, usually (adr/0008).
-    const from = (
-      location.state as { from?: { pathname: string; search: string } } | null
-    )?.from
+    const from = (location.state as { from?: { pathname: string; search: string } } | null)
+      ?.from
     return <Navigate to={from ? `${from.pathname}${from.search}` : '/lists'} replace />
   }
 
@@ -64,79 +77,118 @@ export function LoginPage() {
   }
 
   return (
-    <main className="login">
-      <div className="login-card">
-        <h1 className="wordmark wordmark--large">List</h1>
+    <Box
+      component="main"
+      sx={{
+        minHeight: '100dvh',
+        display: 'grid',
+        placeItems: 'center',
+        p: 2,
+        bgcolor: 'background.default',
+      }}
+    >
+      <Paper
+        elevation={0}
+        sx={{
+          width: '100%',
+          maxWidth: '26rem',
+          p: { xs: 2.5, sm: 3 },
+          border: 1,
+          borderColor: 'divider',
+        }}
+      >
+        <Typography
+          component="h1"
+          sx={{ fontWeight: 700, fontSize: '2rem', textAlign: 'center', mb: 2 }}
+        >
+          List
+        </Typography>
 
         {chosen && askPassword ? (
-          <form
-            className="stack"
+          <Stack
+            component="form"
+            spacing={2}
             onSubmit={(event) => {
               event.preventDefault()
               void attempt(chosen, password)
             }}
           >
-            <p>
+            <Typography>
               Signing in as <strong>{chosen.displayName}</strong>
-            </p>
+            </Typography>
 
-            <label htmlFor="password">Password</label>
-            <input
+            <TextField
               id="password"
               name="password"
+              label="Password"
               type="password"
               autoComplete="current-password"
               // eslint-disable-next-line jsx-a11y/no-autofocus -- the member has already said who they are; the password is the only thing left to do
               autoFocus
               required
+              fullWidth
               value={password}
               onChange={(event) => setPassword(event.target.value)}
             />
 
-            <button type="submit" className="primary" disabled={loginMutation.isPending}>
+            <Button type="submit" variant="contained" disabled={loginMutation.isPending}>
               {loginMutation.isPending ? 'Signing in…' : 'Sign in'}
-            </button>
+            </Button>
 
-            <button type="button" className="link" onClick={goBack}>
+            <Button type="button" variant="text" onClick={goBack}>
               Not {chosen.displayName}?
-            </button>
+            </Button>
 
-            {failure && <p role="alert">{failure}</p>}
-          </form>
+            {failure && <Alert severity="error">{failure}</Alert>}
+          </Stack>
         ) : (
-          <>
-            <h2>Who&apos;s signing in?</h2>
+          <Stack spacing={2}>
+            <Typography component="h2" variant="h6">
+              Who&apos;s signing in?
+            </Typography>
 
-            {isPending && <p role="status">Loading the household…</p>}
+            {isPending && (
+              <Stack direction="row" spacing={1.5} role="status" sx={{ alignItems: 'center' }}>
+                <CircularProgress size={20} />
+                <Typography>Loading the household…</Typography>
+              </Stack>
+            )}
             {isError && (
-              <p role="alert">Could not load the household. Is the server up?</p>
+              <Alert severity="error">Could not load the household. Is the server up?</Alert>
             )}
 
             {users && users.length > 0 && (
-              <ul className="user-list">
+              <List disablePadding>
                 {users.map((candidate) => (
-                  <li key={candidate.id}>
-                    <button
-                      type="button"
-                      className="user-choice"
-                      disabled={loginMutation.isPending}
-                      onClick={() => choose(candidate)}
-                    >
-                      {candidate.displayName}
-                    </button>
-                  </li>
+                  <ListItemButton
+                    key={candidate.id}
+                    disabled={loginMutation.isPending}
+                    onClick={() => choose(candidate)}
+                  >
+                    {/* A face, and the name as the row's only text (R17).
+                        The picture is the one field adr/0019 adds here; it is
+                        aria-hidden, so the row still reads as just the name. */}
+                    <ListItemAvatar aria-hidden>
+                      <MemberAvatar
+                        displayName={candidate.displayName}
+                        avatarImageId={candidate.avatarImageId}
+                        fallback="icon"
+                      />
+                    </ListItemAvatar>
+                    <ListItemText primary={candidate.displayName} />
+                  </ListItemButton>
                 ))}
-              </ul>
+              </List>
             )}
 
             {users && users.length === 0 && (
-              <p role="status">Nobody has been added yet.</p>
+              <Typography role="status">Nobody has been added yet.</Typography>
             )}
 
-            {failure && <p role="alert">{failure}</p>}
-          </>
+            {failure && <Alert severity="error">{failure}</Alert>}
+          </Stack>
         )}
-      </div>
-    </main>
+      </Paper>
+    </Box>
   )
 }

@@ -1,5 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createUser, deleteUser, fetchAdminUsers, type AdminUser, type NewUser } from '../api/client'
+import {
+  createUser,
+  deleteUser,
+  fetchAdminUsers,
+  setUserPassword,
+  type AdminUser,
+  type NewUser,
+} from '../api/admin'
 import { loginUsersKey } from './useCurrentUser'
 
 export const adminUsersKey = ['adminUsers'] as const
@@ -36,6 +43,20 @@ export function useDeleteUser() {
   const invalidate = useRosterInvalidation()
   return useMutation({
     mutationFn: (id: string) => deleteUser(id),
+    onSuccess: invalidate,
+  })
+}
+
+/**
+ * The reset path: a member can set their own password and lose it, so the admin
+ * clears it. Invalidates the roster too because whether a password is required
+ * changes what the sign-in screen does next.
+ */
+export function useSetUserPassword() {
+  const invalidate = useRosterInvalidation()
+  return useMutation({
+    mutationFn: ({ id, password }: { id: string; password: string | null }) =>
+      setUserPassword(id, password),
     onSuccess: invalidate,
   })
 }

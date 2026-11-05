@@ -115,9 +115,84 @@ def admin_api(base_url: str, admin_member: DemoMember) -> Iterator[httpx.Client]
         yield api_sign_in(client, admin_member)
 
 
+@pytest.fixture
+def cleanup_user(base_url: str, admin_member: DemoMember, test_data: TestData):
+    """
+    Registers a login name to be deleted at the end of the session.
+
+    Opens its own client when it runs, for the same reason cleanup_lists does.
+    """
+
+    def remove(username: str) -> None:
+        def delete() -> None:
+            with httpx.Client(
+                base_url=base_url, timeout=20.0, follow_redirects=True
+            ) as client:
+                api_sign_in(client, admin_member)
+                users = client.get("/api/admin/users")
+                users.raise_for_status()
+                for user in users.json():
+                    if user["username"] == username:
+                        response = client.delete(
+                            f"/api/admin/users/{user['id']}",
+                            headers=api_csrf_header(client),
+                        )
+                        response.raise_for_status()
+
+        test_data.defer_cleanup(delete)
+
+    return remove
+
+
+@pytest.fixture
+def cleanup_lists(base_url: str, demo_member: DemoMember, test_data: TestData):
+    """
+    Registers a list, by name, to be deleted at the end of the session.
+
+    The deferred action opens its own client when it runs, rather than closing
+    over a fixture's. Session fixtures are finalized in reverse order of
+    creation, so a client held here could already be closed by the time cleanup
+    needs it - which fails silently as "dev may be polluted" rather than as
+    anything that points at the cause.
+
+    By name rather than by id because the test usually creates the list through
+    the UI and never learns its id - and a name from ``test_data`` is unique to
+    the run, so this can never reach somebody else's list.
+    """
+
+    def remove(name: str) -> None:
+        def delete() -> None:
+            with httpx.Client(
+                base_url=base_url, timeout=20.0, follow_redirects=True
+            ) as client:
+                api_sign_in(client, demo_member)
+                found = client.get("/api/lists", params={"q": name})
+                found.raise_for_status()
+                for entry in found.json():
+                    response = client.delete(
+                        f"/api/lists/{entry['id']}", headers=api_csrf_header(client)
+                    )
+                    response.raise_for_status()
+
+        test_data.defer_cleanup(delete)
+
+    return remove
+
+
 def pick_user(page, member: DemoMember) -> None:
     """Choose a person on the sign-in screen, the way a family member does."""
     page.get_by_role("button", name=member.display_name).click()
+
+
+def profile_link(page, member: DemoMember):
+    """
+    The sidebar row that names the signed-in member (R15).
+
+    Matched on the row's whole accessible name: a bare display name also
+    matches any list whose title contains it, which the demo data alone is
+    enough to trip over.
+    """
+    return page.get_by_role("link", name=f"{member.display_name} Your profile")
 
 
 def ui_sign_in(page, base_url: str, member: DemoMember) -> None:

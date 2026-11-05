@@ -4,22 +4,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-**Skeleton, accounts and the app shell, as of 2026-11-04.** Build, local stack, deploy scripts and all
-three test harnesses are real and passing. **Accounts and administration (R8-R12) are implemented**:
-username identity, optional per-user passwords, a pick-a-user sign-in screen, and a single admin who
-adds and deletes users. **The PWA and UI shell (R13-R17) are implemented**: installable as "List",
-responsive with a navigation bar, master-detail administration, an Android share target, and a sign-in
-roster that describes nobody. The household / list / item domain (requirements R1-R6) is still **not**
-implemented — `/lists` is a placeholder page, and a shared link is parked on the device because there
-is no item to make of it yet. Keep this file true: when a decision here turns out wrong, update it in
-the same change.
+**Accounts, the app shell and Material Design, as of 2026-11-05.** Build, local stack, deploy scripts and
+all three test harnesses are real and passing.
+
+Implemented: **accounts and administration (R8-R12)** — username identity, optional per-user passwords, a
+pick-a-user sign-in screen, and a single admin who adds and deletes users. **The PWA (R13, R14)** —
+installable as "List", with an Android share target. **The UI shell (R15-R17)** — now a sidebar rather
+than the original bottom bar, master-detail administration, and a sign-in roster that describes nobody.
+**R18-R35 are implemented.** Material Design throughout; the list entity with per-list access grants,
+pins, recency and search; the per-list field configuration including named costs; profile pictures in
+object storage; and items — values for every declared field, assignment bounded by access, completion
+with points credited to whoever did the work, the detail field's rich text and embedded pictures, and a
+shared link becoming a real item.
+
+`docs/design/0004` describes the whole feature and `docs/adr/0010`-`0021` record the decisions. The
+open questions left in `docs/requirements/0004` are genuinely open: where a completed item should go,
+whether earned points can be revoked, and whether a list should show who else has it open.
+
+Keep this file true: when a decision here turns out wrong, update it in the same change.
 
 ## What this product is
 
-`ha-todo` is a shared household todo list. A family/household has many **lists** (grouping is a core
-feature, not a label); members add **items** to a list, items can be **assigned** to a member, and any
-member can read any list in their household and mark items complete. Design every API and UI around
-"multiple people touching the same list concurrently", not around a single-user todo app.
+`ha-todo` is a shared household todo list. **The deployment is the household** — there is one, every user
+belongs to it, and there is no household entity (`docs/adr/0010`). A household has many **lists**
+(grouping is a core feature, not a label); each list is seen by the people its creator grants access to, so
+a shared grocery list and a private workout log are both ordinary. Members add **items** to a list, items
+can be **assigned** to a member, and any member with access can mark any of that list's items complete.
+Design every API and UI around "multiple people touching the same list concurrently", not around a
+single-user todo app.
 
 ## Monorepo layout
 
@@ -65,8 +77,12 @@ pnpm build
 pnpm icons                            # redraw public/icons/*.png, then commit them
 ```
 
-`pnpm` enforces a 24h `minimumReleaseAge` on lockfile entries, so a just-published dependency fails
-`--frozen-lockfile` inside the Docker build. Pin to an aged release rather than waiting it out.
+**Pin new dependencies to an exact, aged version.** A `minimumReleaseAge` would make a just-published
+dependency fail `--frozen-lockfile` *inside the Docker build* while succeeding on the host — the worst
+place to find out. It is **not** configured today (`pnpm config get minimumReleaseAge` is `undefined` on
+pnpm 10.30.3), so the hazard is latent rather than active; pinning exactly is cheap insurance either way,
+and a caret range on a shared lockfile invites drift onto a fresh release. Verify any dependency change
+with a real `docker build web/` before opening the PR.
 
 E2E (`e2e/`) — pytest driving a real browser via Playwright:
 ```bash
@@ -94,20 +110,49 @@ profiles only. The admin is `admin` / `admin` locally, from `ADMIN_USERNAME` / `
 boundary, authorization) → domain → Spring Data JPA repositories against Postgres. Schema changes go
 through versioned migrations (Flyway); never rely on JPA auto-DDL outside tests.
 
-**Seed data is a repeatable migration (`db/seed/R__*.sql`), not a versioned one.** Flyway runs repeatable
+**Seed data is a repeatable migration (`db/seed/R__*.sql`), not a versioned one.** They are numbered
+(`R__seed_01_demo_users.sql`, `R__seed_02_demo_lists.sql`) because **Flyway orders repeatable
+migrations by description**: unprefixed, the lists seed sorted first and, on a fresh database, found no
+users to own the lists - inserting nothing and failing silently. Flyway runs repeatable
 migrations after every versioned one and re-runs them when their content changes, so demo data can be
 edited freely and can never sit in front of a schema change. The old versioned seed at `V900` is why the
 schema series resumes at **V901** — a lower version would be out of order on any database that applied it,
 and why local/dev set `flyway.ignore-migration-patterns: "*:missing"`. Prod never applied it and keeps
 strict validation. New schema migrations continue from V902.
 
-**Authorization is household-scoped.** Every read and write must be checked against the caller's household
-membership, enforced in the service layer — not only in the controller and not only in the UI. A list id in
-a URL is never sufficient proof of access.
+**Authorization is per-list access, not household-scoped.** Every read and write is checked against the
+caller's grant on that list, enforced in the service layer — not only in the controller and not only in
+the UI. A list id in a URL is never sufficient proof of access. Two predicates: `readable` (the caller
+owns the list or holds a `list_access` row) and `managed` (the caller owns it). `managed` is deliberately
+**not** `owner || isAdmin()` — the admin administers accounts, not list contents, and gains nothing on a
+list they were not granted. No access answers **404**, because an ungranted list must not be discoverable;
+access without ownership answers **403**. Filter list queries in SQL by joining `list_access`, never by
+fetching and filtering in Java. See `docs/adr/0010-per-list-access-instead-of-household-scoping.md`.
 
-**Item completion and assignment are the contended writes.** Two members may complete or reassign the same
-item at once; use optimistic locking (`@Version`) and return a conflict the frontend can reconcile rather
-than silently last-write-wins.
+**Item completion and assignment are the contended writes, and this is how they work.** Both `TodoList`
+and `TodoItem` carry `@Version`, and every mutating request carries the version its view was drawn from,
+checked *before* anything is mutated so the 409 is deterministic rather than dependent on flush timing.
+An item conflict answers `{error, code: "STALE_ITEM", item}` — the item as it actually is, read in a
+fresh transaction because the one that threw is being rolled back, and the prose names the other member.
+The client takes the server's item outright and raises a snackbar; nothing is retried behind the
+member's back. Two browser contexts cover it in `e2e/tests/test_items.py`.
+
+Changing a list's children — its grants, its fields — calls `TodoListService.markChanged`, because
+Hibernate will not dirty-check a parent whose own columns are untouched and a second editor would
+otherwise never be told.
+
+**A list's field configuration is typed rows, replaced by merging on id.** `list_field` (+
+`list_field_choice`) rather than JSONB: the kinds are closed, and item values will reference a field and
+a choice by foreign key. The `PUT` sends existing ids back and the service matches on them - recreating
+the rows would orphan every item's costs, silently. Singleton kinds match by *kind* instead, because
+there can only be one. Position uniqueness is `DEFERRABLE INITIALLY DEFERRED` so a reorder can rewrite
+every position in one statement; partial unique indexes cannot be deferred, which is why those are
+table constraints. See `docs/adr/0011` and `docs/adr/0012`.
+
+**Boxed types in request records.** Jackson rejects a *missing* primitive in a record, so optional
+`boolean`/`int` components are `Boolean`/`Integer` with a defaulting accessor (`isRequired()`,
+`pointsOrZero()`). In a request that replaces a configuration, "not mentioned" is genuinely different
+from "false" anyway.
 
 **Authentication is session-based.** `POST /api/auth/login` takes JSON, rotates the session id, and stores
 the context in the HTTP session. Anonymous API calls get **401**, never a redirect. CSRF stays on (the
@@ -147,25 +192,66 @@ precaching worker would serve a stale `index.html` behind nginx's `no-store` —
 it without replacing `docs/adr/0007-installable-pwa-without-offline-caching.md`. Icons are drawn by
 `web/scripts/generate-icons.mjs` (`pnpm icons`, no dependencies) and the PNGs are committed.
 
-**Receiving a shared link is Android-only, and the link is parked.** The manifest declares a **GET**
-share target at `/share?title=&text=&url=`; `SharePage` normalises it (Chrome often puts the URL in
-`text`, not `url`) and, because items do not exist yet, holds it in `localStorage` per user via
-`src/share/parkedLinks.ts`, shown on `/lists` as waiting. iOS Safari does not implement Web Share
-Target, so an installed iPhone app cannot appear in the share sheet — a platform limit, not a gap to
-work around. When R1-R5 land, the `park()` call becomes the create-item mutation and that module is
-deleted. See `docs/adr/0008-share-target-for-links.md`.
+**Receiving a shared link is Android-only, and the link becomes an item.** The manifest declares a
+**GET** share target at `/share?title=&text=&url=`; `SharePage` normalises it (`src/share/sharedLink.ts`
+— Chrome often puts the URL in `text`, not `url`) and the member picks which list it goes on, with the
+one they touched most recently already chosen. No "Inbox" list is invented: a link landing somewhere
+nobody looks is the failure that would replace. Nothing is parked on the device any more; `parkedLinks`
+is gone, as `adr/0008` said it would be. iOS Safari does not implement Web Share Target, so an
+installed iPhone app cannot appear in the share sheet — a platform limit, not a gap to work around. See
+`docs/adr/0008` and `docs/adr/0020`.
 
-**The signed-in UI is one shell with one breakpoint.** Every authenticated route renders inside
-`AppLayout`, so the navigation bar mounts once. The breakpoint is `48rem` and lives in CSS only: below
-it navigation is a bottom bar and master-detail shows one pane at a time, above it navigation sits in
-the top bar and both panes are columns. There is no viewport hook and no JS layout state; adding one is
-how the two layouts start to drift. Colours come from the tokens in `index.css`, which honour
-`prefers-color-scheme`; components own none.
+**The signed-in UI is one shell with one sidebar.** Every authenticated route renders inside
+`AppShell`, so `SideNav` mounts once. The breakpoint is `48rem`, named as `sm` in the MUI theme
+(`breakpoints.values.sm = 768`) so it is one number in one place. Above it the sidebar is a permanent
+`Drawer`; below it a temporary one behind a hamburger.
 
-**Redis and MinIO are deferred, not optional-and-maybe-present.** Neither is wired in; both sit commented out in
-`deployment/docker-compose.infra.yml` and `.env.example`. Adding either requires a concrete need and a new
-ADR — see `docs/adr/0003-defer-redis-and-minio.md`. The likeliest triggers are a second backend instance
-(in-memory sessions break) and item attachments.
+`AppShell` owns the **only** piece of layout state in the app and makes the **only** `useMediaQuery`
+call. A drawer opens and closes, which is behaviour rather than placement, so the old CSS-only rule
+could not express it — see `docs/adr/0015`. The rule is narrowed, not dropped: nothing else may acquire
+layout state, and everything else responsive stays CSS. The drawer's open state is *derived* from the
+pathname (`openedOver === pathname`), so a navigation closes it by construction, back button included.
+The bottom bar is gone; a second navigation surface is how two layouts start to drift.
+
+**Styling is the MUI theme, and nothing else.** `web/src/theme/theme.ts` is the single source of truth
+for colour, radius and type; `index.css` is ~30 lines of box model, iOS text inflation, and the
+safe-area and `dvh` units a theme cannot express. The old `:root` token block and every component class
+were **deleted, not mapped** — two names for one colour is how the old one quietly survives. From here
+on no component introduces a global class: use `sx`, a styled component, or a theme override. Icons are
+imported one per path (`@mui/icons-material/ChecklistRounded`), never from the barrel, which is ~11,000
+modules. See `docs/adr/0014`.
+
+**Object storage is wired in; Redis is still deferred.** Profile pictures live in an S3 store
+(`app.storage.*`, from `S3_ENDPOINT` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` / `S3_BUCKET`), and the detail
+field's images will. **SeaweedFS** provides that API — locally, in the integration tests, and on the
+host — because MinIO's own images stopped allowing anonymous pulls; nothing in the code is specific to
+either, and the client library is still minio-java used as a plain S3 client. See `docs/adr/0013` and
+`docs/adr/0021`. Redis remains deferred on `docs/adr/0003`'s reasoning, and still needs a concrete need
+and a new ADR; its likeliest trigger is a second backend instance, where in-memory sessions break.
+
+**The app creates its own bucket at startup and fails closed.** `S3_BUCKET` is named explicitly per
+environment, never derived from the Spring profile, so a misconfigured profile cannot put prod's images
+in dev's bucket. An unreachable store stops the app from starting, deliberately: a deployment that
+passes its health check and silently cannot save a picture is a bug report nobody can diagnose.
+`scripts/deploy.sh` refuses without the four variables, before building anything.
+
+**Image bytes are streamed through `GET /api/images/{id}`, never a presigned URL.** The store is not
+published through either HTTPS front door, so a presigned URL is unreachable from a phone and blocked
+as mixed content — and it is a capability that outlives a revoked grant. The type is decided by
+sniffing the bytes, never the filename or `Content-Type`; PNG, JPEG and WebP only, and **SVG is refused
+by name**, because an SVG served same-origin is script execution in our own security context.
+
+**Who may read an image depends on its purpose.** An `AVATAR` is readable by anyone, including
+anonymously, because the sign-in screen draws faces before there is a session (`adr/0019`). A `DETAIL`
+picture is claimed by the item whose detail refers to it, so the item's list decides — a private list's
+pictures are as private as the list. Only the member who uploaded a picture can claim it, and only
+while it is unclaimed: an id alone must never drag somebody else's picture onto a list they can see.
+
+**Detail HTML is sanitized server-side on write** (`com.hatodo.richtext.HtmlSanitizer`, `adr/0018`),
+and `<img src>` is restricted to our own `/api/images/{uuid}` paths — which is also what makes the
+claim check meaningful. The client renders the stored HTML with `dangerouslySetInnerHTML` and
+sanitizes nothing itself: a second implementation of that rule drifts from the first. The editor is
+`React.lazy`-loaded, because ProseMirror is ~130KB gzipped and most lists never ask for the field.
 
 **The frontend reaches the backend same-origin in every environment.** The SPA only ever uses relative
 `/api` paths - never an absolute API URL, never `VITE_API_URL`. nginx in the `web` image proxies `/api` and
@@ -175,9 +261,19 @@ publishes **no** host port at all (`expose` only); locally it is bound to `127.0
 can proxy to it. Do not add a published app port or an absolute API base URL - that reintroduces a
 cross-origin path the session cookie is not configured for.
 
-**Frontend** is a React SPA consuming the REST API; keep server state in a query cache (React Query-style)
-so a list refetches cleanly after another member's change, and keep the list-grouping view model separate
-from the item components.
+**Frontend** is a React SPA consuming the REST API; keep server state in TanStack Query so a list
+refetches cleanly after another member's change, and keep the list-grouping view model separate from the
+item components.
+
+**`api/client.ts` is split per feature** — `api/http.ts` holds the axios instance and the error helpers
+(`isUnauthorized`, `isConflict`, `errorMessage`); `auth.ts` / `admin.ts` / `profile.ts` hold their own DTOs
+and calls. There is deliberately **no barrel re-exporting them**: tests spy by module namespace
+(`import * as authApi; vi.spyOn(authApi, 'fetchCurrentUser')`), and a re-exported live binding is exactly
+what `vi.spyOn` cannot intercept. Add a feature's module; never add an index.
+
+**Only the caller's own routes take no id.** `/api/me/*` acts on the session's principal, so there is no
+user id in the path to tamper with. Services reach the caller through `CurrentUserProvider`, never a
+threaded username — see `docs/adr/0016`.
 
 ## Environments
 
@@ -256,5 +352,6 @@ Rules:
 - **Spec-driven**: before implementing a feature, write the requirement and design into `docs/`, and record
   non-obvious technical choices as an ADR (`docs/adr/NNNN-title.md` from `template.md`, immutable once
   accepted — supersede rather than edit). Implementation should be traceable back to a spec document.
-  Start from `docs/requirements/0001-shared-household-todo.md`; its open questions (how a member joins a
-  household) block the household-scoping work.
+  Start from `docs/requirements/0001-shared-household-todo.md`, then `0004` which refines it. 0001's
+  open question — how a member joins a household — is **closed, not answered**: there is no household to
+  join (`docs/adr/0010`), so nothing blocks the domain work any more.

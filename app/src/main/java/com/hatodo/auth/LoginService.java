@@ -2,13 +2,13 @@ package com.hatodo.auth;
 
 import com.hatodo.user.AppUser;
 import com.hatodo.user.AppUserDetailsService;
+import com.hatodo.user.AppUserPrincipal;
 import com.hatodo.user.AppUserRepository;
 import java.util.List;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -55,7 +55,7 @@ public class LoginService {
         // No password is stored for this user, so there is nothing to verify and
         // any password the client sent is ignored. Being in the roster is the
         // whole credential; the requirement document says so out loud.
-        UserDetails details = AppUserDetailsService.toUserDetails(user);
+        AppUserPrincipal details = AppUserDetailsService.toUserDetails(user);
         return UsernamePasswordAuthenticationToken.authenticated(details, null, details.getAuthorities());
     }
 

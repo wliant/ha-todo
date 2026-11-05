@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { clearTouchedLists } from '../lists/queries'
 import {
   fetchCurrentUser,
   fetchLoginUsers,
@@ -6,7 +7,7 @@ import {
   logout,
   type CurrentUser,
   type LoginUser,
-} from '../api/client'
+} from '../api/auth'
 
 export const currentUserKey = ['currentUser'] as const
 export const loginUsersKey = ['loginUsers'] as const
@@ -51,8 +52,10 @@ export function useLogout() {
     mutationFn: logout,
     onSuccess: () => {
       queryClient.setQueryData(currentUserKey, null)
-      // Anything cached was scoped to the member who just left.
+      // Anything cached was scoped to the member who just left - including
+      // which lists have already been marked as opened this session.
       queryClient.clear()
+      clearTouchedLists()
     },
   })
 }
