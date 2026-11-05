@@ -1,4 +1,4 @@
-# 0008 - A navigable My day
+# 0008 - A navigable agenda
 
 Status: accepted
 Date: 2026-11-06
@@ -6,7 +6,8 @@ Refines: [0005](0005-completion-detail-recurrence-and-planning-views.md) R44
 (three ranges) and R45 (undated items beside all three)
 Amends: [0005](0005-completion-detail-recurrence-and-planning-views.md) R44 -
 its ranges were *today*, *this week* and *this month*; they are now a day, a
-week and a month, any of them.
+week and a month, any of them. **The surface it named "My day" is renamed
+"Agenda"** (R78); earlier documents call it My day throughout, and mean this.
 Answers: [0007](0007-calendar-feeds-on-my-day.md)'s open question about whether
 My day should be navigable.
 
@@ -28,7 +29,14 @@ It is also the single most obvious thing missing. A member looking at a month
 grid tries to page it; there is nothing to page it with, and nothing explains
 why. 0007 predicted this would be the first thing somebody asked for.
 
-**The labels are wrong too, and in the same way.** "Today", "This week" and
+**The surface's own name is wrong, and in both words.** "My day" promises a
+day, and it now shows a week or a month. It promises *mine*, and its default
+scope is everything the household can see, with "Mine" as a toggle beside it. A
+name that is wrong twice over is not a detail: it is the first thing a member
+reads in the menu, and it tells them the wrong thing about what they are about
+to open.
+
+**The tab labels are wrong too, and in the same way.** "Today", "This week" and
 "This month" name the *contents* of three tabs, so a tab that can show another
 week is a tab whose label is a lie. They name a range: **Day**, **Week**,
 **Month**.
@@ -65,6 +73,12 @@ week is a tab whose label is a lie. They name a range: **Day**, **Week**,
   it, the browser's back button walks it, and a member can send somebody else a
   link to a particular day. Switching range keeps the period: the week
   containing the day you were on, the month containing that week.
+- **R78 The surface is named for what it holds, not for a period.** It is
+  called **Agenda**: a household's work and its appointments, over whatever
+  period is in view. Not "My day", which is wrong about the period and wrong
+  about whose it is. Not "Calendar", which would promise that a member can add
+  an event here - the one thing this product permanently refuses (0007 R63), and
+  the first thing somebody would try on a screen with that name.
 - **R77 A period the product cannot answer for says so.** Events are kept for a
   bounded window either side of today (0007), and beyond it there is nothing to
   show - not because nothing is happening, but because nothing has been read.
@@ -113,6 +127,13 @@ week is a tab whose label is a lie. They name a range: **Day**, **Week**,
    still opens March when followed in June, which is right for "look at this
    day" and surprising for a bookmark somebody made of "my day". Accepted: the
    control that returns to now is one tap (R75).
+
+5. **An old name survives in older documents.** 0005, 0007 and their ADRs say
+   "My day" throughout and will keep saying it: an accepted document records
+   what was decided when it was decided, and rewriting them to match a later
+   name would make them lie about their own history. This document is where the
+   rename is recorded, and the product's own surfaces are the authority on what
+   it is called today.
 
 ## Open questions
 

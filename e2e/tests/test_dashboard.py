@@ -49,12 +49,12 @@ def test_signing_in_lands_on_the_dashboard(
     ui_sign_in(page, base_url, demo_member)
 
     expect(page).to_have_url(f"{base_url}/dashboard/day")
-    expect(page.get_by_role("heading", name="My day")).to_be_visible()
+    expect(page.get_by_role("heading", name="Agenda")).to_be_visible()
     expect(page.get_by_role("tab", name="Day")).to_have_attribute("aria-selected", "true")
 
 
 @pytest.mark.dashboard
-def test_an_item_due_today_appears_in_my_day_and_in_the_week(
+def test_an_item_due_today_appears_on_the_agenda_and_in_the_week(
     page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
 ) -> None:
     name = test_data.name("Planning")
@@ -66,7 +66,7 @@ def test_an_item_due_today_appears_in_my_day_and_in_the_week(
     later_today = datetime.now().replace(hour=23, minute=0, second=0, microsecond=0)
     add_dated_item(page, "Due today", later_today)
 
-    page.get_by_role("link", name="My day").click()
+    page.get_by_role("link", name="Agenda").click()
     main = page.get_by_role("main")
     expect(main.get_by_text("Due today")).to_be_visible()
     # Scoped: the sidebar's Recent section names the list too.
@@ -134,7 +134,7 @@ def test_a_private_list_never_reaches_another_members_dashboard(
     later_today = datetime.now().replace(hour=23, minute=0, second=0, microsecond=0)
     add_dated_item(page, "Ana's secret", later_today)
 
-    page.get_by_role("link", name="My day").click()
+    page.get_by_role("link", name="Agenda").click()
     create_list(page, shared_name, share_with=passwordless_member.display_name)
     add_dated_item(page, "Everybody's chore", later_today)
 

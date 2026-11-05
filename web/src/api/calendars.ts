@@ -29,7 +29,7 @@ export interface CalendarFeed {
 }
 
 /**
- * One event on My day.
+ * One event on the agenda.
  *
  * <p>Branch on `allDay` rather than formatting `startsAt` and hoping: an
  * all-day event carries dates and no instants, because a bare date has no

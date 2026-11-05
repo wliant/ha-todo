@@ -7,7 +7,7 @@ import {
   type Civil,
 } from './calendar'
 
-/** Which of My day's three ranges is on screen. */
+/** Which of the agenda's three ranges is on screen. */
 export type Range = 'day' | 'week' | 'month'
 
 /** One day, seven days, or one month - the range's own notion of "next". */

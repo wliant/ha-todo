@@ -101,7 +101,7 @@ export function SideNav({
           <ListItemIcon sx={{ minWidth: 40 }}>
             <TodayRounded />
           </ListItemIcon>
-          <ListItemText primary="My day" />
+          <ListItemText primary="Agenda" />
         </ListItemButton>
 
         <ListItemButton

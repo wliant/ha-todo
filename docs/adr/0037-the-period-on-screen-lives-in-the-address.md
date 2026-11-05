@@ -5,7 +5,7 @@ Date: 2026-11-06
 
 ## Context
 
-`requirements/0008` makes My day navigable: the three ranges become a day, a
+`requirements/0008` makes the agenda navigable: the three ranges become a day, a
 week and a month rather than today, this week and this month (R73), with
 controls either side (R74) and one back to the present (R75). Something has to
 remember which period is being looked at.
@@ -81,7 +81,7 @@ view while checking a day. Rejected: switching range would jump somewhere
 unrelated, and R76 asks for the opposite - the week containing the day you were
 looking at.
 
-**Storing the last viewed period per member**, so My day reopens where it was
+**Storing the last viewed period per member**, so the agenda reopens where it was
 left. Rejected outright: the landing page (0005 R44, `adr/0028`) must answer
 "what do I need to do *now*", and a dashboard that opens on a week in February
 because that is where somebody left it is a dashboard nobody trusts.

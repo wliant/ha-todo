@@ -67,7 +67,7 @@ def test_member_with_a_password_is_asked_for_it(
     page.get_by_label("Password").fill(demo_member.password or "")
     page.get_by_role("button", name="Sign in", exact=True).click()
 
-    expect(page.get_by_role("heading", name="My day")).to_be_visible()
+    expect(page.get_by_role("heading", name="Agenda")).to_be_visible()
     # R15: the navigation carries the member's identity. The sidebar names them
     # on the row that leads to their own profile, where the old top bar said
     # "Signed in as".
@@ -82,7 +82,7 @@ def test_passwordless_member_signs_in_with_one_click(
     page.goto(f"{base_url}/login")
     pick_user(page, passwordless_member)
 
-    expect(page.get_by_role("heading", name="My day")).to_be_visible()
+    expect(page.get_by_role("heading", name="Agenda")).to_be_visible()
     expect(page.get_by_text(passwordless_member.display_name).first).to_be_visible()
     # The field never appeared, for this member: nothing was typed to get here.
     expect(page.get_by_label("Password")).to_have_count(0)
@@ -97,7 +97,7 @@ def test_wrong_password_is_refused_without_saying_why(
     page.get_by_role("button", name="Sign in", exact=True).click()
 
     expect(page.get_by_role("alert")).to_contain_text("did not work")
-    expect(page.get_by_role("heading", name="My day")).to_have_count(0)
+    expect(page.get_by_role("heading", name="Agenda")).to_have_count(0)
 
 
 def test_member_can_back_out_of_the_wrong_name(
@@ -125,7 +125,7 @@ def test_sessions_are_isolated_between_members(
 ) -> None:
     """One member signing in must not sign the other in."""
     ui_sign_in(page, base_url, demo_member)
-    expect(page.get_by_role("heading", name="My day")).to_be_visible()
+    expect(page.get_by_role("heading", name="Agenda")).to_be_visible()
 
     second_member_page.goto(f"{base_url}/lists")
     expect(second_member_page.get_by_role("heading", name="Who's signing in?")).to_be_visible()
@@ -136,7 +136,7 @@ def test_sign_out_returns_to_login(
     page: Page, base_url: str, demo_member: DemoMember
 ) -> None:
     ui_sign_in(page, base_url, demo_member)
-    expect(page.get_by_role("heading", name="My day")).to_be_visible()
+    expect(page.get_by_role("heading", name="Agenda")).to_be_visible()
 
     page.get_by_role("button", name="Sign out").click()
 
@@ -147,10 +147,10 @@ def test_member_is_offered_no_route_into_administration(
     page: Page, base_url: str, demo_member: DemoMember
 ) -> None:
     ui_sign_in(page, base_url, demo_member)
-    expect(page.get_by_role("heading", name="My day")).to_be_visible()
+    expect(page.get_by_role("heading", name="Agenda")).to_be_visible()
     expect(page.get_by_role("link", name="Users")).to_have_count(0)
 
     # And typing the URL in does not get them there either.
     page.goto(f"{base_url}/admin")
-    expect(page.get_by_role("heading", name="My day")).to_be_visible()
+    expect(page.get_by_role("heading", name="Agenda")).to_be_visible()
     expect(page.get_by_role("heading", name="Users")).to_have_count(0)

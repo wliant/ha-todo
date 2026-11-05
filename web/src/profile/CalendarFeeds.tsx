@@ -38,7 +38,7 @@ export function CalendarFeeds() {
   return (
     <Stack spacing={2}>
       <Typography color="text.secondary">
-        Your events appear on My day, next to the chores. Nothing here is ever written back to
+        Your events appear on the agenda, next to the chores. Nothing here is ever written back to
         Google or Outlook, and nobody sees a calendar until you share it.
       </Typography>
 
@@ -179,7 +179,7 @@ function FeedRow({ feed }: { feed: CalendarFeed }) {
               </Stack>
             }
           >
-            Removing this takes its events off My day for everybody you shared it with.
+            Removing this takes its events off the agenda for everybody you shared it with.
           </Alert>
         )}
       </Stack>

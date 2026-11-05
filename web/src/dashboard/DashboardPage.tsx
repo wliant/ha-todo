@@ -127,7 +127,7 @@ export function DashboardPage() {
           sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}
         >
           <Typography component="h1" variant="h5">
-            My day
+            Agenda
           </Typography>
           <ToggleButtonGroup
             exclusive
@@ -229,7 +229,7 @@ function OpenItem({
 }
 
 /**
- * What My day has to admit before it draws anything: a calendar that broke
+ * What the agenda has to admit before it draws anything: a calendar that broke
  * (0007 R71), and a period nobody has read (0008 R77).
  *
  * <p>Asks for the window the visible view is already asking for - the same

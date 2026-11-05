@@ -19,7 +19,7 @@ export function useMyCalendars() {
 
 /**
  * Every write invalidates the dashboard as well as the feed list: subscribing a
- * calendar, sharing one or dropping one changes what My day shows, and the
+ * calendar, sharing one or dropping one changes what the agenda shows, and the
  * member is often looking at both in one session.
  */
 function useCalendarInvalidation() {

@@ -1,6 +1,6 @@
-# 0008 - A navigable My day
+# 0008 - A navigable agenda
 
-Design for [requirements/0008](../requirements/0008-a-navigable-my-day.md)
+Design for [requirements/0008](../requirements/0008-a-navigable-agenda.md)
 (R73-R77). Mostly frontend; one field is added to a response.
 
 Decision this implements rather than argues:
@@ -16,9 +16,19 @@ reviewing separately.
   three views deriving their range from the anchor instead of from the clock.
   End of A, R73-R76 are done and a member can walk the calendar.
 - **B - the product admits what it has not read.** `ScheduledResponse` reports
-  the window events are kept for; My day says so when the member steps past it.
+  the window events are kept for; the agenda says so when the member steps past it.
   R77. Separable, and the feature is dishonest without it rather than
   incomplete - an empty February is indistinguishable from a quiet one.
+
+## The rename (R78)
+
+One string in `SideNav`, one `<h1>` in `DashboardPage`, and the selectors that
+depend on them - the frontend tests and five e2e modules, which match the
+heading and the sidebar link by accessible name.
+
+**The route stays `/dashboard`.** It never said "my day", the PWA manifest's
+`start_url` points at it (`adr/0007`), and changing it would break every link
+anybody has saved for the sake of a word.
 
 ## Backend
 
@@ -141,7 +151,17 @@ prefetching is needed.
 
 ## Testing
 
-### Backend
+### The rename (R78)
+
+One string in `SideNav`, one `<h1>` in `DashboardPage`, and the selectors that
+depend on them - the frontend tests and five e2e modules, which match the
+heading and the sidebar link by accessible name.
+
+**The route stays `/dashboard`.** It never said "my day", the PWA manifest's
+`start_url` points at it (`adr/0007`), and changing it would break every link
+anybody has saved for the sake of a word.
+
+## Backend
 
 - `DashboardApiIntegrationTest` asserts `eventWindow` is present and matches the
   configured days, so a client can rely on it.

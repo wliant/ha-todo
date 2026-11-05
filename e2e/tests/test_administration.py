@@ -25,7 +25,7 @@ def test_admin_can_sign_in_and_reach_user_administration(
     ui_sign_in(page, base_url, admin_member)
 
     # Signing in lands on the dashboard now (R44).
-    expect(page.get_by_role("heading", name="My day")).to_be_visible()
+    expect(page.get_by_role("heading", name="Agenda")).to_be_visible()
     page.get_by_role("link", name="Users").click()
 
     expect(page.get_by_role("heading", name="Users")).to_be_visible()
@@ -96,7 +96,7 @@ def test_added_passwordless_member_appears_and_can_sign_in(
     expect(choice).to_have_text(display_name)
     pick_user(second_member_page, new_member)
 
-    expect(second_member_page.get_by_role("heading", name="My day")).to_be_visible()
+    expect(second_member_page.get_by_role("heading", name="Agenda")).to_be_visible()
     expect(second_member_page.get_by_text(display_name).first).to_be_visible()
 
 
@@ -135,7 +135,7 @@ def test_added_member_with_a_password_must_type_it(
 
     second_member_page.get_by_label("Password").fill(password)
     second_member_page.get_by_role("button", name="Sign in", exact=True).click()
-    expect(second_member_page.get_by_role("heading", name="My day")).to_be_visible()
+    expect(second_member_page.get_by_role("heading", name="Agenda")).to_be_visible()
 
 
 def test_removed_member_disappears_from_the_sign_in_screen(
