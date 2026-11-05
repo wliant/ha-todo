@@ -236,6 +236,13 @@ Spring, no clock, so the arithmetic is unit-testable), `RecurrenceMaterialiser`
 (`@Transactional`, **one transaction per rule**), `RecurrenceRunner`
 (`@Scheduled`, untransacted, loops and catches per rule), `RecurrenceController`.
 
+**Only ids cross from the runner into the materialiser.** The runner is
+untransacted precisely so one rule's failure cannot roll back another's, which
+means every entity it loads is detached - and the first touch of a lazy
+collection inside the materialiser throws. So `materialise(UUID ruleId)` loads
+its own rule. Found the hard way on the first local run, where every rule
+reported `failed`.
+
 `TodoItem.ruleId` is a plain `UUID` column, **not** a `@ManyToOne` - the precedent
 `StoredImage.itemId` sets - so `item` does not depend on `recurrence`. The
 dependency runs one way.
@@ -256,11 +263,18 @@ happens.
    `[max(last_materialised_on + 1 day, today - catchUpDays), today + lead_days]`
    and advances the mark in the same transaction, so a second run the same day
    computes an empty range.
-2. `ux_todo_item_occurrence` is the race guard. Two overlapping runs - the one way
-   the single-instance assumption breaks in practice, an ad-hoc run fired while the
-   cron run is in flight - produce a constraint violation the materialiser catches
-   per occurrence and counts as `skipped`. **The failure mode is a log line, not a
-   duplicate chore.**
+2. The occurrence is **asked for before it is inserted**, and
+   `ux_todo_item_occurrence` is the backstop behind that. An existing occurrence
+   is counted `skipped`. **The failure mode is a log line, not a duplicate
+   chore.**
+
+   Corrected during implementation: this originally said the materialiser
+   *catches* the constraint violation per occurrence, which cannot work.
+   Hibernate defers the insert to flush, so the violation arrives at commit -
+   after the loop has finished, attributable to no particular occurrence, and
+   with the session already poisoned. Hence the existence check. The index still
+   guards two runs genuinely racing, and that case fails the rule's whole
+   transaction, which the runner records against the rule.
 
 **Downtime**: `app.recurrence.catch-up-days` defaults to **0**. A chore due last
 Tuesday is not created on Friday; it is noise a member has to delete. A property
@@ -274,6 +288,15 @@ synthetic "system" user would be a lie in the audit trail), `due_at` =
 `rule_id` and `occurrence_on`. It **never** inherits `points_earned` (the CHECK
 forbids it on an open item, and adr/0012 computes it at completion), the completion
 columns, the note, or a version.
+
+**A list's deletion must not load its rules.** The pictures behind a rule's
+detail are already let go by `StoredImageRepository.findForList`, which is a
+native query spanning rule-owned rows. Loading `RecurrenceRule` *entities* while
+the list is being deleted is worse than redundant: the `TodoList` they point at
+has already left the session, so the flush fails its transient-reference check
+and deleting any list carrying a rule answers **500**. The e2e suite's own
+teardown is what found this - nothing else had ever deleted a list with a rule
+on it.
 
 **Lifecycle.** Deleting a rule leaves nothing pending - generation is just-in-time
 and there is no queue - and the items it already made stay as ordinary items with
@@ -476,6 +499,10 @@ ordinary "no longer here" prose - never a distinct status, because an id on a li
 the caller cannot see must answer as a deleted one does (R19).
 
 ### Concurrency
+
+**A run moves the rule's version**, because it records when it last ran. A member
+who runs a rule by hand and then edits it is editing a stale view, so the screen
+refetches the rules after a run as well as the items.
 
 Unchanged mechanisms, three new applications. Every new mutating request carries the
 version its view was drawn from and is checked before anything is mutated. A rule is

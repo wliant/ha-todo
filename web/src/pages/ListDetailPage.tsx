@@ -19,6 +19,7 @@ import { isNotFound } from '../api/http'
 import { ListAudience } from '../lists/ListAudience'
 import { ActivitySection } from '../items/ActivitySection'
 import { ItemsSection } from '../items/ItemsSection'
+import { RecurrenceSection } from '../items/RecurrenceSection'
 import { ListIcon } from '../lists/listIcons'
 import { PinButton } from '../lists/PinButton'
 import type { ListDetail, ListField } from '../api/lists'
@@ -39,7 +40,11 @@ export function ListDetailPage() {
   const { listId } = useParams()
   const { pathname } = useLocation()
   // Derived from the path, so there is no tab state to disagree with the URL.
-  const tab = pathname.endsWith('/activity') ? 'activity' : 'items'
+  const tab = pathname.endsWith('/activity')
+    ? 'activity'
+    : pathname.endsWith('/recurring')
+      ? 'recurring'
+      : 'items'
   const { data: list, isPending, error } = useList(listId)
   const { data: fields } = useListFields(listId)
   const touch = useTouchList()
@@ -131,6 +136,12 @@ export function ListDetailPage() {
         <Tabs value={tab} aria-label="How to look at this list">
           <Tab label="Items" value="items" component={RouterLink} to={`/lists/${list.id}`} />
           <Tab
+            label="Recurring"
+            value="recurring"
+            component={RouterLink}
+            to={`/lists/${list.id}/recurring`}
+          />
+          <Tab
             label="Activity"
             value="activity"
             component={RouterLink}
@@ -147,6 +158,11 @@ export function ListDetailPage() {
 export function ItemsTab() {
   const { list, fields } = useOutletContext<ListContext>()
   return <ItemsSection list={list} fields={fields} />
+}
+
+export function RecurringTab() {
+  const { list, fields } = useOutletContext<ListContext>()
+  return <RecurrenceSection list={list} fields={fields} />
 }
 
 export function ActivityTab() {

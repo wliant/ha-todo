@@ -1,6 +1,7 @@
 package com.hatodo.item;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -85,6 +86,18 @@ public interface TodoItemRepository extends JpaRepository<TodoItem, UUID> {
     List<TodoItem> activityEvents(@Param("listId") UUID listId,
                                   @Param("from") Instant from, @Param("to") Instant to,
                                   Pageable limit);
+
+    /**
+     * Whether a rule has already produced this occurrence (R42).
+     *
+     * <p>Asked before inserting rather than catching the unique index's
+     * violation: Hibernate defers the insert to flush, so the violation
+     * arrives at commit - outside any per-occurrence catch, and after the loop
+     * has finished. The index stays as the backstop for two runs genuinely
+     * racing, and that case fails the rule's whole transaction, which the
+     * runner records.
+     */
+    boolean existsByRuleIdAndOccurrenceOn(UUID ruleId, LocalDate occurrenceOn);
 
     /** Used when a grant is revoked: an assignee must be able to see the list. */
     @Query("SELECT i FROM TodoItem i WHERE i.list.id = :listId AND i.assignee.id = :userId")

@@ -16,3 +16,9 @@ app:
     username: admin
     display-name: Admin
     password: itest-admin-pw
+  # The scheduler is off here. Left on, a Testcontainers run can fire the job
+  # mid-assertion and a flake appears months later with no obvious cause. The
+  # materialiser is driven directly wherever it is actually under test.
+  recurrence:
+    enabled: false
+    zone: UTC

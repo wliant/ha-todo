@@ -15,12 +15,18 @@ public interface StoredImageRepository extends JpaRepository<StoredImage, UUID> 
      * Every picture on every item of one list.
      *
      * <p>Written against the tables rather than the entity graph: this package
-     * does not know about items, and should not have to in order to let go of
-     * their pictures.
+     * does not know about items or recurrence rules, and should not have to in
+     * order to let go of their pictures. A rule's own pictures are included, or
+     * deleting a list would leave the bytes behind its standing instructions
+     * unreachable and unswept.
      */
     @Query(value = """
             SELECT * FROM stored_image
             WHERE item_id IN (SELECT id FROM todo_item WHERE list_id = :listId)
+               OR rule_id IN (SELECT id FROM recurrence_rule WHERE list_id = :listId)
             """, nativeQuery = true)
     List<StoredImage> findForList(@Param("listId") UUID listId);
+
+    @Query("SELECT i FROM StoredImage i WHERE i.ruleId = :ruleId")
+    List<StoredImage> findForRule(@Param("ruleId") UUID ruleId);
 }

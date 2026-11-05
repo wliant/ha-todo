@@ -17,6 +17,21 @@ app:
     access-key: ${S3_ACCESS_KEY:}
     secret-key: ${S3_SECRET_KEY:}
     bucket: ${S3_BUCKET:}
+  # Recurring items (R42). One instance runs, so the job takes no lock and
+  # elects no leader; a second instance would double-run every rule, which
+  # ux_todo_item_occurrence turns into logged violations rather than duplicate
+  # chores. See docs/adr/0025.
+  recurrence:
+    enabled: ${RECURRENCE_ENABLED:true}
+    # 01:05 in the household's zone: past midnight so "today" has turned over,
+    # off the hour so it never shares a minute with anything else.
+    cron: ${RECURRENCE_CRON:0 5 1 * * *}
+    # Zero: a chore that was due last Tuesday is not worth creating on Friday.
+    catch-up-days: ${RECURRENCE_CATCH_UP_DAYS:0}
+    # The zone a rule's time of day means, and the zone the cron is read in.
+    # Unset, every container image is UTC and "the bins go out at 7pm" is wrong
+    # by the offset.
+    zone: ${APP_TIMEZONE:UTC}
 
 spring:
   application:

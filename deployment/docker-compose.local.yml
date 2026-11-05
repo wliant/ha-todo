@@ -23,6 +23,15 @@ services:
       # Local convenience credentials; dev and prod must supply their own.
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      # Recurring items. The cron is hourly locally rather than nightly, so a
+      # developer can watch the job work without waiting until 01:05 - and
+      # catch-up is on, so a stack that has been down all week still produces
+      # something to look at.
+      RECURRENCE_ENABLED: ${RECURRENCE_ENABLED:-true}
+      RECURRENCE_CRON: ${RECURRENCE_CRON:-0 5 * * * *}
+      RECURRENCE_CATCH_UP_DAYS: ${RECURRENCE_CATCH_UP_DAYS:-7}
+      # Without this, a rule's time of day would mean 7pm UTC in the container.
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Singapore}
     # Bound to loopback, not the LAN. The browser always talks to the web
     # service (same-origin /api); this port exists only so `pnpm dev` can proxy
     # to it and so you can curl the API directly while debugging.

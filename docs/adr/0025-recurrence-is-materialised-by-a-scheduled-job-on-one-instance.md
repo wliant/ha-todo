@@ -54,11 +54,16 @@ by the offset. `TZ` is set in no compose file today.
 `last_materialised_on` is the deterministic guard: a run generates over
 `[max(last_materialised_on + 1 day, today - catchUpDays), today + lead_days]` and
 advances the mark in the same transaction, so a second run the same day computes an
-empty range. `ux_todo_item_occurrence (rule_id, occurrence_on)` is the race guard:
-two overlapping runs - an ad-hoc run fired while the cron run is in flight, which is
-the one way the single-instance assumption breaks in practice - produce a constraint
-violation the materialiser catches per occurrence and counts as `skipped`. **The
-failure mode is a log line, not a duplicate chore.**
+empty range. An occurrence is **asked for before it is
+inserted**, and `ux_todo_item_occurrence (rule_id, occurrence_on)` is the backstop
+behind that check. **The failure mode is a log line, not a duplicate chore.**
+
+This is a correction to how the decision was first written down. Catching the
+constraint violation per occurrence cannot work: Hibernate defers the insert to
+flush, so the violation arrives at commit - after the loop, attributable to no
+particular occurrence, and with the session already unusable. The index still
+guards two runs genuinely racing, and that case fails the rule's whole
+transaction, which the runner records against the rule.
 
 **One transaction per rule.** `RecurrenceRunner` is untransacted and loops;
 `RecurrenceMaterialiser` is `@Transactional` per rule. One rule failing must not
