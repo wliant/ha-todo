@@ -55,6 +55,15 @@ public class StoredImage {
     @Column(name = "item_id")
     private UUID itemId;
 
+    /**
+     * The recurrence rule that owns this picture, if a rule does.
+     *
+     * <p>Exclusive with {@code itemId}, which the database also insists on: a
+     * picture belongs to an item or to a rule, never both.
+     */
+    @Column(name = "rule_id")
+    private UUID ruleId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -98,6 +107,15 @@ public class StoredImage {
 
     public AppUser getUploadedBy() {
         return uploadedBy;
+    }
+
+    public UUID getRuleId() {
+        return ruleId;
+    }
+
+    /** Claimed by a rule, so from now on the rule's list decides who may read it. */
+    public void claimForRule(UUID ruleId) {
+        this.ruleId = ruleId;
     }
 
     public UUID getItemId() {

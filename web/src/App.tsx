@@ -5,7 +5,7 @@ import { ProtectedRoute } from './auth/ProtectedRoute'
 import { AdminPage } from './pages/AdminPage'
 import { AllListsPage } from './pages/AllListsPage'
 import { CreateListPage } from './pages/CreateListPage'
-import { ActivityTab, ItemsTab, ListDetailPage } from './pages/ListDetailPage'
+import { ActivityTab, ItemsTab, ListDetailPage, RecurringTab } from './pages/ListDetailPage'
 import { ListSettingsPage } from './pages/ListSettingsPage'
 import { LoginPage } from './pages/LoginPage'
 import { ProfilePage } from './pages/ProfilePage'
@@ -32,6 +32,7 @@ export function App() {
             separate screen, not another way of looking at the list. */}
         <Route path="/lists/:listId" element={<ListDetailPage />}>
           <Route index element={<ItemsTab />} />
+          <Route path="recurring" element={<RecurringTab />} />
           <Route path="activity" element={<ActivityTab />} />
         </Route>
         <Route path="/lists/:listId/settings" element={<ListSettingsPage />} />

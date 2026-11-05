@@ -18,6 +18,7 @@ import com.hatodo.user.CurrentUserProvider;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -28,6 +29,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -96,6 +98,39 @@ public class TodoItemService {
 
         lists.recordInteraction(list, me);
         return ItemResponse.of(saved);
+    }
+
+    /**
+     * An occurrence of a recurrence rule, created by the scheduled job (R42).
+     *
+     * <p><strong>The one entry point here that does not consult
+     * {@link CurrentUserProvider}, because nobody is calling.</strong> A
+     * scheduled run has no principal, and manufacturing one would hand a job
+     * the standing of an authenticated subject - everything downstream reading
+     * {@code requireUserId()} would then act as a user who did not ask. The
+     * provider is built to fail rather than fall back, and that is worth
+     * keeping. See adr/0025.
+     *
+     * <p>Authorization is settled by the data instead: the rule is on this
+     * list, so the list is the authority. The actor is passed in explicitly and
+     * is the rule's author - a real person, because a synthetic "system" user
+     * would be a lie in the audit trail.
+     *
+     * <p>MANDATORY: the caller owns the transaction, one per rule, so one
+     * rule's failure cannot roll back another's work.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public TodoItem createFromRule(TodoList list, AppUser actor, SaveItemRequest request,
+                                   UUID ruleId, LocalDate occurrenceOn) {
+        TodoItem item = new TodoItem(list, request.description().trim(), actor,
+                items.highestPosition(list.getId()) + 1);
+        apply(item, list, request, actor);
+        item.cameFrom(ruleId, occurrenceOn);
+        // Deliberately no claimImages: a rule's pictures belong to the rule, and
+        // an occurrence claiming them would mean deleting that one item takes
+        // the bytes away from every future occurrence. And no recordInteraction
+        // either - nobody interacted with anything.
+        return items.save(item);
     }
 
     @Transactional
@@ -475,6 +510,10 @@ public class TodoItemService {
             storedImages.findById(imageId)
                     .filter(image -> image.getItemId() == null
                             || item.getId().equals(image.getItemId()))
+                    // A rule owns its own pictures. Without this, the first
+                    // occurrence claims them and deleting that one item leaves
+                    // every future occurrence with a broken picture.
+                    .filter(image -> image.getRuleId() == null)
                     .filter(image -> image.getUploadedBy() != null
                             && uploaderId.equals(image.getUploadedBy().getId()))
                     .ifPresent(image -> image.claimFor(item.getId()));

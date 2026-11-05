@@ -22,4 +22,5 @@ markers = [
     "fields: what shape a list says its items take",
     "items: adding, completing and scoring items",
     "activity: who did what on a list, lately",
+    "recurring: standing instructions, and the job that materialises them",
 ]

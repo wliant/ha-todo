@@ -252,6 +252,18 @@ public class TodoListService {
     }
 
     /**
+     * Ownership alone, for a child that carries a version of its own.
+     *
+     * <p>A recurrence rule is a separate aggregate with its own
+     * {@code @Version}, unlike a field - so the list's version is not the thing
+     * to check, and {@link #markChanged} is not needed either.
+     */
+    @Transactional(readOnly = true)
+    public TodoList requireManaged(UUID listId) {
+        return managed(listId, currentUser.requireUserId());
+    }
+
+    /**
      * Records that this member just did something with this list.
      *
      * <p>Called from the writes themselves - an item added, completed or

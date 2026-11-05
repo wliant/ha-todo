@@ -17,6 +17,7 @@ import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -105,6 +106,20 @@ public class TodoItem {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by")
     private AppUser createdBy;
+
+    /**
+     * Which recurrence rule produced this, if any (R42).
+     *
+     * <p>A plain column rather than a {@code @ManyToOne}, the precedent
+     * {@code StoredImage.itemId} sets, so this package does not depend on the
+     * recurrence package. The dependency runs one way.
+     */
+    @Column(name = "rule_id")
+    private UUID ruleId;
+
+    /** Which occurrence of that rule. Unique per rule, so a re-run is a no-op. */
+    @Column(name = "occurrence_on")
+    private LocalDate occurrenceOn;
 
     @Column(nullable = false)
     private int position;
@@ -272,6 +287,20 @@ public class TodoItem {
         this.reopenedBy = member;
         this.reopenedAt = Instant.now();
         this.pointsEarned = null;
+    }
+
+    public UUID getRuleId() {
+        return ruleId;
+    }
+
+    public LocalDate getOccurrenceOn() {
+        return occurrenceOn;
+    }
+
+    /** Stamped once, when a rule generates this item. */
+    public void cameFrom(UUID ruleId, LocalDate occurrenceOn) {
+        this.ruleId = ruleId;
+        this.occurrenceOn = occurrenceOn;
     }
 
     public int getPosition() {
