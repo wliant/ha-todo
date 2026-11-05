@@ -606,6 +606,112 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
         return response.getBody();
     }
 
+    private Map<String, Object> activity(Member member, String listId) {
+        ResponseEntity<Map> response = rest.exchange("/api/lists/" + listId + "/activity",
+                HttpMethod.GET, new HttpEntity<>(headersFor(member.session())), Map.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        return response.getBody();
+    }
+
+    @Test
+    void reportsWhoDidWhatOnThisListLately() {
+        // R43: the same facts as the leaderboard, over a window a household
+        // can actually feel.
+        Member ana = givenMember("activity-owner");
+        Member ben = givenMember("activity-peer");
+        String listId = newList(ana, ben.id().toString());
+        Map mine = addItem(ana, listId, "{\"description\":\"Ana's bit\"}").getBody();
+        Map theirs = addItem(ana, listId, "{\"description\":\"Ben's bit\"}").getBody();
+
+        setCompleted(ana, (String) mine.get("id"),
+                ((Number) mine.get("version")).longValue(), true);
+        setCompleted(ben, (String) theirs.get("id"),
+                ((Number) theirs.get("version")).longValue(), true);
+
+        Map<String, Object> activity = activity(ana, listId);
+
+        // By id: the display name is a generated one-off, and the id is what
+        // the strip is keyed on anyway.
+        assertThat((List<Map<String, Object>>) activity.get("members"))
+                .extracting(row -> row.get("userId"))
+                .containsExactlyInAnyOrder(ana.id().toString(), ben.id().toString());
+        assertThat((List<Map<String, Object>>) activity.get("members"))
+                .allSatisfy(row -> assertThat(row).containsEntry("completed", 1));
+        assertThat((List<Map<String, Object>>) activity.get("events"))
+                .extracting(row -> row.get("description"))
+                .containsExactlyInAnyOrder("Ana's bit", "Ben's bit");
+        assertThat(activity.get("from")).isNotNull();
+        assertThat(activity.get("to")).isNotNull();
+    }
+
+    @Test
+    void anActivityFeedKeepsACompletionThatWasReopenedSince() {
+        // Keyed on completed_at rather than `done`, deliberately: it happened,
+        // and R49 kept the record so it could be seen. A week's history that
+        // rewrites itself when somebody reopens an item is useless.
+        Member ana = givenMember("activity-reopen");
+        String listId = newList(ana);
+        configure(ana, listId, """
+                [{"kind":"COST","label":"Time","costMode":"NUMERIC","costUnitLabel":"hour",
+                  "pointsPerUnit":50}]
+                """);
+        String fieldId = (String) costField(ana, listId).get("id");
+        Map created = addItem(ana, listId, """
+                {"description":"Undone later","costValues":[{"fieldId":"%s","amount":1}]}
+                """.formatted(fieldId)).getBody();
+        Map completed = setCompleted(ana, (String) created.get("id"),
+                ((Number) created.get("version")).longValue(), true).getBody();
+
+        setCompleted(ana, (String) created.get("id"),
+                ((Number) completed.get("version")).longValue(), false);
+
+        Map<String, Object> activity = activity(ana, listId);
+        List<Map<String, Object>> events = (List<Map<String, Object>>) activity.get("events");
+        assertThat(events).hasSize(1);
+        assertThat(events.get(0)).containsEntry("description", "Undone later")
+                .containsEntry("reopened", true);
+
+        // The count still stands; the points went back with the reopen, which
+        // is why the sum has to tolerate a null.
+        List<Map<String, Object>> members =
+                (List<Map<String, Object>>) activity.get("members");
+        assertThat(members).hasSize(1);
+        assertThat(members.get(0)).containsEntry("completed", 1).containsEntry("points", 0);
+    }
+
+    @Test
+    void anActivityWindowCanBeAskedForExplicitly() {
+        Member ana = givenMember("activity-window");
+        String listId = newList(ana);
+        Map created = addItem(ana, listId, "{\"description\":\"Just now\"}").getBody();
+        setCompleted(ana, (String) created.get("id"),
+                ((Number) created.get("version")).longValue(), true);
+
+        // A window that closed before the work happened reports nothing.
+        ResponseEntity<Map> past = rest.exchange(
+                "/api/lists/" + listId + "/activity?from=2020-01-01T00:00:00Z"
+                        + "&to=2020-01-08T00:00:00Z",
+                HttpMethod.GET, new HttpEntity<>(headersFor(ana.session())), Map.class);
+
+        assertThat(past.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat((List<?>) past.getBody().get("events")).isEmpty();
+        assertThat((List<?>) past.getBody().get("members")).isEmpty();
+    }
+
+    @Test
+    void aStrangerCannotReadAListsActivity() {
+        // R19: the activity of a list you hold no grant on is as invisible as
+        // the list itself.
+        Member ana = givenMember("activity-private");
+        Member stranger = givenMember("activity-stranger");
+        String listId = newList(ana);
+
+        ResponseEntity<Map> response = rest.exchange("/api/lists/" + listId + "/activity",
+                HttpMethod.GET, new HttpEntity<>(headersFor(stranger.session())), Map.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
     private ResponseEntity<Map> assign(Member member, String listId, String body) {
         return rest.exchange("/api/lists/" + listId + "/items/assignment", HttpMethod.POST,
                 new HttpEntity<>(body, headersFor(member.session())), Map.class);

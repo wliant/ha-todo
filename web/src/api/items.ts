@@ -135,3 +135,46 @@ export async function assignItems(
   })
   return data
 }
+
+export interface ActivityMember {
+  userId: string
+  displayName: string
+  avatarImageId: string | null
+  completed: number
+  /** May be lower than `completed`: a reopened completion gave its points back. */
+  points: number
+}
+
+export interface ActivityEvent {
+  itemId: string
+  description: string
+  completedAt: string
+  completedBy: ItemMember | null
+  pointsEarned: number | null
+  /** The work was later undone, which is worth seeing rather than dropping. */
+  reopened: boolean
+}
+
+export interface Activity {
+  from: string
+  to: string
+  members: ActivityMember[]
+  events: ActivityEvent[]
+}
+
+/**
+ * Who did what on this list, lately (R43).
+ *
+ * <p>The window is sent as instants the client computed, because only the
+ * browser knows where this member's midnight is.
+ */
+export async function fetchActivity(
+  listId: string,
+  from: string,
+  to: string,
+): Promise<Activity> {
+  const { data } = await api.get<Activity>(`/lists/${listId}/activity`, {
+    params: { from, to },
+  })
+  return data
+}

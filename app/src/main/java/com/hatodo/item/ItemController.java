@@ -1,6 +1,7 @@
 package com.hatodo.item;
 
 import jakarta.validation.Valid;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -60,6 +61,17 @@ public class ItemController {
     @GetMapping("/lists/{listId}/points")
     public List<ListPointsResponse> points(@PathVariable UUID listId) {
         return todoItems.points(listId);
+    }
+
+    /**
+     * The window is the caller's own, as instants: only the browser knows
+     * where that member's midnight is. Absent, the service uses a week.
+     */
+    @GetMapping("/lists/{listId}/activity")
+    public ActivityResponse activity(@PathVariable UUID listId,
+                                     @RequestParam(required = false) Instant from,
+                                     @RequestParam(required = false) Instant to) {
+        return todoItems.activity(listId, from, to);
     }
 
     @GetMapping("/items/{id}")

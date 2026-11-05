@@ -1,8 +1,10 @@
 package com.hatodo.item;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -51,6 +53,38 @@ public interface TodoItemRepository extends JpaRepository<TodoItem, UUID> {
             ORDER BY COALESCE(SUM(i.pointsEarned), 0) DESC, i.completedBy.displayName ASC
             """)
     List<Object[]> pointsByMember(@Param("listId") UUID listId);
+
+    /**
+     * Who completed how much on one list inside a window (R43).
+     *
+     * <p>Keyed on {@code completedAt}, deliberately not on {@code done}: a
+     * completion that was later reopened still happened, and R49 kept the
+     * record precisely so it could be seen. The points are COALESCEd because
+     * exactly those rows have had theirs taken back.
+     */
+    @Query("""
+            SELECT i.completedBy.id, i.completedBy.displayName,
+                   i.completedBy.avatarImage.id, COUNT(i),
+                   COALESCE(SUM(i.pointsEarned), 0)
+            FROM TodoItem i
+            WHERE i.list.id = :listId AND i.completedBy IS NOT NULL
+              AND i.completedAt >= :from AND i.completedAt < :to
+            GROUP BY i.completedBy.id, i.completedBy.displayName,
+                     i.completedBy.avatarImage.id
+            ORDER BY COUNT(i) DESC, i.completedBy.displayName ASC
+            """)
+    List<Object[]> activityByMember(@Param("listId") UUID listId,
+                                    @Param("from") Instant from, @Param("to") Instant to);
+
+    /** The completions themselves, newest first. Capped by the caller. */
+    @Query("""
+            SELECT i FROM TodoItem i
+            WHERE i.list.id = :listId AND i.completedAt >= :from AND i.completedAt < :to
+            ORDER BY i.completedAt DESC
+            """)
+    List<TodoItem> activityEvents(@Param("listId") UUID listId,
+                                  @Param("from") Instant from, @Param("to") Instant to,
+                                  Pageable limit);
 
     /** Used when a grant is revoked: an assignee must be able to see the list. */
     @Query("SELECT i FROM TodoItem i WHERE i.list.id = :listId AND i.assignee.id = :userId")
