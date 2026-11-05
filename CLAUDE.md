@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status
 
 **Everything specified so far is built, as of 2026-11-06.** Build, local stack, deploy scripts and all
-three test harnesses are real and passing: 233 backend unit tests, 224 integration tests, 219 frontend
-tests, 79 end-to-end.
+three test harnesses are real and passing: 236 backend unit tests, 225 integration tests, 228 frontend
+tests, 83 end-to-end.
 
 Implemented: **accounts and administration (R8-R12)** — username identity, optional per-user passwords, a
 pick-a-user sign-in screen, and a single admin who adds and deletes users. **The PWA (R13, R14)** —
@@ -121,6 +121,25 @@ subscribe-fetch-store path is covered by `CalendarFeedApiIntegrationTest`, which
 **Unrelated, pre-existing**: two `e2e/tests/test_recurring.py` tests fail against the **local** stack
 because `deployment/docker-compose.local.yml` sets `RECURRENCE_CATCH_UP_DAYS=7` while they assert
 "Added 1."; they pass with `RECURRENCE_CATCH_UP_DAYS=0` and against dev, which uses 0.
+
+**R73-R77 are implemented.** `docs/requirements/0008` and `docs/design/0008` make My day **navigable**,
+which is the open question 0007 left. The tabs are named for the range - **Day, Week, Month** - rather
+than for the present, there are previous/next controls and one that returns to the current period, and
+`docs/adr/0037` puts the period on screen in the address as `?on=YYYY-MM-DD`, omitted when it is today.
+Nothing became stateful: `adr/0015`'s rule still holds, with `AppShell` owning the only layout state.
+
+**The mistake this makes available** is conflating two things that used to be the same: the period being
+*looked at* (the anchor, from the URL) and the period we are *in* (the clock). Layout reads the anchor;
+today's highlight in the week and month grids, and whether the return control is enabled, read
+`now(zone)`. A new reader that takes "today" from the anchor will be right every day except the ones
+somebody navigated away on. `?on=` is parsed defensively and falls back to today, because this is the
+landing page and a mangled address must not be a member who cannot get in.
+
+**And navigating past what the poller has read is now possible**, so `ScheduledResponse` carries
+`eventWindow` (from `CalendarWindow`, i.e. `CALENDAR_WINDOW_BACK`/`_FORWARD`) and My day says when the
+range on screen falls outside it. Items have no such bound, so a member four months out sees their
+chores and none of the appointments; the notice names the half the product knows it does not know. An
+empty February that means "nobody looked" must never read as "nothing is on".
 
 Keep this file true: when a decision here turns out wrong, update it in the same change.
 

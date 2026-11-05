@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ThemeProvider } from '@mui/material/styles'
-import { MemoryRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DashboardPage } from './DashboardPage'
 import { MonthView } from './MonthView'
@@ -11,7 +11,7 @@ import { WeekView } from './WeekView'
 import * as dashboardApi from '../api/dashboard'
 import type { DashboardItem } from '../api/dashboard'
 import type { CalendarEvent } from '../api/calendars'
-import { civilIn, dayKey, startOfDay } from './calendar'
+import { addDays, civilIn, dayKey, startOfDay } from './calendar'
 import { theme } from '../theme/theme'
 
 function item(overrides: Partial<DashboardItem> = {}): DashboardItem {
@@ -59,7 +59,28 @@ function event(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
 
 /** One payload shape in one place: Scheduled gains fields over time. */
 function payload(overrides: Partial<dashboardApi.Scheduled> = {}): dashboardApi.Scheduled {
-  return { from: '', to: '', items: [], events: [], staleFeeds: [], ...overrides }
+  return {
+    from: '',
+    to: '',
+    items: [],
+    events: [],
+    staleFeeds: [],
+    // Wide enough that the out-of-window notice stays out of the way unless a
+    // test is about it.
+    eventWindow: { from: '2000-01-01', to: '2099-12-31' },
+    ...overrides,
+  }
+}
+
+/** MemoryRouter keeps its own history, so the address has to be read from it. */
+function LocationProbe() {
+  const { pathname, search } = useLocation()
+  return <output data-testid="address">{pathname + search}</output>
+}
+
+/** How the controls name a day that is not today. */
+function dayName(day: Date): string {
+  return day.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })
 }
 
 /** The same nesting App.tsx declares, so the tabs are exercised as routes. */
@@ -77,6 +98,7 @@ function renderAt(path: string) {
               <Route path="month" element={<MonthView />} />
             </Route>
           </Routes>
+          <LocationProbe />
         </MemoryRouter>
       </ThemeProvider>
     </QueryClientProvider>,
@@ -94,7 +116,8 @@ describe('DashboardPage', () => {
     renderAt('/dashboard')
 
     expect(await screen.findByRole('heading', { name: 'Today' })).toBeVisible()
-    expect(screen.getByRole('tab', { name: 'Today' })).toHaveAttribute('aria-selected', 'true')
+    // Named for the range, not for the present (0008 R73).
+    expect(screen.getByRole('tab', { name: 'Day' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('shows what is due today, and which list it is from', async () => {
@@ -109,7 +132,7 @@ describe('DashboardPage', () => {
   it('lays the week out as seven day columns', async () => {
     renderAt('/dashboard/week')
 
-    expect(await screen.findByRole('heading', { name: 'This week' })).toBeVisible()
+    expect(await screen.findByRole('button', { name: 'This week' })).toBeInTheDocument()
     // Seven headings, one per day, whatever today happens to be.
     expect(screen.getAllByText(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d+$/)).toHaveLength(7)
   })
@@ -148,7 +171,7 @@ describe('DashboardPage', () => {
     expect(undated).toHaveBeenCalledOnce()
 
     await userEvent.click(screen.getByRole('tab', { name: 'Week' }))
-    await screen.findByRole('heading', { name: 'This week' })
+    await screen.findByRole('button', { name: 'Next week' })
 
     // Still there, and still one request: the panel is a sibling of the
     // outlet, not part of each view.
@@ -319,6 +342,106 @@ describe('DashboardPage', () => {
     const notice = await screen.findByText(/Work calendar/)
     expect(notice).toHaveTextContent('Ben')
     expect(await screen.findByText('Some events may be missing')).toBeVisible()
+  })
+
+  describe('moving between periods (0008)', () => {
+    it('steps a day at a time and says where it landed', async () => {
+      renderAt('/dashboard/day')
+      await screen.findByRole('heading', { name: 'Today' })
+
+      await userEvent.click(screen.getByRole('button', { name: 'Next day' }))
+
+      const tomorrow = addDays(civilIn(new Date(), 'Asia/Singapore'), 1)
+      // Both the control and the view's own heading say it, on purpose.
+      expect(await screen.findByRole('heading', { name: dayName(tomorrow) })).toBeVisible()
+      expect(screen.queryByRole('heading', { name: 'Today' })).not.toBeInTheDocument()
+    })
+
+    it('puts the period in the address, so a link to a day is a link', async () => {
+      renderAt('/dashboard/day')
+      await screen.findByRole('heading', { name: 'Today' })
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Next day' }))
+
+      const tomorrow = addDays(civilIn(new Date(), 'Asia/Singapore'), 1)
+      await waitFor(() =>
+        expect(screen.getByTestId('address')).toHaveTextContent(`on=${dayKey(tomorrow)}`),
+      )
+    })
+
+    it('opens on whatever day the address names', async () => {
+      renderAt('/dashboard/day?on=2026-02-11')
+
+      expect(await screen.findByRole('heading', { name: /11 February/ })).toBeVisible()
+    })
+
+    it('falls back to today rather than breaking on a mangled address', async () => {
+      // The landing page: a truncated or edited ?on= must not be a member who
+      // cannot get into the product.
+      renderAt('/dashboard/day?on=2026-13-45')
+
+      expect(await screen.findByRole('heading', { name: 'Today' })).toBeVisible()
+    })
+
+    it('keeps the period when the range changes', async () => {
+      renderAt('/dashboard/day?on=2026-02-11')
+      await screen.findByRole('heading', { name: /11 February/ })
+
+      await userEvent.click(screen.getByRole('tab', { name: 'Month' }))
+
+      expect(await screen.findByRole('heading', { name: /February 2026/ })).toBeVisible()
+      // and the address still carries it, so the link is still a link
+      expect(screen.getByTestId('address')).toHaveTextContent('on=2026-02-11')
+    })
+
+    it('offers the way back only when there is somewhere to go back from', async () => {
+      renderAt('/dashboard/day')
+
+      expect(await screen.findByRole('button', { name: 'Today' })).toBeDisabled()
+
+      await userEvent.click(screen.getByRole('button', { name: 'Previous day' }))
+      const back = await screen.findByRole('button', { name: 'Today' })
+      expect(back).toBeEnabled()
+
+      await userEvent.click(back)
+      expect(await screen.findByRole('heading', { name: 'Today' })).toBeVisible()
+    })
+
+    it('highlights today by the clock, never by the period on screen', async () => {
+      // 0008's first consequence, and the one mistake this feature made
+      // available: layout follows the anchor, "now" follows the clock.
+      renderAt('/dashboard/month?on=2026-02-11')
+      await screen.findByRole('heading', { name: /February 2026/ })
+
+      const todaysNumber = String(civilIn(new Date(), 'Asia/Singapore').getDate())
+      const cells = screen.getAllByRole('gridcell')
+      const highlighted = cells.filter((cell) =>
+        cell.querySelector('.MuiTypography-root')?.className.includes('primary'),
+      )
+      // February 2026 is not this month, so nothing in it is today.
+      expect(highlighted).toHaveLength(0)
+      expect(todaysNumber).toBeTruthy()
+    })
+
+    it('says so when the member steps past what has been read', async () => {
+      vi.spyOn(dashboardApi, 'fetchScheduled').mockResolvedValue(
+        payload({ eventWindow: { from: '2026-09-22', to: '2026-12-31' } }),
+      )
+      renderAt('/dashboard/month?on=2027-06-15')
+
+      // An empty June must not look like a quiet June (R77).
+      expect(await screen.findByText(/No calendar events have been read/)).toBeVisible()
+    })
+
+    it('stays quiet inside the window', async () => {
+      vi.spyOn(dashboardApi, 'fetchScheduled').mockResolvedValue(
+        payload({ eventWindow: { from: '2000-01-01', to: '2099-12-31' } }),
+      )
+      renderAt('/dashboard/month')
+
+      await screen.findByRole('tab', { name: 'Month' })
+      expect(screen.queryByText(/have been read/)).not.toBeInTheDocument()
+    })
   })
 
   it('asks for today as a half-open day in the household’s zone', async () => {

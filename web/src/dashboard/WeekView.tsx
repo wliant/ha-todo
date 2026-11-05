@@ -8,6 +8,7 @@ import { DashboardItemChip } from './DashboardItemChip'
 import { useDashboardView } from './dashboardView'
 import { dayKey, isSameDay, now, weekDays, weekRange, windowOf } from './calendar'
 import { byDayEntries } from './entries'
+import { periodName } from './period'
 import { useScheduled } from './queries'
 
 /**
@@ -20,20 +21,22 @@ import { useScheduled } from './queries'
  * overflow lives here.
  */
 export function WeekView() {
-  const { scope, zone, open, openEvent } = useDashboardView()
+  const { scope, zone, anchor, open, openEvent } = useDashboardView()
   // Once per mount: a range snapped to midnight is stable through a day, and
   // computing it during every render would make the query key - and therefore
   // the refetch - depend on when React happened to re-render.
+  // Layout follows the anchor; the highlight below follows the clock. Keeping
+  // those apart is the whole of 0008's first consequence.
   const today = useMemo(() => now(zone), [zone])
-  const window = useMemo(() => windowOf(weekRange(today), zone), [today, zone])
+  const window = useMemo(() => windowOf(weekRange(anchor), zone), [anchor, zone])
   const { data, isPending } = useScheduled(window.from, window.to, scope)
-  const days = weekDays(today)
+  const days = weekDays(anchor)
   const grouped = byDayEntries(data?.items ?? [], data?.events ?? [], zone)
 
   return (
     <Stack spacing={1.5}>
-      <Typography component="h2" variant="h6">
-        This week
+      <Typography component="h2" variant="h6" aria-live="polite">
+        {periodName('week', anchor, today)}
       </Typography>
 
       {isPending && <Typography role="status">Loading…</Typography>}

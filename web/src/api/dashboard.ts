@@ -32,6 +32,20 @@ export interface Scheduled {
   events: CalendarEvent[]
   /** Calendars that have stopped refreshing - an empty day now has two meanings. */
   staleFeeds: CalendarFeedWarning[]
+  /**
+   * How far either side of today events have been read at all (0008 R77).
+   *
+   * <p>Not a client-side constant: it is deployment configuration, and a copy
+   * here would be wrong in exactly the deployment that changed it. Items have
+   * no such bound - they come back for whatever window is asked for.
+   */
+  eventWindow: EventWindow
+}
+
+export interface EventWindow {
+  /** Household dates, `YYYY-MM-DD`. */
+  from: string
+  to: string
 }
 
 export interface Undated {

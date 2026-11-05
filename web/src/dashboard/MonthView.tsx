@@ -27,20 +27,21 @@ const COLUMN_HEADS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
  * months and make the page jump. Descriptions only, as in the week view.
  */
 export function MonthView() {
-  const { scope, zone, open, openEvent } = useDashboardView()
+  const { scope, zone, anchor, open, openEvent } = useDashboardView()
   // Once per mount: a range snapped to midnight is stable through a day, and
   // computing it during every render would make the query key - and therefore
   // the refetch - depend on when React happened to re-render.
+  // Layout follows the anchor; today's bordered cell follows the clock.
   const today = useMemo(() => now(zone), [zone])
-  const window = useMemo(() => windowOf(monthRange(today), zone), [today, zone])
+  const window = useMemo(() => windowOf(monthRange(anchor), zone), [anchor, zone])
   const { data, isPending } = useScheduled(window.from, window.to, scope)
-  const grid = monthGrid(today)
+  const grid = monthGrid(anchor)
   const grouped = byDayEntries(data?.items ?? [], data?.events ?? [], zone)
 
   return (
     <Stack spacing={1.5}>
-      <Typography component="h2" variant="h6">
-        {today.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+      <Typography component="h2" variant="h6" aria-live="polite">
+        {anchor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
       </Typography>
 
       {isPending && <Typography role="status">Loading…</Typography>}
@@ -68,7 +69,7 @@ export function MonthView() {
           >
             {grid.map((day) => {
               const entries = grouped.get(dayKey(day)) ?? []
-              const thisMonth = isSameMonth(day, today)
+              const thisMonth = isSameMonth(day, anchor)
               return (
                 <Paper
                   key={dayKey(day)}

@@ -2,6 +2,8 @@ package com.hatodo.dashboard;
 
 import com.hatodo.calendar.CalendarEventQuery;
 import com.hatodo.calendar.CalendarFeedService;
+import com.hatodo.calendar.CalendarWindow;
+import com.hatodo.calendar.EventWindowResponse;
 import com.hatodo.household.HouseholdProperties;
 import com.hatodo.item.TodoItemRepository;
 import com.hatodo.user.CurrentUserProvider;
@@ -31,15 +33,17 @@ public class DashboardService {
     private final TodoItemRepository items;
     private final CalendarEventQuery events;
     private final CalendarFeedService feeds;
+    private final CalendarWindow window;
     private final HouseholdProperties household;
     private final CurrentUserProvider currentUser;
 
     public DashboardService(TodoItemRepository items, CalendarEventQuery events,
-                            CalendarFeedService feeds, HouseholdProperties household,
-                            CurrentUserProvider currentUser) {
+                            CalendarFeedService feeds, CalendarWindow window,
+                            HouseholdProperties household, CurrentUserProvider currentUser) {
         this.items = items;
         this.events = events;
         this.feeds = feeds;
+        this.window = window;
         this.household = household;
         this.currentUser = currentUser;
     }
@@ -54,7 +58,8 @@ public class DashboardService {
                         .map(DashboardItemResponse::of)
                         .toList(),
                 events.visible(me, firstDay(from), lastDay(to), mineOnly),
-                feeds.staleFor(me));
+                feeds.staleFor(me),
+                new EventWindowResponse(window.from(), window.to()));
     }
 
     /*
