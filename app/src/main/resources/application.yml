@@ -81,10 +81,21 @@ server:
   forward-headers-strategy: framework
   servlet:
     session:
+      # Thirty days of *inactivity*, reset by every request the SPA makes - so a
+      # member who opens the app at all keeps their session. The old value was
+      # the framework's 30 minutes, which on a phone meant picking your name
+      # again most times you opened it. See docs/adr/0038.
+      timeout: ${SESSION_TIMEOUT:30d}
       cookie:
         http-only: true
         same-site: lax
         secure: ${SESSION_COOKIE_SECURE:false}
+        # Persistent rather than a session cookie: without this the browser
+        # drops it whenever it decides its browsing session ended, and the
+        # timeout above would be invisible. RollingSessionCookieFilter re-issues
+        # it as the member keeps using the app, because Tomcat writes this
+        # cookie once at session creation and never again.
+        max-age: ${SESSION_COOKIE_MAX_AGE:30d}
 
 management:
   endpoints:

@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status
 
 **Everything specified so far is built, as of 2026-11-06.** Build, local stack, deploy scripts and all
-three test harnesses are real and passing: 236 backend unit tests, 225 integration tests, 228 frontend
-tests, 83 end-to-end.
+three test harnesses are real and passing: 243 backend unit tests, 226 integration tests, 228 frontend
+tests, 86 end-to-end.
 
 Implemented: **accounts and administration (R8-R12)** — username identity, optional per-user passwords, a
 pick-a-user sign-in screen, and a single admin who adds and deletes users. **The PWA (R13, R14)** —
@@ -308,6 +308,24 @@ why the choices code reads as it does; building new ones is not.
 `boolean`/`int` components are `Boolean`/`Integer` with a defaulting accessor (`isRequired()`,
 `pointsOrZero()`). In a request that replaces a configuration, "not mentioned" is genuinely different
 from "false" anyway.
+
+**A sign-in lasts thirty days of use** (`docs/requirements/0009`, `docs/design/0009`,
+`docs/adr/0038`). `server.servlet.session.timeout` and the
+cookie's `max-age` are both `30d` (`SESSION_TIMEOUT` / `SESSION_COOKIE_MAX_AGE`), and
+`RollingSessionCookieFilter` re-issues the cookie once a day so the thirty days run from **last use**
+rather than from sign-in — Tomcat writes the session cookie once at creation and never again, so a plain
+`max-age` would log out a daily user on day thirty. Three separate things end a session and they are
+easy to confuse: the server's inactivity timer, the cookie's lifetime, and **the app restarting** —
+sessions are in memory (`adr/0003`), so every deploy still signs everybody out. That is now the likeliest
+reason somebody is asked to pick their name again; Spring Session JDBC against the existing Postgres is
+the fix and is deliberately not done yet.
+
+**`e2e/tests/test_sessions.py` has a trap worth knowing.** Playwright's `storage_state()` serialises
+**session cookies too**, so saving it and restoring it into a fresh context puts them straight back — a
+"reopen the app" test written the obvious way passes against a build with no cookie lifetime at all and
+therefore cannot fail. `reopened_cold` drops cookies with no expiry, which is what a browser does when
+its browsing session ends. Verified by running the file against a deployment of the previous build,
+where two of its three tests fail.
 
 **Authentication is session-based.** `POST /api/auth/login` takes JSON, rotates the session id, and stores
 the context in the HTTP session. Anonymous API calls get **401**, never a redirect. CSRF stays on (the
