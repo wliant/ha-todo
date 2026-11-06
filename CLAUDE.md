@@ -309,6 +309,16 @@ why the choices code reads as it does; building new ones is not.
 `pointsOrZero()`). In a request that replaces a configuration, "not mentioned" is genuinely different
 from "false" anyway.
 
+**A sign-in lasts thirty days of use** (`docs/adr/0038`). `server.servlet.session.timeout` and the
+cookie's `max-age` are both `30d` (`SESSION_TIMEOUT` / `SESSION_COOKIE_MAX_AGE`), and
+`RollingSessionCookieFilter` re-issues the cookie once a day so the thirty days run from **last use**
+rather than from sign-in — Tomcat writes the session cookie once at creation and never again, so a plain
+`max-age` would log out a daily user on day thirty. Three separate things end a session and they are
+easy to confuse: the server's inactivity timer, the cookie's lifetime, and **the app restarting** —
+sessions are in memory (`adr/0003`), so every deploy still signs everybody out. That is now the likeliest
+reason somebody is asked to pick their name again; Spring Session JDBC against the existing Postgres is
+the fix and is deliberately not done yet.
+
 **Authentication is session-based.** `POST /api/auth/login` takes JSON, rotates the session id, and stores
 the context in the HTTP session. Anonymous API calls get **401**, never a redirect. CSRF stays on (the
 credential is a cookie): `GET /api/auth/csrf` issues the `XSRF-TOKEN` cookie and clients echo

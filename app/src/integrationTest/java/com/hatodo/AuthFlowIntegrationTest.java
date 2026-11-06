@@ -146,4 +146,23 @@ class AuthFlowIntegrationTest extends ApiIntegrationTest {
                 .orElseThrow(() -> new AssertionError("roster has no user " + username + ": " + roster));
     }
 
+
+    @Test
+    void theSessionCookieOutlivesTheBrowserSession() {
+        // docs/adr/0038. Without a Max-Age this is a session cookie, and the
+        // thirty-day timeout behind it is invisible: the browser drops it
+        // whenever it decides its browsing session ended, which on a phone is
+        // not something this product can predict.
+        ResponseEntity<Map> response = login("ana", "password123");
+
+        String setCookie = response.getHeaders().get(HttpHeaders.SET_COOKIE).stream()
+                .filter(cookie -> cookie.startsWith("JSESSIONID="))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(setCookie).containsIgnoringCase("Max-Age=");
+        assertThat(setCookie).containsIgnoringCase("HttpOnly");
+        // Thirty days, as configured - not the container's default.
+        assertThat(setCookie).contains("Max-Age=2592000");
+    }
 }
