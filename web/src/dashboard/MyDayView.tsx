@@ -8,6 +8,7 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import EventRounded from '@mui/icons-material/EventRounded'
 import { MemberAvatar } from '../app/MemberAvatar'
+import { CompleteControl } from '../items/CompleteControl'
 import { ListIcon } from '../lists/listIcons'
 import { useDashboardView } from './dashboardView'
 import { civilIn, dayKey, dayRange, now, windowOf, type Zone } from './calendar'
@@ -25,7 +26,7 @@ import { useScheduled } from './queries'
  * and an appointment at seven is why nobody can take the seven o'clock chore.
  */
 export function MyDayView() {
-  const { scope, zone, anchor, open, openEvent } = useDashboardView()
+  const { scope, zone, anchor, open, openEvent, complete, writeNote } = useDashboardView()
   // The day on screen, which is today unless the member stepped away from it
   // (R74). See WeekView for why ranges are not computed during render.
   const window = useMemo(() => windowOf(dayRange(anchor), zone), [anchor, zone])
@@ -50,7 +51,14 @@ export function MyDayView() {
 
       {entries.map((entry) =>
         entry.kind === 'item' ? (
-          <ItemRow key={entry.key} entry={entry} zone={zone} onOpen={open} />
+          <ItemRow
+            key={entry.key}
+            entry={entry}
+            zone={zone}
+            onOpen={open}
+            onComplete={() => complete(entry.item)}
+            onWriteNote={() => writeNote(entry.item)}
+          />
         ) : (
           <EventRow key={entry.key} entry={entry} zone={zone} onOpen={openEvent} />
         ),
@@ -59,36 +67,61 @@ export function MyDayView() {
   )
 }
 
+/**
+ * A chore's row: what it is, and the control that ticks it off (0010 R83).
+ *
+ * <p>The disclosure wraps the description only, with the completion control as
+ * its **sibling** - a row-wide button containing a button is invalid nesting
+ * and a screen reader reads it as neither. `items/ItemRow` has the same shape
+ * for the same reason.
+ */
 function ItemRow({
   entry,
   zone,
   onOpen,
+  onComplete,
+  onWriteNote,
 }: {
   entry: Extract<DayEntry, { kind: 'item' }>
   zone: Zone
   onOpen: (id: string) => void
+  onComplete: () => void
+  onWriteNote: () => void
 }) {
   const item = entry.item
   return (
-    <Paper variant="outlined">
-      <ButtonBase
-        onClick={() => onOpen(item.id)}
-        aria-label={`${item.description}, on ${item.listName}`}
-        sx={{ width: '100%', p: 1.5, justifyContent: 'flex-start', textAlign: 'left' }}
+    <Paper variant="outlined" sx={{ p: 1.5 }}>
+      {/* Wraps on a narrow phone: the control is wide enough that it and a
+          long description cannot share one line on every device. */}
+      <Stack
+        direction="row"
+        sx={{ alignItems: 'center', width: '100%', minWidth: 0, flexWrap: 'wrap', gap: 1.5 }}
       >
-        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', width: '100%' }}>
-          <Avatar
-            aria-hidden
-            variant="rounded"
-            sx={{
-              bgcolor: 'primary.main',
-              color: 'primary.contrastText',
-              width: 32,
-              height: 32,
-            }}
-          >
-            <ListIcon token={item.listIcon} />
-          </Avatar>
+        <Avatar
+          aria-hidden
+          variant="rounded"
+          sx={{
+            bgcolor: 'primary.main',
+            color: 'primary.contrastText',
+            width: 32,
+            height: 32,
+          }}
+        >
+          <ListIcon token={item.listIcon} />
+        </Avatar>
+        <ButtonBase
+          onClick={() => onOpen(item.id)}
+          aria-label={`${item.description}, on ${item.listName}`}
+          sx={{
+            flex: '1 1 10rem',
+            minWidth: 0,
+            justifyContent: 'flex-start',
+            textAlign: 'left',
+            borderRadius: 1,
+            px: 0.5,
+            mx: -0.5,
+          }}
+        >
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography sx={{ overflowWrap: 'anywhere' }}>{item.description}</Typography>
             <Typography variant="caption" color="text.secondary">
@@ -96,6 +129,8 @@ function ItemRow({
               {item.dueAt ? ` · ${formatTime(item.dueAt, zone)}` : ''}
             </Typography>
           </Box>
+        </ButtonBase>
+        <Stack direction="row" sx={{ alignItems: 'center', gap: 1, ml: 'auto' }}>
           {item.assignee && (
             <Chip
               size="small"
@@ -114,8 +149,13 @@ function ItemRow({
               }
             />
           )}
+          <CompleteControl
+            description={item.description}
+            onComplete={onComplete}
+            onWriteNote={onWriteNote}
+          />
         </Stack>
-      </ButtonBase>
+      </Stack>
     </Paper>
   )
 }

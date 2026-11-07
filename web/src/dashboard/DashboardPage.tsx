@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import Box from '@mui/material/Box'
+import Snackbar from '@mui/material/Snackbar'
 import Stack from '@mui/material/Stack'
 import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
@@ -7,15 +8,16 @@ import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
 import { Link as RouterLink, Outlet, useLocation, useSearchParams } from 'react-router-dom'
-import type { DashboardScope } from '../api/dashboard'
+import type { DashboardItem, DashboardScope } from '../api/dashboard'
 import type { CalendarEvent } from '../api/calendars'
 import { DashboardEventDialog } from './DashboardEventDialog'
 import { DashboardItemDialog } from './DashboardItemDialog'
 import { OutsideWindowNotice } from './OutsideWindowNotice'
 import { StaleFeedsNotice } from './StaleFeedsNotice'
-import { ViewContext } from './dashboardView'
+import { ViewContext, useDashboardView } from './dashboardView'
 import { UndatedPanel } from './UndatedPanel'
-import { useScheduled, useUndated } from './queries'
+import { CompletionNoteDialog } from '../items/CompletionNoteDialog'
+import { useCompleteFromAgenda, useScheduled, useUndated } from './queries'
 import { useHouseholdZone } from '../app/useHouseholdZone'
 import { useState } from 'react'
 import {
@@ -52,6 +54,10 @@ export function DashboardPage() {
   // has no id of its own to link to, and the whole event is already in hand.
   const [openedEvent, setOpenedEvent] = useState<CalendarEvent | null>(null)
   const [params, setParams] = useSearchParams()
+  // The chore a member is writing a note about, on the way to completing it
+  // (R84). One of these for the page, as there is one mutation.
+  const [noting, setNoting] = useState<DashboardItem | null>(null)
+  const [said, setSaid] = useState<string | null>(null)
   const scope: DashboardScope = params.get('scope') === 'mine' ? 'mine' : 'all'
   const tab = pathname.endsWith('/week') ? 'week' : pathname.endsWith('/month') ? 'month' : 'day'
   // The day being looked at (R76). Today unless the address says otherwise, and
@@ -64,6 +70,10 @@ export function DashboardPage() {
     [tab, anchor],
   )
   const activeWindow = useMemo(() => windowOf(visible, zone), [visible, zone])
+  // The agenda's one write (adr/0039). Its message goes to the same snackbar a
+  // successful completion uses: both are things that happened to a row the
+  // member can no longer see.
+  const completion = useCompleteFromAgenda(setSaid)
 
   /** Today drops the param rather than writing it, as scope=all does. */
   function moveTo(day: Civil) {
@@ -84,6 +94,21 @@ export function DashboardPage() {
     const next = new URLSearchParams(params)
     next.set('item', itemId)
     setParams(next)
+  }
+
+  /**
+   * Ticking a chore off from the agenda (R83).
+   *
+   * <p>Closes the popup first: its subject is about to stop existing, and a
+   * dialog describing a chore that is no longer in any payload would sit there
+   * until the refetch landed and `OpenItem` found nothing to draw.
+   */
+  function complete(item: DashboardItem, noteHtml?: string | null) {
+    close()
+    completion.mutate(
+      { item, noteHtml },
+      { onSuccess: () => setSaid(`${item.description} is done.`) },
+    )
   }
 
   /** One popup at a time, as on a list (0005 R38). */
@@ -119,7 +144,7 @@ export function DashboardPage() {
   }
 
   return (
-    <ViewContext.Provider value={{ scope, zone, anchor, open, openEvent }}>
+    <ViewContext.Provider value={{ scope, zone, anchor, open, openEvent, complete, writeNote: setNoting }}>
       <Stack spacing={2.5}>
         <Stack
           direction={{ xs: 'column', sm: 'row' }}
@@ -184,6 +209,29 @@ export function DashboardPage() {
           onClose={() => setOpenedEvent(null)}
         />
       )}
+
+      {noting && (
+        <CompletionNoteDialog
+          // Keyed on the item for the reason the list's is: DetailEditor takes
+          // `value` as initial content and never re-syncs it.
+          key={noting.id}
+          description={noting.description}
+          onCancel={() => setNoting(null)}
+          onComplete={(noteHtml) => {
+            complete(noting, noteHtml)
+            setNoting(null)
+          }}
+        />
+      )}
+
+      {/* The row has gone by the time this appears, so this is what says what
+          happened - and, on a 409, whose chore it turned out to be (R87). */}
+      <Snackbar
+        open={said !== null}
+        message={said ?? ''}
+        autoHideDuration={6000}
+        onClose={() => setSaid(null)}
+      />
     </ViewContext.Provider>
   )
 }
@@ -215,6 +263,7 @@ function OpenItem({
   // The *anchor's* month, not the clock's: an item opened from November while
   // looking at February has to be found in the payload February asked for.
   const month = useMemo(() => windowOf(monthRange(anchor), zone), [anchor, zone])
+  const { complete, writeNote } = useDashboardView()
   const { data: scheduled } = useScheduled(month.from, month.to, scope)
   const { data: undated } = useUndated(scope)
 
@@ -225,7 +274,17 @@ function OpenItem({
   if (!item) {
     return null
   }
-  return <DashboardItemDialog item={item} onClose={onClose} />
+  return (
+    <DashboardItemDialog
+      item={item}
+      onClose={onClose}
+      // From the context rather than from props threaded through the page: the
+      // popup is what makes R85 true for the week view, the month view and the
+      // undated panel, and all three are inside the provider.
+      onComplete={() => complete(item)}
+      onWriteNote={() => writeNote(item)}
+    />
+  )
 }
 
 /**

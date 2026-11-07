@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-**Everything specified so far is built, as of 2026-11-06.** Build, local stack, deploy scripts and all
-three test harnesses are real and passing: 243 backend unit tests, 226 integration tests, 228 frontend
-tests, 86 end-to-end.
+**Everything specified so far is built, as of 2026-11-07.** Build, local stack, deploy scripts and all
+three test harnesses are real and passing: 243 backend unit tests, 226 integration tests, 233 frontend
+tests, 89 end-to-end.
 
 Implemented: **accounts and administration (R8-R12)** — username identity, optional per-user passwords, a
 pick-a-user sign-in screen, and a single admin who adds and deletes users. **The PWA (R13, R14)** —
@@ -149,6 +149,24 @@ landing page and a mangled address must not be a member who cannot get in.
 range on screen falls outside it. Items have no such bound, so a member four months out sees their
 chores and none of the appointments; the notice names the half the product knows it does not know. An
 empty February that means "nobody looked" must never read as "nothing is on".
+
+**R83-R87 are implemented.** `docs/requirements/0010` and `docs/design/0010` make the agenda
+**writable in exactly one way**: a chore can be completed from it — from the Day view's rows and from the
+popup the week view, the month view and the undated panel open — with the hold-for-a-note accelerator the
+list has. **Frontend only** (`docs/adr/0039`): `PUT /api/items/{id}/completion` is per-item, checks the
+caller's grant and compares the version first, and `DashboardItemResponse` already carried `version`.
+
+**The scheduled query keeps `done = FALSE`**, so a completed chore *leaves* the agenda rather than
+staying struck through as it does on a list — the agenda answers "what is left", and a month grid of
+one-line chips filled with finished work answers something else. A snackbar says what happened, because
+the row vanishing cannot be the only feedback.
+
+**The thing this breaks is a premise.** `dashboard/queries.ts` said its keys could live outside the
+per-list hierarchy because the dashboard never writes. It writes now, so `useCompleteFromAgenda`
+invalidates **both `['dashboard']` and `['lists']`** — the two trees are siblings and neither prefix
+reaches the other. A second writer added there that forgets `['lists']` leaves the list it came from
+showing an open chore, with nothing to make it refetch and no failure anywhere. Reopening is deliberately
+**not** on the agenda: a completed chore is not there to reopen, and the record lives on the list.
 
 Keep this file true: when a decision here turns out wrong, update it in the same change.
 

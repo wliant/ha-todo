@@ -11,22 +11,31 @@ import Typography from '@mui/material/Typography'
 import { Link as RouterLink } from 'react-router-dom'
 import type { DashboardItem } from '../api/dashboard'
 import { MemberAvatar } from '../app/MemberAvatar'
+import { CompleteControl } from '../items/CompleteControl'
 import { ListIcon } from '../lists/listIcons'
 
 /**
  * An item opened from a grid cell.
  *
  * <p>Driven by `?item=<id>` rather than state, so it is deep-linkable and the
- * back button closes it. Read-only on purpose: the dashboard is for seeing what
- * is coming, and anything a member wants to *do* belongs on the list itself -
- * which is one tap from here.
+ * back button closes it.
+ *
+ * <p>It completes the chore (0010 R85), which is what makes ticking something
+ * off reachable from the week view, the month view and the undated panel at
+ * once rather than three times. Everything *else* a member might want to do to
+ * an item still belongs on the list, which knows its own fields and members and
+ * is one tap from here.
  */
 export function DashboardItemDialog({
   item,
   onClose,
+  onComplete,
+  onWriteNote,
 }: {
   item: DashboardItem
   onClose: () => void
+  onComplete: () => void
+  onWriteNote: () => void
 }) {
   return (
     <Dialog open fullWidth maxWidth="sm" onClose={onClose}>
@@ -101,11 +110,19 @@ export function DashboardItemDialog({
           )}
         </Stack>
       </DialogContent>
-      <DialogActions>
+      <DialogActions sx={{ flexWrap: 'wrap', gap: 1 }}>
         <Button onClick={onClose}>Close</Button>
-        <Button component={RouterLink} to={`/lists/${item.listId}`} variant="contained">
+        <Button component={RouterLink} to={`/lists/${item.listId}`}>
           Open {item.listName}
         </Button>
+        {/* The list's own control, imported rather than reimplemented: the
+            hold-for-a-note gesture and its tabbable alternative are one
+            implementation of adr/0027 or they are two that drift. */}
+        <CompleteControl
+          description={item.description}
+          onComplete={onComplete}
+          onWriteNote={onWriteNote}
+        />
       </DialogActions>
     </Dialog>
   )

@@ -277,3 +277,125 @@ def test_stepping_past_what_has_been_read_says_so(
     page.goto(f"{base_url}/dashboard/month?on=2030-04-15")
 
     expect(page.get_by_text("No calendar events have been read")).to_be_visible()
+
+
+@pytest.mark.dashboard
+def test_a_member_completes_a_chore_from_the_agenda(
+    page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
+) -> None:
+    """
+    0010 R83, R86: the same write as doing it on the list, from the screen the
+    member is already standing on - and the row then leaves the agenda.
+    """
+    name = test_data.name("Ticking")
+    cleanup_lists(name)
+    ui_sign_in(page, base_url, demo_member)
+    list_id = create_list(page, name)
+
+    # Named for the run: the agenda crosses every list this member can see, so
+    # a bare "Put the bins out" collides with the one another test left.
+    chore = test_data.name("Put the bins out")
+    later_today = datetime.now().replace(hour=23, minute=0, second=0, microsecond=0)
+    add_dated_item(page, chore, later_today)
+
+    page.get_by_role("link", name="Agenda").click()
+    main = page.get_by_role("main")
+    expect(main.get_by_text(chore)).to_be_visible()
+
+    page.get_by_role("button", name=f"Complete {chore}", exact=True).click()
+
+    # The agenda shows outstanding work, so it goes - and says so, because the
+    # row vanishing cannot be the only feedback.
+    expect(page.get_by_text(f"{chore} is done.")).to_be_visible()
+    # Exact: the snackbar's own message contains the description too.
+    expect(main.get_by_text(chore, exact=True)).not_to_be_visible()
+
+    # The assertion no unit test can make: it is the *same* write. The list
+    # shows it finished, by whoever actually did it (0005 R38).
+    page.goto(f"{base_url}/lists/{list_id}")
+    page.get_by_role("button", name="Done").click()
+    expect(page.get_by_text(chore)).to_be_visible()
+    # The completion chip, which the points panel's own mention of her name
+    # cannot be mistaken for.
+    expect(
+        page.get_by_text(
+            re.compile(
+                rf"(Done by {demo_member.display_name}"
+                rf"|{demo_member.display_name} \u2014 \d+ points)"
+            )
+        ).first
+    ).to_be_visible()
+
+
+@pytest.mark.dashboard
+def test_a_chore_due_later_is_completed_from_the_month_view(
+    page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
+) -> None:
+    """
+    0010 R85: the popup is what makes the week and month views able to complete
+    anything, so it is worth one test of its own.
+    """
+    name = test_data.name("Later")
+    cleanup_lists(name)
+    ui_sign_in(page, base_url, demo_member)
+    create_list(page, name)
+
+    # Tomorrow, so the day view is not where it is found.
+    tomorrow = (datetime.now() + timedelta(days=1)).replace(
+        hour=9, minute=0, second=0, microsecond=0
+    )
+    chore = test_data.name("Pay the bill")
+    add_dated_item(page, chore, tomorrow)
+
+    page.get_by_role("link", name="Agenda").click()
+    page.get_by_role("tab", name="Month").click()
+    page.get_by_role("button", name=f"{chore}, on {name}").click()
+
+    dialog = page.get_by_role("dialog")
+    dialog.get_by_role("button", name=f"Complete {chore}", exact=True).click()
+
+    # Its subject has stopped existing, so the popup closes with it.
+    expect(dialog).not_to_be_visible()
+    expect(page.get_by_text(f"{chore} is done.")).to_be_visible()
+    expect(page.get_by_role("main").get_by_text(chore, exact=True)).not_to_be_visible()
+
+
+@pytest.mark.dashboard
+def test_the_second_member_to_tick_a_chore_on_the_agenda_is_told(
+    page: Page,
+    second_member_page: Page,
+    base_url: str,
+    demo_member: DemoMember,
+    passwordless_member: DemoMember,
+    test_data: TestData,
+    cleanup_lists,
+) -> None:
+    """
+    0010 R87, pointed at the new surface. Two members looking at the household
+    agenda and reaching for the same chore is what this product is about.
+    """
+    name = test_data.name("Raced")
+    cleanup_lists(name)
+    ui_sign_in(page, base_url, demo_member)
+    create_list(page, name, share_with=passwordless_member.display_name)
+
+    later_today = datetime.now().replace(hour=23, minute=0, second=0, microsecond=0)
+    chore = test_data.name("Wash up")
+    add_dated_item(page, chore, later_today)
+
+    page.get_by_role("link", name="Agenda").click()
+    expect(page.get_by_role("main").get_by_text(chore)).to_be_visible()
+
+    # Ben, on his own agenda, gets there first.
+    ui_sign_in(second_member_page, base_url, passwordless_member)
+    second_member_page.goto(f"{base_url}/dashboard/day")
+    expect(second_member_page.get_by_role("main").get_by_text(chore)).to_be_visible()
+    second_member_page.get_by_role("button", name=f"Complete {chore}", exact=True).click()
+    expect(second_member_page.get_by_text(f"{chore} is done.")).to_be_visible()
+
+    # Ana completes the chore her screen still shows as due.
+    page.get_by_role("button", name=f"Complete {chore}", exact=True).click()
+
+    expect(
+        page.get_by_text(f"{passwordless_member.display_name} completed this first")
+    ).to_be_visible()

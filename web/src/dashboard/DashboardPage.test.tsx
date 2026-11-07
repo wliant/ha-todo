@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ThemeProvider } from '@mui/material/styles'
 import { MemoryRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
@@ -9,6 +9,7 @@ import { MonthView } from './MonthView'
 import { MyDayView } from './MyDayView'
 import { WeekView } from './WeekView'
 import * as dashboardApi from '../api/dashboard'
+import * as itemsApi from '../api/items'
 import type { DashboardItem } from '../api/dashboard'
 import type { CalendarEvent } from '../api/calendars'
 import { addDays, civilIn, dayKey, startOfDay } from './calendar'
@@ -441,6 +442,129 @@ describe('DashboardPage', () => {
 
       await screen.findByRole('tab', { name: 'Month' })
       expect(screen.queryByText(/have been read/)).not.toBeInTheDocument()
+    })
+  })
+
+  /**
+   * Completing a chore without leaving the agenda (0010 R83-R87).
+   *
+   * <p>The write is the item's own endpoint, so what these assert is the
+   * wiring: the right item, the version the payload carried, the note on the
+   * same request, and that a row nobody can see any more still gets its
+   * conflict said out loud.
+   */
+  describe('completing a chore', () => {
+    /** The payload the agenda was drawn from, and nothing after it. */
+    function thenEmpty() {
+      return vi
+        .spyOn(dashboardApi, 'fetchScheduled')
+        .mockResolvedValueOnce(payload({ items: [item({ version: 7 })] }))
+        .mockResolvedValue(payload())
+    }
+
+    it('ticks a chore off from the day’s row', async () => {
+      thenEmpty()
+      const complete = vi
+        .spyOn(itemsApi, 'setItemCompleted')
+        .mockResolvedValue({} as unknown as itemsApi.Item)
+      renderAt('/dashboard/day')
+
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Complete Take the bins out' }),
+      )
+
+      // The version the row was drawn from, so a stale tap is a 409 rather
+      // than an overwrite.
+      expect(complete).toHaveBeenCalledWith('id-item', 7, true, undefined)
+      // The agenda shows outstanding work, so the row leaves (R86).
+      await waitFor(() =>
+        expect(screen.queryByText('Take the bins out')).not.toBeInTheDocument(),
+      )
+      expect(await screen.findByText('Take the bins out is done.')).toBeVisible()
+    })
+
+    it('carries the note on the same request', async () => {
+      thenEmpty()
+      const complete = vi
+        .spyOn(itemsApi, 'setItemCompleted')
+        .mockResolvedValue({} as unknown as itemsApi.Item)
+      renderAt('/dashboard/day')
+
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Complete Take the bins out with a note' }),
+      )
+      // The editor is lazy-loaded; the dialog's own Complete is what sends it.
+      const dialog = await screen.findByRole('dialog')
+      await userEvent.click(await within(dialog).findByRole('button', { name: 'Complete' }))
+
+      // One gesture, one request - never a completion followed by a note.
+      await waitFor(() => expect(complete).toHaveBeenCalledOnce())
+      expect(complete).toHaveBeenCalledWith('id-item', 7, true, null)
+    })
+
+    it('completes from the popup, and closes it', async () => {
+      // R85: this is what makes the week view, the month view and the undated
+      // panel able to complete anything at all.
+      // Not thenEmpty(): the popup reads the anchor's *month* window, which is
+      // a second key and therefore a second call.
+      vi.spyOn(dashboardApi, 'fetchScheduled').mockResolvedValue(
+        payload({ items: [item({ version: 7 })] }),
+      )
+      const complete = vi
+        .spyOn(itemsApi, 'setItemCompleted')
+        .mockResolvedValue({} as unknown as itemsApi.Item)
+      renderAt('/dashboard/week?item=id-item')
+
+      const dialog = await screen.findByRole('dialog')
+      await userEvent.click(
+        within(dialog).getByRole('button', { name: 'Complete Take the bins out' }),
+      )
+
+      expect(complete).toHaveBeenCalledWith('id-item', 7, true, undefined)
+      // Its subject has stopped existing; a dialog describing nothing must not
+      // be left on screen.
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    })
+
+    it('says who got there first, and puts the row back', async () => {
+      // R87, and the reason the optimistic removal is reversible.
+      vi.spyOn(dashboardApi, 'fetchScheduled').mockResolvedValue(
+        payload({ items: [item({ version: 7 })] }),
+      )
+      vi.spyOn(itemsApi, 'setItemCompleted').mockRejectedValue({
+        isAxiosError: true,
+        response: {
+          status: 409,
+          data: { code: 'STALE_ITEM', error: 'Ben completed this first.', item: {} },
+        },
+      })
+      renderAt('/dashboard/day')
+
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Complete Take the bins out' }),
+      )
+
+      expect(await screen.findByText('Ben completed this first.')).toBeVisible()
+      expect(screen.getByText('Take the bins out')).toBeVisible()
+    })
+
+    it('leaves an event with nothing to complete', async () => {
+      // The two must read differently, on a screen where one of them now has
+      // a completion control (0007 R63).
+      vi.spyOn(dashboardApi, 'fetchScheduled').mockResolvedValue(
+        payload({ items: [item()], events: [event()] }),
+      )
+      renderAt('/dashboard/day')
+
+      await screen.findByText('Parents evening')
+      // One control, for the chore - not two.
+      expect(screen.getAllByRole('button', { name: /^Complete / })).toHaveLength(2)
+      expect(
+        screen.getAllByRole('button', { name: /^Complete / }).map((node) => node.ariaLabel),
+      ).toEqual([
+        'Complete Take the bins out',
+        'Complete Take the bins out with a note',
+      ])
     })
   })
 
