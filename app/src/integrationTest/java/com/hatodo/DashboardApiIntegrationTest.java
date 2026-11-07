@@ -82,8 +82,26 @@ class DashboardApiIntegrationTest extends ApiIntegrationTest {
         return response.getBody();
     }
 
+    private Map<String, Object> overdue(Session session, String scope) {
+        ResponseEntity<Map> response = rest.exchange(
+                "/api/dashboard/overdue" + (scope == null ? "" : "?scope=" + scope),
+                HttpMethod.GET, new HttpEntity<>(headersFor(session)), Map.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        return response.getBody();
+    }
+
+    private List<String> descriptionsLate(Session session, String scope) {
+        return ((List<Map<String, Object>>) overdue(session, scope).get("items"))
+                .stream().map(item -> (String) item.get("description")).toList();
+    }
+
     private static String soon() {
         return Instant.now().plus(1, ChronoUnit.HOURS).toString();
+    }
+
+    /** Yesterday, which is late in any zone the household could be configured to. */
+    private static String late() {
+        return Instant.now().minus(36, ChronoUnit.HOURS).toString();
     }
 
     @Test
@@ -256,6 +274,80 @@ class DashboardApiIntegrationTest extends ApiIntegrationTest {
         assertThat(row).containsEntry("listId", listId)
                 .containsEntry("listIcon", "CHECKLIST");
         assertThat((String) row.get("listName")).startsWith("Dash ");
+    }
+
+    @Test
+    void theOverdueStripHoldsWorkWhoseDayHasGoneAndNothingElse() {
+        // 0011 R88, and the partition the whole feature rests on: between them
+        // `overdue` and `undated` cover the open work exactly once. A row in
+        // both would be drawn twice on one screen; a row in neither is the bug
+        // this feature exists to fix.
+        Member ana = givenMember("dash-late");
+        String listId = newList(ana);
+        addItem(ana, listId, "{\"description\":\"Missed it\",\"dueAt\":\"%s\"}".formatted(late()));
+        addItem(ana, listId, "{\"description\":\"Still to come\",\"dueAt\":\"%s\"}".formatted(soon()));
+        addItem(ana, listId, "{\"description\":\"Never dated\"}");
+
+        assertThat(descriptionsLate(ana.session(), null))
+                .contains("Missed it")
+                .doesNotContain("Still to come", "Never dated");
+        assertThat((List<Map<String, Object>>) undated(ana.session(), null).get("items"))
+                .extracting(item -> item.get("description"))
+                .doesNotContain("Missed it");
+        assertThat(((Number) overdue(ana.session(), null).get("total")).longValue())
+                .isGreaterThanOrEqualTo(1);
+    }
+
+    @Test
+    void workDueEarlierTodayIsNotLateYet() {
+        // R91. The boundary is the start of today in the household's zone, so
+        // a chore due at nine this morning is today's work until today is over
+        // - and it is today's row that holds it, not the overdue strip.
+        Member ana = givenMember("dash-this-morning");
+        String listId = newList(ana);
+        Instant startOfToday = LocalDate.now(ZoneId.of("Asia/Singapore"))
+                .atStartOfDay(ZoneId.of("Asia/Singapore")).toInstant();
+        // Exactly on the boundary, which is the row a `<` and a `<=` disagree
+        // about. Skipped in the first minutes of the household's day, when
+        // "already today" and "not yet late" have nowhere to put a timestamp.
+        if (!startOfToday.isBefore(Instant.now().minus(1, ChronoUnit.MINUTES))) {
+            return;
+        }
+        addItem(ana, listId, "{\"description\":\"Early today\",\"dueAt\":\"%s\"}"
+                .formatted(startOfToday));
+
+        assertThat(descriptionsLate(ana.session(), null)).doesNotContain("Early today");
+    }
+
+    @Test
+    void nobodyElsesLateWorkIsVisible() {
+        // The guard is in the query, so this is the only place it can be
+        // checked - and a third cross-list read is a third chance to leave it
+        // out.
+        Member ana = givenMember("dash-late-owner");
+        Member stranger = givenMember("dash-late-stranger");
+        String listId = newList(ana);
+        addItem(ana, listId, "{\"description\":\"Ana is behind\",\"dueAt\":\"%s\"}"
+                .formatted(late()));
+
+        assertThat(descriptionsLate(stranger.session(), null)).doesNotContain("Ana is behind");
+        assertThat(((Number) overdue(stranger.session(), null).get("total")).longValue())
+                .isZero();
+    }
+
+    @Test
+    void aCompletedItemIsNotLate() {
+        Member ana = givenMember("dash-late-done");
+        String listId = newList(ana);
+        Map created = addItem(ana, listId,
+                "{\"description\":\"Late but finished\",\"dueAt\":\"%s\"}".formatted(late()));
+
+        rest.exchange("/api/items/" + created.get("id") + "/completion", HttpMethod.PUT,
+                new HttpEntity<>("{\"version\":%d,\"completed\":true}"
+                        .formatted(((Number) created.get("version")).longValue()),
+                        headersFor(ana.session())), Map.class);
+
+        assertThat(descriptionsLate(ana.session(), null)).doesNotContain("Late but finished");
     }
 
     @Test

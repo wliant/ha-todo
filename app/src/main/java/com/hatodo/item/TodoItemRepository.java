@@ -150,6 +150,57 @@ public interface TodoItemRepository extends JpaRepository<TodoItem, UUID> {
     long countUndatedFor(@Param("userId") UUID userId, @Param("mineOnly") boolean mineOnly);
 
     /**
+     * The open work whose day has already gone (0011 R88-R93).
+     *
+     * <p>The complement of {@link #findUndatedFor}: that one holds the items
+     * with no date at all, this one the items with a date that has passed, and
+     * between them they must partition the open work without overlapping - so
+     * the redundant {@code dueAt IS NOT NULL} stays, as the sentence that says
+     * so.
+     *
+     * <p>{@code before} is the start of today in the household's zone, decided
+     * by the service and never sent by a caller: the agenda can be navigated,
+     * and a bound a client supplies is a bound the period on screen can leak
+     * into. See adr/0040.
+     *
+     * <p>Oldest first, unlike the undated panel's by-list order. The page is
+     * capped, so the part a member sees should be the part that has been
+     * waiting longest.
+     */
+    @Query("""
+            SELECT i FROM TodoItem i
+            WHERE i.done = FALSE
+              AND i.dueAt IS NOT NULL AND i.dueAt < :before
+              AND (:mineOnly = FALSE OR i.assignee.id = :userId)
+              AND EXISTS (
+                  SELECT 1 FROM ListAccess a WHERE a.list = i.list AND a.user.id = :userId
+              )
+            ORDER BY i.dueAt ASC, i.list.name ASC, i.position ASC
+            """)
+    List<TodoItem> findOverdueFor(@Param("userId") UUID userId, @Param("before") Instant before,
+                                  @Param("mineOnly") boolean mineOnly, Pageable limit);
+
+    /**
+     * How much is actually late, which the page may not be able to show.
+     *
+     * <p>Counted apart for the reason the undated panel's total is, and more
+     * sharply: the first load after this ships holds every item the household
+     * ever dated and never finished, and a strip that says "3" because it drew
+     * three is the one thing this feature cannot afford to be.
+     */
+    @Query("""
+            SELECT COUNT(i) FROM TodoItem i
+            WHERE i.done = FALSE
+              AND i.dueAt IS NOT NULL AND i.dueAt < :before
+              AND (:mineOnly = FALSE OR i.assignee.id = :userId)
+              AND EXISTS (
+                  SELECT 1 FROM ListAccess a WHERE a.list = i.list AND a.user.id = :userId
+              )
+            """)
+    long countOverdueFor(@Param("userId") UUID userId, @Param("before") Instant before,
+                         @Param("mineOnly") boolean mineOnly);
+
+    /**
      * Whether a rule has already produced this occurrence (R42).
      *
      * <p>Asked before inserting rather than catching the unique index's

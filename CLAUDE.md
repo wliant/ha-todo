@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status
 
 **Everything specified so far is built, as of 2026-11-07.** Build, local stack, deploy scripts and all
-three test harnesses are real and passing: 243 backend unit tests, 226 integration tests, 233 frontend
-tests, 89 end-to-end.
+three test harnesses are real and passing: 247 backend unit tests, 230 integration tests, 242 frontend
+tests, 90 end-to-end.
 
 Implemented: **accounts and administration (R8-R12)** — username identity, optional per-user passwords, a
 pick-a-user sign-in screen, and a single admin who adds and deletes users. **The PWA (R13, R14)** —
@@ -120,7 +120,10 @@ subscribe-fetch-store path is covered by `CalendarFeedApiIntegrationTest`, which
 
 **Unrelated, pre-existing**: two `e2e/tests/test_recurring.py` tests fail against the **local** stack
 because `deployment/docker-compose.local.yml` sets `RECURRENCE_CATCH_UP_DAYS=7` while they assert
-"Added 1."; they pass with `RECURRENCE_CATCH_UP_DAYS=0` and against dev, which uses 0.
+"Added 1."; they pass with `RECURRENCE_CATCH_UP_DAYS=0` and against dev, which uses 0. They did
+**pass** against local on 2026-11-07 with the setting unchanged, so the failure is conditional on how
+many occurrences the catch-up window actually reaches rather than guaranteed - do not read a green local
+run as evidence the setting was fixed.
 
 **R73-R78 are implemented.** `docs/requirements/0008` and `docs/design/0008` make the agenda
 **navigable**,
@@ -167,6 +170,30 @@ invalidates **both `['dashboard']` and `['lists']`** — the two trees are sibli
 reaches the other. A second writer added there that forgets `['lists']` leaves the list it came from
 showing an open chore, with nothing to make it refetch and no failure anywhere. Reopening is deliberately
 **not** on the agenda: a completed chore is not there to reopen, and the record lives on the list.
+
+**R88-R93 are implemented.** `docs/requirements/0011` and `docs/design/0011` put **overdue work** on
+the agenda, which until now was invisible: the ranged query is half-open on the window the client asks
+for, so a chore due last Tuesday existed in last Tuesday's window and nowhere else — not in today, not in
+the undated panel (`dueAt IS NULL`, and a late chore has a date), not in any count. `GET
+/api/dashboard/overdue?scope=` is a third cross-list read, modelled on `/undated`: same SQL access guard,
+same capped page plus separately counted total. It is drawn as a collapsible strip **above** the period,
+beside the stale-feed and out-of-window notices, and carries the same `CompleteControl` the Day row does.
+
+**Three things in there are easy to break.** The boundary is **the start of today in `app.timezone`**,
+computed by `DashboardService`, and the endpoint **takes no window** — a bound a caller supplies is a
+bound the period on screen can leak into, and "overdue" would quietly come to mean "before whatever month
+I am looking at" (`docs/adr/0040`). Day granularity, not `< now()`, is what keeps a chore due at 09:00 in
+today's row until midnight instead of jumping out of it mid-morning and being drawn twice either side of
+the cutoff. And `useCompleteFromAgenda.onMutate` hand-writes **three** payload shapes now — a fourth
+dashboard query whose shape it does not know still *works*, because `onSettled` invalidates
+`['dashboard']` wholesale, so the row merely lingers for one round-trip and **no test fails**; that is the
+same invisible-defect shape as the `['lists']` invalidation above, and
+`DashboardPage.test.tsx`'s "takes the row out before the server answers" is the regression (it completes
+against a promise that never resolves, so the refetch cannot do the work for it).
+
+`AgendaItemRow` is now shared by the Day view and the overdue strip, differing only in its caption — the
+`ButtonBase`-with-a-sibling-control shape exists once, which is where `adr/0039`'s invalid nesting would
+otherwise grow back.
 
 Keep this file true: when a decision here turns out wrong, update it in the same change.
 

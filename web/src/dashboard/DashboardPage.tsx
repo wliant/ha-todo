@@ -13,11 +13,12 @@ import type { CalendarEvent } from '../api/calendars'
 import { DashboardEventDialog } from './DashboardEventDialog'
 import { DashboardItemDialog } from './DashboardItemDialog'
 import { OutsideWindowNotice } from './OutsideWindowNotice'
+import { OverduePanel } from './OverduePanel'
 import { StaleFeedsNotice } from './StaleFeedsNotice'
 import { ViewContext, useDashboardView } from './dashboardView'
 import { UndatedPanel } from './UndatedPanel'
 import { CompletionNoteDialog } from '../items/CompletionNoteDialog'
-import { useCompleteFromAgenda, useScheduled, useUndated } from './queries'
+import { useCompleteFromAgenda, useOverdue, useScheduled, useUndated } from './queries'
 import { useHouseholdZone } from '../app/useHouseholdZone'
 import { useState } from 'react'
 import {
@@ -170,6 +171,10 @@ export function DashboardPage() {
             and costs no request of its own. */}
         <Notices window={activeWindow} scope={scope} visible={visible} />
 
+        {/* Above the tabs, and outside everything the period parameterises: it
+            takes `scope` and nothing else, which is R89 at the call site. */}
+        <OverduePanel scope={scope} />
+
         <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
           {/* Named for the range rather than for the present: a tab that can
               show another week is a tab whose "This week" label is a lie
@@ -266,10 +271,16 @@ function OpenItem({
   const { complete, writeNote } = useDashboardView()
   const { data: scheduled } = useScheduled(month.from, month.to, scope)
   const { data: undated } = useUndated(scope)
+  // The third place an item can be drawn from (0011 R90). A popup opened from
+  // the overdue strip would otherwise find nothing whenever the chore is
+  // outside the anchor's month, which is most of the time - that is what being
+  // overdue means.
+  const { data: overdue } = useOverdue(scope)
 
   const item =
     scheduled?.items.find((candidate) => candidate.id === id) ??
-    undated?.items.find((candidate) => candidate.id === id)
+    undated?.items.find((candidate) => candidate.id === id) ??
+    overdue?.items.find((candidate) => candidate.id === id)
 
   if (!item) {
     return null
