@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react'
 import type { CalendarEvent } from '../api/calendars'
-import type { DashboardScope } from '../api/dashboard'
+import type { DashboardItem, DashboardScope } from '../api/dashboard'
 import type { Civil, Zone } from './calendar'
 
 /** What the three range views need from the layout around them. */
@@ -19,6 +19,16 @@ export interface DashboardView {
    */
   anchor: Civil
   open: (itemId: string) => void
+  /**
+   * Tick a chore off without leaving the agenda (0010 R83).
+   *
+   * <p>The item rather than an id, because the write carries the version the
+   * row was drawn from and the payload already has it. One mutation for the
+   * page, here rather than per view (adr/0039).
+   */
+  complete: (item: DashboardItem) => void
+  /** The same completion, with a line about how it went first (0010 R84). */
+  writeNote: (item: DashboardItem) => void
   /**
    * The event itself rather than an id: a collapsed event has no single row
    * behind it, and the payload is already in hand - so there is nothing to look
