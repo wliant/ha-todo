@@ -413,7 +413,14 @@ def test_reopening_an_item_takes_its_points_back(
     page.get_by_role("button", name="To do").click()
     expect(page.get_by_text("Worth something")).to_be_visible()
     page.get_by_role("tab", name="Activity").click()
-    expect(page.get_by_text("50")).not_to_be_visible()
+    # Scoped to the Points panel, as the assertion above is. Unscoped, "50" is
+    # a substring match against the whole page - and `test_data`'s run prefix
+    # is a timestamp, so roughly one run in ten contains it and this fails for
+    # a reason that has nothing to do with points.
+    expect(
+        page.get_by_role("heading", name="Points").locator("xpath=../..")
+        .get_by_text("50")
+    ).not_to_be_visible()
 
 
 @pytest.mark.items
