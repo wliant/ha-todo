@@ -54,6 +54,22 @@ export interface Undated {
   total: number
 }
 
+/**
+ * The open work whose day has gone (0011 R88).
+ *
+ * <p>The same shape as `Undated` and a separate type on purpose: they answer
+ * two questions, and the two sets must never overlap.
+ *
+ * <p>No boundary rides this payload. Where today starts is the server's
+ * decision, not a number the client could usefully hold or recompute - see
+ * adr/0040.
+ */
+export interface Overdue {
+  items: DashboardItem[]
+  /** May exceed `items.length`, and on a first load usually does. */
+  total: number
+}
+
 /** Everything readable by default; 'mine' narrows to the caller's own. */
 export type DashboardScope = 'all' | 'mine'
 
@@ -70,5 +86,17 @@ export async function fetchScheduled(
 
 export async function fetchUndated(scope: DashboardScope): Promise<Undated> {
   const { data } = await api.get<Undated>('/dashboard/undated', { params: { scope } })
+  return data
+}
+
+/**
+ * What is late.
+ *
+ * <p>Takes `scope` and nothing else - no window, no anchor. That is R89 in the
+ * signature: there is no bound for the period on screen to leak into, so
+ * navigating cannot change what is overdue.
+ */
+export async function fetchOverdue(scope: DashboardScope): Promise<Overdue> {
+  const { data } = await api.get<Overdue>('/dashboard/overdue', { params: { scope } })
   return data
 }

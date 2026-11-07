@@ -9,6 +9,7 @@ import com.hatodo.item.TodoItemRepository;
 import com.hatodo.user.CurrentUserProvider;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -77,6 +78,37 @@ public class DashboardService {
     /** Exclusive at the top, so a window ending at midnight does not drag in the next day. */
     private LocalDate lastDay(Instant to) {
         return to.minusMillis(1).atZone(household.zone()).toLocalDate();
+    }
+
+    /**
+     * What is late (0011 R88-R93).
+     *
+     * <p>Takes no window, and that is the design rather than an omission: the
+     * agenda can be navigated, so a bound supplied by the caller is a bound the
+     * period on screen can leak into, and "overdue" would then mean "before
+     * whatever month I am looking at". The only clock this reads is the
+     * household's (adr/0036).
+     *
+     * <p>The boundary is the **start of today**, not this instant: a chore due
+     * at nine this morning is today's work until today is over (R91). An
+     * instant boundary would also draw it twice for the minutes either side of
+     * the cutoff - once in today's row, once as late.
+     */
+    @Transactional(readOnly = true)
+    public OverdueResponse overdue(String scope) {
+        UUID me = currentUser.requireUserId();
+        boolean mineOnly = mineOnly(scope);
+        Instant before = startOfToday();
+        return new OverdueResponse(
+                items.findOverdueFor(me, before, mineOnly, PageRequest.ofSize(LIMIT)).stream()
+                        .map(DashboardItemResponse::of)
+                        .toList(),
+                items.countOverdueFor(me, before, mineOnly));
+    }
+
+    private Instant startOfToday() {
+        ZoneId zone = household.zone();
+        return LocalDate.now(zone).atStartOfDay(zone).toInstant();
     }
 
     @Transactional(readOnly = true)

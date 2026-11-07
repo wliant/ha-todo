@@ -2,14 +2,11 @@ import { useMemo } from 'react'
 import Avatar from '@mui/material/Avatar'
 import Box from '@mui/material/Box'
 import ButtonBase from '@mui/material/ButtonBase'
-import Chip from '@mui/material/Chip'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import EventRounded from '@mui/icons-material/EventRounded'
-import { MemberAvatar } from '../app/MemberAvatar'
-import { CompleteControl } from '../items/CompleteControl'
-import { ListIcon } from '../lists/listIcons'
+import { AgendaItemRow } from './AgendaItemRow'
 import { useDashboardView } from './dashboardView'
 import { civilIn, dayKey, dayRange, now, windowOf, type Zone } from './calendar'
 import { periodName } from './period'
@@ -51,10 +48,14 @@ export function MyDayView() {
 
       {entries.map((entry) =>
         entry.kind === 'item' ? (
-          <ItemRow
+          <AgendaItemRow
             key={entry.key}
-            entry={entry}
-            zone={zone}
+            item={entry.item}
+            // The list, and the time it is due - the Day view's caption. The
+            // overdue strip passes how late it is instead.
+            caption={`${entry.item.listName}${
+              entry.item.dueAt ? ` · ${formatTime(entry.item.dueAt, zone)}` : ''
+            }`}
             onOpen={open}
             onComplete={() => complete(entry.item)}
             onWriteNote={() => writeNote(entry.item)}
@@ -64,99 +65,6 @@ export function MyDayView() {
         ),
       )}
     </Stack>
-  )
-}
-
-/**
- * A chore's row: what it is, and the control that ticks it off (0010 R83).
- *
- * <p>The disclosure wraps the description only, with the completion control as
- * its **sibling** - a row-wide button containing a button is invalid nesting
- * and a screen reader reads it as neither. `items/ItemRow` has the same shape
- * for the same reason.
- */
-function ItemRow({
-  entry,
-  zone,
-  onOpen,
-  onComplete,
-  onWriteNote,
-}: {
-  entry: Extract<DayEntry, { kind: 'item' }>
-  zone: Zone
-  onOpen: (id: string) => void
-  onComplete: () => void
-  onWriteNote: () => void
-}) {
-  const item = entry.item
-  return (
-    <Paper variant="outlined" sx={{ p: 1.5 }}>
-      {/* Wraps on a narrow phone: the control is wide enough that it and a
-          long description cannot share one line on every device. */}
-      <Stack
-        direction="row"
-        sx={{ alignItems: 'center', width: '100%', minWidth: 0, flexWrap: 'wrap', gap: 1.5 }}
-      >
-        <Avatar
-          aria-hidden
-          variant="rounded"
-          sx={{
-            bgcolor: 'primary.main',
-            color: 'primary.contrastText',
-            width: 32,
-            height: 32,
-          }}
-        >
-          <ListIcon token={item.listIcon} />
-        </Avatar>
-        <ButtonBase
-          onClick={() => onOpen(item.id)}
-          aria-label={`${item.description}, on ${item.listName}`}
-          sx={{
-            flex: '1 1 10rem',
-            minWidth: 0,
-            justifyContent: 'flex-start',
-            textAlign: 'left',
-            borderRadius: 1,
-            px: 0.5,
-            mx: -0.5,
-          }}
-        >
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography sx={{ overflowWrap: 'anywhere' }}>{item.description}</Typography>
-            <Typography variant="caption" color="text.secondary">
-              {item.listName}
-              {item.dueAt ? ` · ${formatTime(item.dueAt, zone)}` : ''}
-            </Typography>
-          </Box>
-        </ButtonBase>
-        <Stack direction="row" sx={{ alignItems: 'center', gap: 1, ml: 'auto' }}>
-          {item.assignee && (
-            <Chip
-              size="small"
-              avatar={
-                <MemberAvatar
-                  displayName={item.assignee.displayName}
-                  avatarImageId={item.assignee.avatarImageId}
-                  size={24}
-                />
-              }
-              label={item.assignee.displayName}
-              sx={
-                item.selfAssigned
-                  ? { bgcolor: 'selfClaimed.main', color: 'selfClaimed.contrastText' }
-                  : undefined
-              }
-            />
-          )}
-          <CompleteControl
-            description={item.description}
-            onComplete={onComplete}
-            onWriteNote={onWriteNote}
-          />
-        </Stack>
-      </Stack>
-    </Paper>
   )
 }
 

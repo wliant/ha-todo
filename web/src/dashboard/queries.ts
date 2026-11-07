@@ -1,9 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  fetchOverdue,
   fetchScheduled,
   fetchUndated,
   type DashboardItem,
   type DashboardScope,
+  type Overdue,
   type Scheduled,
   type Undated,
 } from '../api/dashboard'
@@ -27,6 +29,7 @@ export const dashboardKeys = {
   scheduled: (from: string, to: string, scope: DashboardScope) =>
     ['dashboard', 'scheduled', from, to, scope] as const,
   undated: (scope: DashboardScope) => ['dashboard', 'undated', scope] as const,
+  overdue: (scope: DashboardScope) => ['dashboard', 'overdue', scope] as const,
 }
 
 export function useScheduled(from: string, to: string, scope: DashboardScope) {
@@ -40,6 +43,20 @@ export function useUndated(scope: DashboardScope) {
   return useQuery({
     queryKey: dashboardKeys.undated(scope),
     queryFn: () => fetchUndated(scope),
+  })
+}
+
+/**
+ * What is late (0011 R88).
+ *
+ * <p>Keyed on the scope alone. Not on a window, not on the anchor: overdue is
+ * reckoned from the clock, so every period shares one cache entry and
+ * navigating cannot refetch it into a different answer (R89, adr/0040).
+ */
+export function useOverdue(scope: DashboardScope) {
+  return useQuery({
+    queryKey: dashboardKeys.overdue(scope),
+    queryFn: () => fetchOverdue(scope),
   })
 }
 
@@ -76,16 +93,19 @@ export function useCompleteFromAgenda(onProblem: (message: string) => void) {
         (data) =>
           data && { ...data, items: data.items.filter((row) => row.id !== item.id) },
       )
-      queryClient.setQueriesData<Undated>({ queryKey: ['dashboard', 'undated'] }, (data) => {
-        if (!data) {
-          return data
-        }
-        const kept = data.items.filter((row) => row.id !== item.id)
-        // The total counts what the server holds rather than what is shown, so
-        // the row that just left has to come off it too - otherwise "and 37
-        // more" is counting a chore that is done.
-        return { items: kept, total: Math.max(kept.length, data.total - (data.items.length - kept.length)) }
-      })
+      // Both of the capped-page-plus-total payloads, which share a shape. The
+      // overdue strip is the third payload this has to know about, and the one
+      // whose absence would be invisible: `onSettled` invalidates
+      // `['dashboard']` wholesale, so forgetting it leaves the row sitting
+      // there for one round-trip and fails no test (adr/0040).
+      queryClient.setQueriesData<Undated>(
+        { queryKey: ['dashboard', 'undated'] },
+        (data) => withoutItem(data, item.id),
+      )
+      queryClient.setQueriesData<Overdue>(
+        { queryKey: ['dashboard', 'overdue'] },
+        (data) => withoutItem(data, item.id),
+      )
       return previous
     },
 
@@ -115,4 +135,23 @@ export function useCompleteFromAgenda(onProblem: (message: string) => void) {
       void queryClient.invalidateQueries({ queryKey: listKeys.all })
     },
   })
+}
+
+/**
+ * One row out of a capped page, with the total corrected.
+ *
+ * <p>The total counts what the server holds rather than what is shown, so the
+ * row that just left has to come off it too - otherwise "and 37 more" is
+ * counting a chore that is done.
+ */
+function withoutItem<T extends { items: DashboardItem[]; total: number }>(
+  data: T | undefined,
+  itemId: string,
+): T | undefined {
+  if (!data) {
+    return data
+  }
+  const kept = data.items.filter((row) => row.id !== itemId)
+  const removed = data.items.length - kept.length
+  return { ...data, items: kept, total: Math.max(kept.length, data.total - removed) }
 }

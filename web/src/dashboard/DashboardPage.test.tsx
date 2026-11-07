@@ -12,7 +12,10 @@ import * as dashboardApi from '../api/dashboard'
 import * as itemsApi from '../api/items'
 import type { DashboardItem } from '../api/dashboard'
 import type { CalendarEvent } from '../api/calendars'
-import { addDays, civilIn, dayKey, startOfDay } from './calendar'
+import { addDays, civilIn, dayKey, instantOf, startOfDay } from './calendar'
+
+/** The household's zone in these fixtures, as /api/me reports it. */
+const ZONE = 'Asia/Singapore'
 import { theme } from '../theme/theme'
 
 function item(overrides: Partial<DashboardItem> = {}): DashboardItem {
@@ -111,6 +114,7 @@ describe('DashboardPage', () => {
     vi.restoreAllMocks()
     vi.spyOn(dashboardApi, 'fetchScheduled').mockResolvedValue(payload())
     vi.spyOn(dashboardApi, 'fetchUndated').mockResolvedValue({ items: [], total: 0 })
+    vi.spyOn(dashboardApi, 'fetchOverdue').mockResolvedValue({ items: [], total: 0 })
   })
 
   it('opens on today', async () => {
@@ -565,6 +569,175 @@ describe('DashboardPage', () => {
         'Complete Take the bins out',
         'Complete Take the bins out with a note',
       ])
+    })
+  })
+
+
+  describe('overdue work (0011 R88-R93)', () => {
+    /** Days before today, as an instant the household reads as that day. */
+    function daysAgo(days: number): string {
+      return new Date(
+        instantOf(addDays(startOfDay(civilIn(new Date(), ZONE)), -days), ZONE),
+      ).toISOString()
+    }
+
+    function late(days: number, overrides: Partial<DashboardItem> = {}) {
+      return item({
+        id: `id-late-${days}`,
+        description: `Missed by ${days}`,
+        dueAt: daysAgo(days),
+        ...overrides,
+      })
+    }
+
+    it('says nothing at all when nothing is late', async () => {
+      renderAt('/dashboard/day')
+
+      await screen.findByRole('heading', { name: 'Today' })
+      // Not "nothing is overdue": this sits above the grid on every view, and a
+      // household that is keeping up should never see it.
+      expect(screen.queryByText(/overdue/)).not.toBeInTheDocument()
+    })
+
+    it('leads with a count, and expands to the chores behind it', async () => {
+      vi.spyOn(dashboardApi, 'fetchOverdue').mockResolvedValue({
+        items: [late(2)],
+        total: 1,
+      })
+      renderAt('/dashboard/day')
+
+      expect(await screen.findByText('1 chore is overdue')).toBeVisible()
+      // Collapsed by default - the count is the whole message until asked.
+      expect(screen.queryByText('Missed by 2')).not.toBeInTheDocument()
+
+      await userEvent.click(screen.getByRole('button', { name: 'Show' }))
+
+      expect(await screen.findByText('Missed by 2')).toBeVisible()
+      expect(screen.getByText(/Chores · due 2 days ago/)).toBeVisible()
+    })
+
+    it('says how much it is not showing', async () => {
+      // R92. The first read of this in any household is every item ever dated
+      // and never finished, so the page is capped and the total is the truth.
+      vi.spyOn(dashboardApi, 'fetchOverdue').mockResolvedValue({
+        items: [late(1)],
+        total: 38,
+      })
+      renderAt('/dashboard/day')
+
+      expect(await screen.findByText('38 chores are overdue')).toBeVisible()
+      await userEvent.click(screen.getByRole('button', { name: 'Show' }))
+      expect(await screen.findByText('and 37 more')).toBeVisible()
+    })
+
+    it('does not change when the member navigates to another period', async () => {
+      // R89, which is the requirement most easily lost: anything that passes
+      // the period into this read makes "overdue" mean "before February".
+      const fetched = vi.spyOn(dashboardApi, 'fetchOverdue').mockResolvedValue({
+        items: [late(3)],
+        total: 1,
+      })
+      renderAt('/dashboard/month')
+
+      expect(await screen.findByText('1 chore is overdue')).toBeVisible()
+      expect(fetched).toHaveBeenCalledOnce()
+      expect(fetched).toHaveBeenCalledWith('all')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Next month' }))
+
+      expect(await screen.findByText('1 chore is overdue')).toBeVisible()
+      // One cache entry for every period, so stepping through months is not a
+      // request - and cannot be a different answer.
+      expect(fetched).toHaveBeenCalledOnce()
+    })
+
+    it('is on every range, not only the day', async () => {
+      vi.spyOn(dashboardApi, 'fetchOverdue').mockResolvedValue({
+        items: [late(4)],
+        total: 1,
+      })
+      renderAt('/dashboard/week')
+
+      expect(await screen.findByText('1 chore is overdue')).toBeVisible()
+    })
+
+    it('narrows with the scope', async () => {
+      const fetched = vi.spyOn(dashboardApi, 'fetchOverdue').mockResolvedValue({
+        items: [],
+        total: 0,
+      })
+      renderAt('/dashboard/day?scope=mine')
+
+      await waitFor(() => expect(fetched).toHaveBeenCalledWith('mine'))
+    })
+
+    it('completes a late chore from the strip, with the version it was drawn from', async () => {
+      // R90. The same write the Day row makes, which is the point of reusing
+      // the mutation rather than adding one here.
+      vi.spyOn(dashboardApi, 'fetchOverdue')
+        // Once with the chore, then without it: the strip's own invalidation
+        // refetches, and a mock that kept returning it would be asserting that
+        // the optimistic removal is undone.
+        .mockResolvedValueOnce({ items: [late(2, { version: 9 })], total: 1 })
+        .mockResolvedValue({ items: [], total: 0 })
+      const completed = vi
+        .spyOn(itemsApi, 'setItemCompleted')
+        .mockResolvedValue({} as never)
+      renderAt('/dashboard/day')
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Show' }))
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Complete Missed by 2' }),
+      )
+
+      expect(completed).toHaveBeenCalledWith('id-late-2', 9, true, undefined)
+      // Optimistic in one direction only: the row leaves, and the strip with
+      // it, because the total it was counting went too.
+      await waitFor(() => expect(screen.queryByText('Missed by 2')).not.toBeInTheDocument())
+      await waitFor(() => expect(screen.queryByText(/overdue/)).not.toBeInTheDocument())
+    })
+
+    it('takes the row out before the server answers', async () => {
+      // The assertion that the mutation's own `onMutate` knows about this
+      // payload. Written against a completion that never resolves, because a
+      // test that lets the refetch land passes whether or not the optimistic
+      // update exists - which is exactly the defect adr/0040 warns is
+      // invisible.
+      vi.spyOn(dashboardApi, 'fetchOverdue').mockResolvedValue({
+        items: [late(2, { version: 9 })],
+        total: 1,
+      })
+      vi.spyOn(itemsApi, 'setItemCompleted').mockReturnValue(new Promise(() => {}))
+      renderAt('/dashboard/day')
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Show' }))
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Complete Missed by 2' }),
+      )
+
+      await waitFor(() => expect(screen.queryByText('Missed by 2')).not.toBeInTheDocument())
+      // And the strip goes with it: the total it was counting lost a chore.
+      expect(screen.queryByText(/overdue/)).not.toBeInTheDocument()
+    })
+
+    it('says how late in words a person would use', async () => {
+      vi.spyOn(dashboardApi, 'fetchOverdue').mockResolvedValue({
+        items: [late(1), late(3), late(20)],
+        total: 3,
+      })
+      renderAt('/dashboard/day')
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Show' }))
+
+      expect(await screen.findByText(/due yesterday/)).toBeVisible()
+      expect(screen.getByText(/due 3 days ago/)).toBeVisible()
+      // Beyond a week the count stops being useful and the date starts.
+      const old = new Date(instantOf(addDays(startOfDay(civilIn(new Date(), ZONE)), -20), ZONE))
+      const asDate = civilIn(old, ZONE).toLocaleDateString(undefined, {
+        day: 'numeric',
+        month: 'short',
+      })
+      expect(screen.getByText(new RegExp(`due ${asDate}`))).toBeVisible()
     })
   })
 

@@ -3,6 +3,7 @@ import {
   addMonths,
   dayKey,
   isSameMonth,
+  startOfDay,
   startOfWeek,
   type Civil,
 } from './calendar'
@@ -68,4 +69,43 @@ export function periodName(range: Range, anchor: Civil, today: Civil): string {
       : `${format.format(monday)} – ${format.format(sunday)}`
   }
   return anchor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+}
+
+/**
+ * How late a chore is, in words (0011 R90).
+ *
+ * <p>Whole days apart, in the household's civil time: both arguments are
+ * `Civil`, so this is calendar arithmetic and not an elapsed-hours count. A
+ * chore due at 23:00 yesterday and read at 07:00 today is "yesterday", which is
+ * what a person would say about it, and what an hours-based answer would call
+ * "8 hours ago".
+ *
+ * <p>Takes `today` rather than reading the clock, like everything else in these
+ * two modules: a date computed during render is a value that moves under its
+ * own refetch.
+ */
+export function latenessLabel(due: Civil, today: Civil): string {
+  // `Math.round`, and that is the whole reason this is allowed to touch
+  // milliseconds at all when `calendar.ts` says not to: both ends are already
+  // snapped to midnight, so a daylight-saving boundary between them makes the
+  // difference 23 or 25 hours rather than a whole number of days, and rounding
+  // is what turns that back into the count of days a person would give.
+  const days = Math.round(
+    (startOfDay(today).getTime() - startOfDay(due).getTime()) / 86_400_000,
+  )
+  if (days <= 0) {
+    // Not reachable from the overdue strip, whose rows the server has already
+    // decided are late - but a label is a pure function and must answer for
+    // every input it is given rather than printing "0 days ago".
+    return 'due today'
+  }
+  if (days === 1) {
+    return 'due yesterday'
+  }
+  if (days < 7) {
+    return `due ${days} days ago`
+  }
+  // Beyond a week, "due 43 days ago" is arithmetic nobody asked for; the date
+  // is what tells a member whether this is worth keeping.
+  return `due ${due.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`
 }

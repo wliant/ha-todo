@@ -399,3 +399,51 @@ def test_the_second_member_to_tick_a_chore_on_the_agenda_is_told(
     expect(
         page.get_by_text(f"{passwordless_member.display_name} completed this first")
     ).to_be_visible()
+
+
+@pytest.mark.dashboard
+def test_a_chore_whose_day_has_gone_is_shown_on_every_range(
+    page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
+) -> None:
+    """
+    0011 R88, R89, R90: a missed chore used to exist only in the window of the
+    day it was due, which nobody navigates to. It is now on the agenda wherever
+    the member is standing, and it can be cleared from there.
+
+    The count itself is not asserted: dev is a shared deployment and other
+    members' late work is legitimately in it. What this test owns is its own
+    chore.
+    """
+    name = test_data.name("Behind")
+    cleanup_lists(name)
+    ui_sign_in(page, base_url, demo_member)
+    create_list(page, name)
+
+    two_days_ago = (datetime.now() - timedelta(days=2)).replace(
+        hour=9, minute=0, second=0, microsecond=0
+    )
+    chore = test_data.name("Fix the shelf")
+    add_dated_item(page, chore, two_days_ago)
+
+    page.get_by_role("link", name="Agenda").click()
+    strip = page.get_by_role("status").filter(has_text=re.compile("overdue"))
+    expect(strip).to_be_visible()
+
+    # R89: the same strip, unchanged, on a range that has nothing to do with
+    # the day the chore was due.
+    page.get_by_role("tab", name="Month").click()
+    expect(strip).to_be_visible()
+
+    strip.get_by_role("button", name="Show").click()
+    expect(strip.get_by_text(chore, exact=True)).to_be_visible()
+    # How late, in words - the thing the grid could never say. Scoped to this
+    # run's own list: a shared deployment legitimately has other late work, and
+    # some of it is also two days old.
+    expect(
+        strip.get_by_text(re.compile(rf"{re.escape(name)} · due 2 days ago"))
+    ).to_be_visible()
+
+    # R90: cleared from where it was found, with the list's own gesture.
+    strip.get_by_role("button", name=f"Complete {chore}", exact=True).click()
+    expect(page.get_by_text(f"{chore} is done.")).to_be_visible()
+    expect(page.get_by_text(chore, exact=True)).not_to_be_visible()
