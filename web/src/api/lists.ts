@@ -69,9 +69,15 @@ export interface ListField {
   choices: CostChoice[]
 }
 
+/**
+ * The sidebar's lists, in the order it draws them (0012 R98-R102).
+ *
+ * <p>One group, not the old Pinned/Recent pair: a pin sorts first inside it
+ * rather than heading a section of its own, and the group reaches every list
+ * the member can see rather than only the ones they have opened.
+ */
 export interface Sidebar {
-  pinned: ListSummary[]
-  recent: ListSummary[]
+  lists: ListSummary[]
 }
 
 export type ListScope = 'all' | 'owned' | 'shared'

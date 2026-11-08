@@ -1,6 +1,7 @@
 package com.hatodo.data;
 
 import com.hatodo.list.ListIcon;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -40,6 +41,36 @@ public interface DataListRepository extends JpaRepository<DataList, UUID> {
                                @Param("query") String query,
                                @Param("icon") ListIcon icon,
                                @Param("scope") String scope);
+
+    /**
+     * The sidebar's collections group: every collection the member can see,
+     * ordered by how they use it (0012 R98, R100).
+     *
+     * <p>The todo-list query's shape minus the pin and recency terms, because a
+     * collection has neither (adr/0029, and 0012 R101 accepts it). The
+     * tie-break is {@code MAX(last_at)} from the bucket table - the only
+     * recency a collection has, and only a tie-break.
+     *
+     * @param since the first day of the frequency window, in the household's
+     *              zone. Supplied by the service, never by the caller.
+     */
+    @Query(value = """
+            SELECT l.* FROM data_list l
+            JOIN data_list_access a ON a.data_list_id = l.id AND a.user_id = :userId
+            LEFT JOIN (
+                SELECT data_list_id, SUM(hits) AS hits, MAX(last_at) AS last_at
+                FROM data_list_interaction_day
+                WHERE user_id = :userId AND on_day >= :since
+                GROUP BY data_list_id
+            ) f ON f.data_list_id = l.id
+            ORDER BY COALESCE(f.hits, 0) DESC,
+                     f.last_at DESC NULLS LAST,
+                     LOWER(l.name) ASC
+            LIMIT :limit
+            """, nativeQuery = true)
+    List<DataList> findForSidebar(@Param("userId") UUID userId,
+                                  @Param("since") LocalDate since,
+                                  @Param("limit") int limit);
 
     /** A collection the caller may see, or empty - which the service turns into 404. */
     @Query("""

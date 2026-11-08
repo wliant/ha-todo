@@ -4,6 +4,8 @@ export type ThemePreference = 'LIGHT' | 'DARK' | 'SYSTEM'
 
 export interface Preferences {
   theme: ThemePreference
+  /** How many lists and collections each sidebar group shows (0012 R102). */
+  sidebarListCount: number
 }
 
 export async function fetchPreferences(): Promise<Preferences> {
@@ -11,8 +13,17 @@ export async function fetchPreferences(): Promise<Preferences> {
   return data
 }
 
-export async function updatePreferences(theme: ThemePreference): Promise<Preferences> {
-  const { data } = await api.patch<Preferences>('/me/preferences', { theme })
+/**
+ * The theme is always sent; the sidebar size only when it is being changed.
+ *
+ * <p>Omitting it means "unchanged" on the server, so a theme switch cannot
+ * reset a number the member set from the other control.
+ */
+export async function updatePreferences(
+  theme: ThemePreference,
+  sidebarListCount?: number,
+): Promise<Preferences> {
+  const { data } = await api.patch<Preferences>('/me/preferences', { theme, sidebarListCount })
   return data
 }
 

@@ -1,5 +1,6 @@
 package com.hatodo.list;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -46,6 +47,52 @@ public interface TodoListRepository extends JpaRepository<TodoList, UUID> {
                                @Param("icon") ListIcon icon,
                                @Param("scope") String scope,
                                @Param("pinnedOnly") boolean pinnedOnly);
+
+    /**
+     * The sidebar's one group: every list the member can see, ordered by how
+     * they use it (0012 R98, R100, R101).
+     *
+     * <p>Native, because of the {@code NULLS LAST} and the aggregate join -
+     * both of which JPQL cannot say.
+     *
+     * <p>Three things here are load-bearing:
+     * <ul>
+     *   <li>The {@code JOIN} on {@code list_access} is the access filter, in
+     *       SQL, as every list read is. The owner holds a grant of their own.
+     *   <li>Both other joins are {@code LEFT}, which is R98: a list with no
+     *       state row and no buckets still comes back. The old "recent" query
+     *       required a state row, so a list nobody had opened on this account -
+     *       including one just created, and every list somebody else shared -
+     *       was absent from the sidebar entirely.
+     *   <li>{@code (s.pinned_at IS NOT NULL) DESC} is R101. A boolean sorts
+     *       false before true ascending in Postgres, so pinned-first is
+     *       {@code DESC}.
+     * </ul>
+     *
+     * @param since the first day of the frequency window, in the household's
+     *              zone. A parameter of the query and deliberately not of the
+     *              endpoint, for adr/0040's reason: a window a caller supplies
+     *              is a window that drifts.
+     */
+    @Query(value = """
+            SELECT l.* FROM todo_list l
+            JOIN list_access a ON a.list_id = l.id AND a.user_id = :userId
+            LEFT JOIN list_user_state s ON s.list_id = l.id AND s.user_id = :userId
+            LEFT JOIN (
+                SELECT list_id, SUM(hits) AS hits
+                FROM list_interaction_day
+                WHERE user_id = :userId AND on_day >= :since
+                GROUP BY list_id
+            ) f ON f.list_id = l.id
+            ORDER BY (s.pinned_at IS NOT NULL) DESC,
+                     COALESCE(f.hits, 0) DESC,
+                     s.last_interacted_at DESC NULLS LAST,
+                     LOWER(l.name) ASC
+            LIMIT :limit
+            """, nativeQuery = true)
+    List<TodoList> findForSidebar(@Param("userId") UUID userId,
+                                  @Param("since") LocalDate since,
+                                  @Param("limit") int limit);
 
     /** A list the caller may see, or empty - which the service turns into 404. */
     @Query("""

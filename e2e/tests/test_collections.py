@@ -9,6 +9,8 @@ and the second create fails on the per-owner unique index.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -121,9 +123,12 @@ def test_global_search_says_which_collection_a_hit_came_from(
     go_to_collections(page)
     page.get_by_role("textbox", name="Search everything").fill("zabaglione")
 
-    expect(page.get_by_text("Zabaglione", exact=True)).to_be_visible()
-    expect(page.get_by_role("link", name=recipes)).to_be_visible()
-    expect(page.get_by_role("link", name=words)).to_be_visible()
+    # Scoped to the main region: the sidebar's Collections group names both
+    # collections too now (0012 R98), so an unscoped link query is ambiguous.
+    results = page.get_by_role("main")
+    expect(results.get_by_text("Zabaglione", exact=True)).to_be_visible()
+    expect(results.get_by_role("link", name=recipes)).to_be_visible()
+    expect(results.get_by_role("link", name=words)).to_be_visible()
 
 
 @pytest.mark.collections
@@ -194,10 +199,17 @@ def test_a_collection_is_not_a_list_and_asks_for_no_due_date(
     ui_sign_in(page, base_url, demo_member)
 
     make_collection(page, name)
+
+    # 0012 R98: in the sidebar's Collections group straight away, without
+    # having been opened first.
+    expect(
+        page.get_by_role("navigation", name="Main").get_by_role("link", name=name)
+    ).to_be_visible()
+
     page.get_by_role("button", name="New entry").click()
 
     expect(page.get_by_role("textbox", name="Name", exact=True)).to_be_visible()
-    expect(page.get_by_label("Due")).to_have_count(0)
+    expect(page.get_by_label(re.compile(r"^Date"))).to_have_count(0)
     expect(page.get_by_role("button", name="Complete")).to_have_count(0)
 
 

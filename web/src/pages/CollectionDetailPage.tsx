@@ -21,6 +21,7 @@ import {
   useDeleteEntry,
   useEntries,
   useTagSuggestions,
+  useTouchCollection,
 } from '../data/queries'
 
 /**
@@ -48,6 +49,17 @@ export function CollectionDetailPage() {
   const { data: entries, isPending, isError } = useEntries(listId, query)
   const { data: suggestions } = useTagSuggestions(listId)
   const deleteEntry = useDeleteEntry()
+  const touch = useTouchCollection()
+
+  useEffect(() => {
+    if (collection) {
+      touch(collection.id)
+    }
+    // Once per collection, guarded inside the hook: refetch-on-focus must not
+    // turn into a write every time the member glances at another tab. This is
+    // the only thing that records a visit, and the sidebar's order is the only
+    // thing that reads it (0012 R100).
+  }, [collection, touch])
 
   const [openEntry, setOpenEntry] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)

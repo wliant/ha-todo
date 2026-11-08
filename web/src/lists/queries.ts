@@ -159,8 +159,11 @@ function repin(data: unknown, id: string, pinned: boolean): unknown {
     if ('pinned' in record && record.id === id) {
       return { ...record, pinned }
     }
-    if ('pinned' in record && 'recent' in record) {
-      return { pinned: repin(record.pinned, id, pinned), recent: repin(record.recent, id, pinned) }
+    // The sidebar's envelope. Shape-specific on purpose: a generic walk over
+    // every value of every cached object would rewrite payloads this has no
+    // business touching.
+    if (Array.isArray(record.lists)) {
+      return { ...record, lists: repin(record.lists, id, pinned) }
     }
   }
   return data

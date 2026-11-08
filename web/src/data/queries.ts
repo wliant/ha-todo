@@ -3,8 +3,10 @@ import {
   createCollection,
   deleteCollection,
   fetchCollection,
+  fetchCollectionSidebar,
   fetchCollections,
   fetchTagSuggestions,
+  touchCollection,
   updateCollection,
   updateCollectionAccess,
   type CollectionFilters,
@@ -30,6 +32,7 @@ export const collectionKeys = {
   all: ['collections'] as const,
   search: (filters: CollectionFilters) => ['collections', 'search', filters] as const,
   detail: (id: string) => ['collections', 'detail', id] as const,
+  sidebar: ['collections', 'sidebar'] as const,
   tags: (id: string) => ['collections', 'detail', id, 'tags'] as const,
   entries: (id: string, query: EntryQuery) =>
     ['collections', 'detail', id, 'entries', query] as const,
@@ -176,4 +179,37 @@ export function useDeleteEntry() {
     mutationFn: ({ id, version }: { id: string; version: number }) => deleteEntry(id, version),
     onSuccess: invalidate,
   })
+}
+
+
+/** The sidebar's collections group (0012 R98). */
+export function useCollectionSidebar() {
+  return useQuery({ queryKey: collectionKeys.sidebar, queryFn: fetchCollectionSidebar })
+}
+
+/**
+ * Records that the member opened a collection, once per collection per session.
+ *
+ * <p>The guard is module-level rather than component state for the reason
+ * `useTouchList`'s is: refetchOnWindowFocus would otherwise turn every glance
+ * at another tab into a write. Cleared on sign-out, where the query cache is
+ * cleared too.
+ */
+const touched = new Set<string>()
+
+export function clearTouchedCollections(): void {
+  touched.clear()
+}
+
+export function useTouchCollection() {
+  const queryClient = useQueryClient()
+  return (id: string) => {
+    if (touched.has(id)) {
+      return
+    }
+    touched.add(id)
+    void touchCollection(id)
+      .then(() => queryClient.invalidateQueries({ queryKey: collectionKeys.sidebar }))
+      .catch(() => touched.delete(id))
+  }
 }

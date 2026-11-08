@@ -110,3 +110,27 @@ export async function fetchTagSuggestions(id: string, q?: string): Promise<TagSu
   })
   return data
 }
+
+/**
+ * The sidebar's collections group (0012 R98).
+ *
+ * <p>Its own request rather than a second field on the lists' sidebar: the two
+ * groups are independent and nothing is drawn from both, so there is no pair of
+ * values that can disagree while one is in flight (adr/0042).
+ */
+export interface CollectionSidebar {
+  collections: CollectionSummary[]
+}
+
+export async function fetchCollectionSidebar(): Promise<CollectionSidebar> {
+  const { data } = await api.get<CollectionSidebar>('/data-lists/sidebar')
+  return data
+}
+
+/**
+ * "I opened this collection." A write the client asks for, not a side effect of
+ * reading - the same reason a list's touch is a POST.
+ */
+export async function touchCollection(id: string): Promise<void> {
+  await api.post(`/data-lists/${id}/touch`)
+}

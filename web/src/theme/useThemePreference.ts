@@ -1,6 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useColorScheme } from '@mui/material/styles'
-import { fetchPreferences, updatePreferences, type ThemePreference } from '../api/profile'
+import {
+  fetchPreferences,
+  updatePreferences,
+  type Preferences,
+  type ThemePreference,
+} from '../api/profile'
+import { listKeys } from '../lists/queries'
+import { collectionKeys } from '../data/queries'
 
 export const preferencesKey = ['me', 'preferences'] as const
 
@@ -28,8 +35,14 @@ export function useThemePreference() {
     // Optimistic, because the control this drives is a radio: a member tapping
     // one expects it to select under their finger, not after a round trip.
     onMutate: (theme) => {
-      const previous = queryClient.getQueryData<{ theme: ThemePreference }>(preferencesKey)
-      queryClient.setQueryData(preferencesKey, { theme })
+      const previous = queryClient.getQueryData<Preferences>(preferencesKey)
+      // Merged, never replaced. This row carries more than the theme now, and
+      // writing `{ theme }` over it leaves every other preference undefined
+      // until the server answers - which reads as the sidebar briefly
+      // forgetting how many lists to show.
+      queryClient.setQueryData<Preferences>(preferencesKey, (current) =>
+        current ? { ...current, theme } : current,
+      )
       return previous
     },
     onError: (_error, _theme, previous) => {
@@ -66,4 +79,44 @@ export function toMuiMode(theme: ThemePreference): 'light' | 'dark' | 'system' {
 
 export function fromMuiMode(mode: string | undefined): ThemePreference {
   return mode === 'light' ? 'LIGHT' : mode === 'dark' ? 'DARK' : 'SYSTEM'
+}
+
+
+/**
+ * How many lists and collections each sidebar group shows (0012 R102).
+ *
+ * <p>Its own hook beside the theme rather than a second return value on it:
+ * they share a cache entry and an endpoint, and nothing else. The theme is
+ * resent with every patch because the server requires it; the size is omitted
+ * from a theme change for the same reason, so neither control can clobber the
+ * other.
+ */
+export function useSidebarListCount() {
+  const queryClient = useQueryClient()
+  const query = useQuery({
+    queryKey: preferencesKey,
+    queryFn: fetchPreferences,
+    staleTime: 60_000,
+  })
+
+  const mutation = useMutation({
+    mutationFn: (count: number) =>
+      updatePreferences(query.data?.theme ?? 'SYSTEM', count),
+    onSuccess: (preferences) => {
+      queryClient.setQueryData(preferencesKey, preferences)
+      // The server applies the cap, so the groups have to be refetched rather
+      // than re-sliced on the client. Both keys, by their own definitions: the
+      // two sidebar trees are siblings and neither prefix reaches the other.
+      void queryClient.invalidateQueries({ queryKey: listKeys.sidebar })
+      void queryClient.invalidateQueries({ queryKey: collectionKeys.sidebar })
+    },
+  })
+
+  return {
+    /** Undefined until the stored preference is known. */
+    count: query.data?.sidebarListCount,
+    isPending: mutation.isPending,
+    error: mutation.error,
+    choose: (count: number) => mutation.mutate(count),
+  }
 }

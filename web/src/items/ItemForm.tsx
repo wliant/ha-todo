@@ -8,6 +8,7 @@ import type { ListField, ListMember } from '../api/lists'
 import { Suspense, lazy } from 'react'
 import Skeleton from '@mui/material/Skeleton'
 import type { ItemCostValue, SaveItem } from '../api/items'
+import { DueAtField } from './DueAtField'
 
 /**
  * Loaded only when a list actually asks for a detail field.
@@ -118,15 +119,10 @@ export function ItemForm({
       )}
 
       {asked(dueAt) && dueAt && (
-        <TextField
-          label="Due"
-          type="datetime-local"
+        <DueAtField
+          value={value.dueAt}
           required={dueAt.required}
-          value={toLocalInput(value.dueAt)}
-          onChange={(event) =>
-            onChange({ ...value, dueAt: fromLocalInput(event.target.value) })
-          }
-          slotProps={{ inputLabel: { shrink: true } }}
+          onChange={(dueAt) => onChange({ ...value, dueAt })}
         />
       )}
 
@@ -195,18 +191,4 @@ export function ItemForm({
       )}
     </Stack>
   )
-}
-
-/** datetime-local speaks local time with no zone; the API speaks instants. */
-function toLocalInput(iso: string | null | undefined): string {
-  if (!iso) {
-    return ''
-  }
-  const date = new Date(iso)
-  const offset = date.getTimezoneOffset() * 60_000
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16)
-}
-
-function fromLocalInput(local: string): string | null {
-  return local ? new Date(local).toISOString() : null
 }

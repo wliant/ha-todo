@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-**Everything specified so far is built, as of 2026-11-07.** Build, local stack, deploy scripts and all
-three test harnesses are real and passing: 247 backend unit tests, 230 integration tests, 242 frontend
-tests, 90 end-to-end.
+**Everything specified so far is built, as of 2026-11-08.** Build, local stack, deploy scripts and all
+three test harnesses are real and passing: 249 backend unit tests, 238 integration tests, 257 frontend
+tests, 93 end-to-end.
 
 Implemented: **accounts and administration (R8-R12)** — username identity, optional per-user passwords, a
 pick-a-user sign-in screen, and a single admin who adds and deletes users. **The PWA (R13, R14)** —
@@ -195,6 +195,69 @@ against a promise that never resolves, so the refetch cannot do the work for it)
 `ButtonBase`-with-a-sibling-control shape exists once, which is where `adr/0039`'s invalid nesting would
 otherwise grow back.
 
+**R94-R103 are implemented.** `docs/requirements/0012` and `docs/design/0012` are two small frictions in
+the gesture a member performs most often, with `docs/adr/0041` and `0042` recording the decisions.
+
+**Dating a chore is now two taps** (R94-R97). `items/DueAtField` replaces the bare `datetime-local`:
+Today and Tomorrow chips, −/+ day steppers, a separate time box **defaulting to 23:59**, and a Clear
+chip when the list does not insist on a date. The ISO instant stays the single source of truth — the
+component holds no copy of the date, so an item loaded for edit cannot leave it showing something the
+form is not holding. Its one piece of local state is `pendingTime`, the time typed before a date was
+picked.
+
+**Two things in there are easy to break.** The conversion is `instantOf(...)` from
+`dashboard/calendar.ts`, **never `new Date(localString)`** — the old input spoke the *device's* zone, so
+"Thursday 09:00" typed on a phone set to London was an instant the agenda filed under Wednesday, which
+is the one bug `adr/0036` exists to prevent. `ItemForm`'s `toLocalInput`/`fromLocalInput` were
+**deleted** rather than left for reuse: a helper by that name sitting in the file is an invitation back.
+And 23:59 rather than midnight is load-bearing, not cosmetic — midnight belongs to the day *before* the
+one a member meant, so a chore dated Thursday would sit on Wednesday's row and read as overdue by
+Thursday lunchtime.
+
+**The sidebar reaches every list and collection** (R98-R103), and **Pinned and Recent are gone**. They
+showed only lists with a recorded interaction, so a list just created — and every list somebody else
+shared — was absent until opened once, which is the opposite of what a shortcut is for. Lists and
+Collections are now expandable groups in the menu, both open by default, ordered **pinned first, then by
+how often the member opened it over the last month**, capped at `sidebar_list_count` (R102, default 10,
+bounded 1-30, beside the theme on `app_user`).
+
+**Frequency is a pruned daily bucket, not a counter** (`docs/adr/0041`). `list_interaction_day` /
+`data_list_interaction_day` hold one row per (list, member, household day) with `hits` and `last_at`. A
+monotonic `interaction_count` would rank *lifetime* use and never forget, which is the decay R100 asks
+for; per-visit rows would need a second `@Scheduled` job, and `adr/0025` says that costs more than it
+looks. Three things fall out of the shape and all three are why it was chosen: the 15-minute dedup
+window is read from the row being written (`ON CONFLICT ... DO UPDATE ... WHERE last_at < ...`), so
+**collections get frequency without getting a state table** — `list_user_state.list_id` is still an FK to
+`todo_list` and must not be loosened; each `record` is followed by a `prune` scoped to the **member**,
+not the list, because the buckets worth dropping belong to the lists they *stopped* opening; and the
+table is bounded by construction.
+
+**Four things in there are easy to break.** The window is enforced by **two independent statements**
+sharing one constant (`InteractionWindow.DEDUP_MINUTES`) — they can legitimately disagree at midnight,
+and making one read the other's row reintroduces an ordering dependency between two writes in one
+method, after which the second silently stops counting. `on_day` is **application-supplied** in
+`app.timezone` for the reason `occurs_on` is. Both sidebar queries are **native** and both outer joins
+are **LEFT** — that is R98, and a reader who "tidies" one into an inner join quietly restores the old
+only-what-you-opened behaviour. And `useThemePreference.onMutate` now **merges** into the cached
+preferences rather than writing `{ theme }` over them: that row carries more than the theme, and
+replacing it leaves the sidebar size undefined until the server answers.
+
+**Which groups are open is `SideNav`'s own state** (`docs/adr/0042`), which narrows `adr/0015` again
+rather than dropping it: disclosure is not placement. The test for the next component that wants state
+is "is this about where something sits, or about something the member did?" — placement is still CSS,
+nobody else calls `useMediaQuery`, and the state is deliberately **not persisted**. The chevron and the
+create button are **siblings** of the group's `ListItemButton`, not children, so the label still
+navigates and the invalid nesting `adr/0039` had to undo once does not grow back. The sidebar now asks
+**twice** — `GET /api/lists/sidebar` and `GET /api/data-lists/sidebar` — because the groups are
+independent and nothing is drawn from both, so there is no pair of values that can disagree; a
+cross-aggregate read would be a third place that has to remember collections exist. `SidebarResponse`
+lost its `pinned`/`recent` split rather than gaining a field, so every reader broke at compile time.
+
+**A latent e2e bug was fixed in passing**:
+`test_dashboard.py::test_opening_an_item_is_a_url_the_back_button_closes` loaded
+`/dashboard/week` and looked for a chore due *tomorrow*. Weeks start Monday, so it passed six days out
+of seven and failed on a Sunday. It now anchors on `?on=<the chore's day>`.
+
 Keep this file true: when a decision here turns out wrong, update it in the same change.
 
 ## What this product is
@@ -304,7 +367,7 @@ migrations after every versioned one and re-runs them when their content changes
 edited freely and can never sit in front of a schema change. The old versioned seed at `V900` is why the
 schema series resumes at **V901** — a lower version would be out of order on any database that applied it,
 and why local/dev set `flyway.ignore-migration-patterns: "*:missing"`. Prod never applied it and keeps
-strict validation. The highest applied migration is **V916**; new ones continue from V917.
+strict validation. The highest applied migration is **V917**; new ones continue from V918.
 
 **Authorization is per-list access, not household-scoped.** Every read and write is checked against the
 caller's grant on that list, enforced in the service layer — not only in the controller and not only in
@@ -425,11 +488,13 @@ installed iPhone app cannot appear in the share sheet — a platform limit, not 
 (`breakpoints.values.sm = 768`) so it is one number in one place. Above it the sidebar is a permanent
 `Drawer`; below it a temporary one behind a hamburger.
 
-`AppShell` owns the **only** piece of layout state in the app and makes the **only** `useMediaQuery`
-call. A drawer opens and closes, which is behaviour rather than placement, so the old CSS-only rule
-could not express it — see `docs/adr/0015`. The rule is narrowed, not dropped: nothing else may acquire
-layout state, and everything else responsive stays CSS. The drawer's open state is *derived* from the
-pathname (`openedOver === pathname`), so a navigation closes it by construction, back button included.
+`AppShell` owns the drawer's open state and makes the **only** `useMediaQuery` call. A drawer opens and
+closes, which is behaviour rather than placement, so the old CSS-only rule could not express it — see
+`docs/adr/0015`. The rule is narrowed twice, not dropped: `SideNav` also owns which of its two groups
+are expanded (`adr/0042`), on the same reasoning — disclosure is not placement. Everything about *where*
+something sits is still CSS, and nothing else calls `useMediaQuery`. The drawer's open state is
+*derived* from the pathname (`openedOver === pathname`), so a navigation closes it by construction, back
+button included.
 The bottom bar is gone; a second navigation surface is how two layouts start to drift.
 
 **Styling is the MUI theme, and nothing else.** `web/src/theme/theme.ts` is the single source of truth

@@ -9,11 +9,12 @@ the server merges on.
 from __future__ import annotations
 
 import re
+from datetime import datetime
 
 import pytest
 from playwright.sync_api import Page, expect
 
-from conftest import DemoMember, TestData, ui_sign_in
+from conftest import DemoMember, TestData, fill_due, ui_sign_in
 
 
 def create_list(page: Page, name: str) -> str:
@@ -142,7 +143,7 @@ def test_a_brand_new_list_already_offers_a_due_date(
     page.get_by_role("button", name="Add item").click()
     page.get_by_role("button", name="More fields").click()
     page.get_by_role("textbox", name="Description").fill("Pay the rent")
-    page.get_by_role("textbox", name="Due").fill("2026-12-01T09:00")
+    fill_due(page, datetime(2026, 12, 1, 9, 0))
     page.get_by_role("button", name="Save").click()
 
     expect(page.get_by_text("Pay the rent")).to_be_visible()
@@ -155,3 +156,56 @@ def test_a_brand_new_list_already_offers_a_due_date(
     due_date = page.get_by_role("switch", name="Due date and time")
     expect(due_date).to_be_checked()
     expect(due_date).to_be_disabled()
+
+@pytest.mark.fields
+def test_a_due_date_is_two_taps_and_defaults_to_the_end_of_the_day(
+    page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
+) -> None:
+    """
+    0012 R94, R95, R97: Today and Tomorrow in one tap, 23:59 supplied, the date
+    steppable a day at a time, and clearable.
+    """
+    name = test_data.name("QuickDue")
+    cleanup_lists(name)
+    ui_sign_in(page, base_url, demo_member)
+    create_list(page, name)
+
+    page.get_by_role("button", name="Add item").click()
+    page.get_by_role("button", name="More fields").click()
+    page.get_by_role("textbox", name="Description").fill("Bins out")
+
+    date = page.get_by_label(re.compile(r"^Date"))
+    time = page.get_by_label(re.compile(r"^Time"))
+
+    # Nothing set, so there is no date to step - and the control says so rather
+    # than inventing a starting point.
+    expect(date).to_have_value("")
+    expect(page.get_by_role("button", name="A day later")).to_be_disabled()
+
+    page.get_by_role("button", name="Today", exact=True).click()
+    today = date.input_value()
+    assert today != ""
+    # R95. Midnight would put the chore on the day before the one it means.
+    expect(time).to_have_value("23:59")
+
+    page.get_by_role("button", name="Tomorrow", exact=True).click()
+    tomorrow = date.input_value()
+    assert tomorrow > today
+
+    # And a day either side of wherever it is.
+    page.get_by_role("button", name="A day earlier").click()
+    expect(date).to_have_value(today)
+    page.get_by_role("button", name="A day later").click()
+    expect(date).to_have_value(tomorrow)
+
+    # R97: optional here, so it can be taken off without emptying the form.
+    page.get_by_role("button", name="Clear", exact=True).click()
+    expect(date).to_have_value("")
+
+    page.get_by_role("button", name="Tomorrow", exact=True).click()
+    page.get_by_role("button", name="Save").click()
+
+    expect(page.get_by_text("Bins out")).to_be_visible()
+    # Anchored: the list's own name ends in "Due" and would otherwise match.
+    # The time rides along, which is R95 read back off the saved item.
+    expect(page.get_by_text(re.compile(r"^Due\b.*(11:59|23:59)"))).to_be_visible()

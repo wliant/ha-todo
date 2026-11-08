@@ -1,5 +1,6 @@
 """
-Lists: making them, finding them, pinning them (requirements/0004 R18, R26-R28).
+Lists: making them, finding them, pinning them (requirements/0004 R18, R26-R28,
+and 0012 R98-R102 for the sidebar they appear in).
 
 Who can see one is test_access.py's subject, because that needs two browser
 contexts and is the reason this suite exists.
@@ -7,10 +8,12 @@ contexts and is the reason this suite exists.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from playwright.sync_api import Page, expect
 
-from conftest import DemoMember, TestData, ui_sign_in
+from conftest import DemoMember, TestData, profile_link, ui_sign_in
 
 
 @pytest.mark.lists
@@ -35,8 +38,8 @@ def test_member_creates_a_list_and_then_finds_it_by_name(
     expect(page.get_by_text("Jobs outside")).to_be_visible()
 
     # And it is findable among everything else. Scoped to the main region: the
-    # sidebar lists it under Recent too, and whether that has refreshed yet is
-    # not what this test is about.
+    # sidebar's Lists group names it too (0012 R98), and whether that has
+    # refreshed yet is not what this test is about.
     page.get_by_role("link", name="Lists").first.click()
     results = page.get_by_role("main")
     results.get_by_role("textbox", name="Search lists").fill(name)
@@ -47,9 +50,14 @@ def test_member_creates_a_list_and_then_finds_it_by_name(
 
 
 @pytest.mark.lists
-def test_pinning_a_list_puts_it_in_the_sidebar(
+def test_pinning_a_list_marks_it_in_the_sidebar(
     page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
 ) -> None:
+    """
+    0012 R98, R101. The sidebar reaches every list now, so the list being
+    *there* is no longer what a pin changes - what it changes is that the row
+    sorts first and says why.
+    """
     name = test_data.name("Pinned")
     cleanup_lists(name)
     ui_sign_in(page, base_url, demo_member)
@@ -62,14 +70,59 @@ def test_pinning_a_list_puts_it_in_the_sidebar(
     page.get_by_role("button", name="Create list").click()
     expect(page.get_by_role("heading", name=name)).to_be_visible()
 
-    page.get_by_role("button", name=f"Pin {name}").click()
+    # In the sidebar before anything is pinned or even opened twice.
+    row = page.get_by_role("link", name=re.compile(rf"^{re.escape(name)}"))
+    expect(row).to_be_visible()
+    expect(row.get_by_label("Pinned")).to_have_count(0)
 
-    sidebar = page.get_by_text("Pinned", exact=True)
-    expect(sidebar).to_be_visible()
-    expect(page.get_by_role("link", name=name)).to_be_visible()
+    page.get_by_role("button", name=f"Pin {name}").click()
+    expect(row.get_by_label("Pinned")).to_have_count(1)
 
     page.get_by_role("button", name=f"Unpin {name}").click()
-    expect(page.get_by_text("Pinned", exact=True)).not_to_be_visible()
+    expect(row.get_by_label("Pinned")).to_have_count(0)
+
+
+@pytest.mark.lists
+def test_the_sidebar_groups_collapse_and_still_navigate(
+    page: Page, base_url: str, demo_member: DemoMember
+) -> None:
+    """0012 R99: the label is a link, the chevron is a separate control."""
+    ui_sign_in(page, base_url, demo_member)
+
+    expect(page.get_by_role("button", name="Hide lists").first).to_be_visible()
+    page.get_by_role("button", name="Hide lists").first.click()
+    expect(page.get_by_role("button", name="Show lists").first).to_be_visible()
+
+    # Collapsed, the group's own label still goes to the index.
+    page.get_by_role("link", name="Lists").first.click()
+    expect(page.get_by_role("heading", name="Lists")).to_be_visible()
+
+
+@pytest.mark.lists
+def test_the_sidebar_shows_as_many_lists_as_the_member_asks_for(
+    page: Page, base_url: str, demo_member: DemoMember
+) -> None:
+    """
+    0012 R102. Read through the control rather than by counting rows: how many
+    lists this account happens to have is demo data, not something to assert.
+    """
+    ui_sign_in(page, base_url, demo_member)
+    profile_link(page, demo_member).click()
+
+    field = page.get_by_label(re.compile(r"^Lists shown in each group"))
+    expect(field).to_have_value("10")
+    field.fill("2")
+    field.blur()
+
+    page.reload()
+    expect(page.get_by_label(re.compile(r"^Lists shown in each group"))).to_have_value("2")
+
+    # Put it back, because this account is shared with every other test.
+    restored = page.get_by_label(re.compile(r"^Lists shown in each group"))
+    restored.fill("10")
+    restored.blur()
+    page.reload()
+    expect(page.get_by_label(re.compile(r"^Lists shown in each group"))).to_have_value("10")
 
 
 @pytest.mark.lists

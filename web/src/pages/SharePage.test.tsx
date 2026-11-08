@@ -70,8 +70,7 @@ describe('SharePage', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
     vi.spyOn(listsApi, 'fetchSidebar').mockResolvedValue({
-      pinned: [],
-      recent: [list('id-recent', 'Groceries'), list('id-older', 'Chores')],
+      lists: [list('id-recent', 'Groceries'), list('id-older', 'Chores')],
     })
     // The picker now asks for both kinds (R59). Mocked here so every existing
     // case keeps exercising one request per feature rather than a failing one.
@@ -87,7 +86,7 @@ describe('SharePage', () => {
     expect(screen.getByText('Look at this')).toBeVisible()
   })
 
-  it('adds it to the most recently touched list without being asked', async () => {
+  it('adds it to the list the sidebar puts first without being asked', async () => {
     // One tap in the common case - the member was just looking at it.
     const create = vi.spyOn(itemsApi, 'createItem').mockResolvedValue({} as never)
     renderShare('?title=A%20recipe&url=https://example.com')
@@ -140,7 +139,7 @@ describe('SharePage', () => {
     )
   })
 
-  it('still preselects the most recent list rather than a collection', async () => {
+  it('still preselects a list rather than a collection', async () => {
     // Collections have no recency (adr/0029), so the preselection stays
     // todo-only. This is the documented gap, asserted so it stays deliberate.
     const createItem = vi.spyOn(itemsApi, 'createItem').mockResolvedValue({} as never)
@@ -159,7 +158,7 @@ describe('SharePage', () => {
   })
 
   it('sends a member with no lists to make one', async () => {
-    vi.spyOn(listsApi, 'fetchSidebar').mockResolvedValue({ pinned: [], recent: [] })
+    vi.spyOn(listsApi, 'fetchSidebar').mockResolvedValue({ lists: [] })
     vi.spyOn(dataListsApi, 'fetchCollections').mockResolvedValue([])
     renderShare('?url=https://example.com')
 

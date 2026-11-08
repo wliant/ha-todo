@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import os
+import re
 import secrets
 import time
-import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 
@@ -226,6 +226,19 @@ def profile_link(page, member: DemoMember):
     enough to trip over.
     """
     return page.get_by_role("link", name=f"{member.display_name} Your profile")
+
+
+def fill_due(page, when) -> None:
+    """
+    Set a due date through the control 0012 R94-R96 replaced the bare
+    datetime-local with: a date box, a time box, and two day-steppers.
+
+    Labels are matched by prefix because MUI appends the required marker to the
+    label text, and because a list's settings screen carries a "Due date and
+    time" switch that a loose "Date" would also match.
+    """
+    page.get_by_label(re.compile(r"^Date")).fill(when.strftime("%Y-%m-%d"))
+    page.get_by_label(re.compile(r"^Time")).fill(when.strftime("%H:%M"))
 
 
 def ui_sign_in(page, base_url: str, member: DemoMember) -> None:

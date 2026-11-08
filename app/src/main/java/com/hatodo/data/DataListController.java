@@ -47,6 +47,19 @@ public class DataListController {
         return collections.search(q, icon, scope);
     }
 
+    /**
+     * The sidebar's collections group (0012 R98). Its own endpoint rather than a
+     * second component on the lists' sidebar response - adr/0042, and adr/0029
+     * for why a DataList read does not happen inside ListController.
+     *
+     * <p>A literal path beside {@code /{id}}: Spring prefers the literal, so
+     * "sidebar" is never parsed as a UUID.
+     */
+    @GetMapping("/sidebar")
+    public DataListSidebarResponse sidebar() {
+        return collections.sidebar();
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public DataListDetailResponse create(@Valid @RequestBody CreateDataListRequest request) {
@@ -87,5 +100,15 @@ public class DataListController {
     public List<TagSuggestionResponse> tags(@PathVariable UUID id,
                                             @RequestParam(required = false) String q) {
         return entries.tagSuggestions(id, q);
+    }
+
+    /**
+     * "I opened this collection." A POST, not a side effect of the GET, so a
+     * read stays a read and a prefetch cannot reorder somebody's sidebar.
+     */
+    @PostMapping("/{id}/touch")
+    public ResponseEntity<Void> touch(@PathVariable UUID id) {
+        collections.touch(id);
+        return ResponseEntity.noContent().build();
     }
 }

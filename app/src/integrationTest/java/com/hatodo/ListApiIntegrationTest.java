@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -20,6 +22,10 @@ import org.springframework.http.ResponseEntity;
  */
 @SuppressWarnings({"unchecked", "rawtypes"})
 class ListApiIntegrationTest extends ApiIntegrationTest {
+
+    /** For backdating interaction buckets: see hitsOnDifferentDays. */
+    @Autowired
+    private JdbcTemplate jdbc;
 
     private record Member(String username, UUID id, Session session) {}
 
@@ -212,6 +218,7 @@ class ListApiIntegrationTest extends ApiIntegrationTest {
                 .isEqualTo(HttpStatus.NO_CONTENT);
 
         assertThat(pinnedIds(ana.session())).contains(id);
+        assertThat(sidebarIds(ana.session())).as("a pin sorts first (R101)").startsWith(id);
         assertThat(pinnedIds(ben.session())).as("one member's pins are their own").doesNotContain(id);
 
         rest.exchange("/api/lists/" + id + "/pin", HttpMethod.DELETE,
@@ -220,20 +227,115 @@ class ListApiIntegrationTest extends ApiIntegrationTest {
     }
 
     @Test
-    void touchingTwiceInsideTheWindowLeavesOneTimestamp() {
-        // Pure SQL - the conditional upsert is what keeps recency off the hot
-        // path, and nothing but a real database can show that it holds.
+    void touchingTwiceInsideTheWindowCountsOnce() {
+        // Pure SQL - both conditional upserts are what keep a visit off the hot
+        // path, and nothing but a real database can show that they hold. Read
+        // through the ordering rather than the row, because the ordering is the
+        // only thing that ever reads it: two touches of A and one of B must
+        // still leave A ahead, which is only true if the second touch of A was
+        // *not* counted.
         Member ana = givenMember("toucher");
-        String id = (String) createList(ana.session(), "Touched " + ana.username()).getBody().get("id");
+        String a = (String) createList(ana.session(), "Aaa " + ana.username()).getBody().get("id");
+        String b = (String) createList(ana.session(), "Bbb " + ana.username()).getBody().get("id");
 
-        rest.exchange("/api/lists/" + id + "/touch", HttpMethod.POST,
-                new HttpEntity<>(headersFor(ana.session())), Void.class);
-        String first = recentIds(ana.session()).toString();
-        rest.exchange("/api/lists/" + id + "/touch", HttpMethod.POST,
+        touch(ana.session(), a);
+        touch(ana.session(), a);
+        touch(ana.session(), b);
+
+        assertThat(sidebarIds(ana.session())).as("one hit each, so the tie-break decides")
+                .startsWith(b);
+    }
+
+    @Test
+    void theSidebarReachesAListNobodyHasOpened() {
+        // R98. The old "recent" query required a list_user_state row, so a list
+        // just created - and every list somebody else shared - was absent from
+        // the sidebar until it had been opened once.
+        Member ana = givenMember("unopened");
+        Member ben = givenMember("unopened-sharer");
+        String mine = (String) createList(ana.session(), "Mine " + ana.username()).getBody().get("id");
+        String theirs = (String) createList(ben.session(), "Theirs " + ben.username(),
+                ana.id().toString()).getBody().get("id");
+
+        assertThat(sidebarIds(ana.session())).contains(mine, theirs);
+    }
+
+    @Test
+    void theSidebarPutsTheListTheMemberUsesMostFirst() {
+        // R100. Frequency, not recency: the list opened three times outranks
+        // the one opened once afterwards.
+        Member ana = givenMember("habitual");
+        String often = (String) createList(ana.session(), "Zzz " + ana.username()).getBody().get("id");
+        String once = (String) createList(ana.session(), "Aaa " + ana.username()).getBody().get("id");
+
+        // Three separate days, because the dedup window collapses three touches
+        // in one sitting into one hit - which is the point of it.
+        hitsOnDifferentDays(ana, often, 3);
+        touch(ana.session(), once);
+
+        assertThat(sidebarIds(ana.session())).startsWith(often);
+    }
+
+    @Test
+    void aPinOutranksTheListTheMemberUsesMost() {
+        // R101. A pin is an explicit instruction and beats measured habit.
+        Member ana = givenMember("pin-over-habit");
+        String often = (String) createList(ana.session(), "Often " + ana.username()).getBody().get("id");
+        String pinned = (String) createList(ana.session(), "Pinned " + ana.username()).getBody().get("id");
+
+        hitsOnDifferentDays(ana, often, 5);
+        rest.exchange("/api/lists/" + pinned + "/pin", HttpMethod.PUT,
                 new HttpEntity<>(headersFor(ana.session())), Void.class);
 
-        assertThat(recentIds(ana.session()).toString()).isEqualTo(first);
-        assertThat(recentIds(ana.session())).contains(id);
+        assertThat(sidebarIds(ana.session())).startsWith(pinned, often);
+    }
+
+    @Test
+    void theSidebarShowsAsManyListsAsTheMemberAsksFor() {
+        // R102. Four lists, a preference of two.
+        Member ana = givenMember("counter");
+        for (int index = 0; index < 4; index++) {
+            createList(ana.session(), "Counted " + index + " " + ana.username());
+        }
+
+        assertThat(sidebarIds(ana.session())).hasSize(4);
+
+        rest.exchange("/api/me/preferences", HttpMethod.PATCH,
+                new HttpEntity<>("{\"theme\":\"SYSTEM\",\"sidebarListCount\":2}",
+                        headersFor(ana.session())), Map.class);
+
+        assertThat(sidebarIds(ana.session())).hasSize(2);
+    }
+
+    @Test
+    void aSidebarSizeOutsideTheBoundsIsRefused() {
+        Member ana = givenMember("over-counter");
+
+        assertThat(rest.exchange("/api/me/preferences", HttpMethod.PATCH,
+                new HttpEntity<>("{\"theme\":\"SYSTEM\",\"sidebarListCount\":0}",
+                        headersFor(ana.session())), Map.class).getStatusCode())
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(rest.exchange("/api/me/preferences", HttpMethod.PATCH,
+                new HttpEntity<>("{\"theme\":\"SYSTEM\",\"sidebarListCount\":99}",
+                        headersFor(ana.session())), Map.class).getStatusCode())
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    /**
+     * Counts {@code hits} visits by backdating the buckets a touch wrote.
+     *
+     * <p>The dedup window means a loop of touches writes one hit, so the only
+     * honest way to simulate a habit is to put the hits on different days -
+     * which is also what the ordering query actually sums.
+     */
+    private void hitsOnDifferentDays(Member member, String listId, int hits) {
+        touch(member.session(), listId);
+        for (int day = 1; day < hits; day++) {
+            jdbc.update("""
+                    INSERT INTO list_interaction_day (list_id, user_id, on_day, hits, last_at)
+                    VALUES (?::uuid, ?::uuid, current_date - ?, 1, now() - make_interval(days => ?))
+                    """, listId, member.id().toString(), day, day);
+        }
     }
 
     @Test
@@ -291,18 +393,26 @@ class ListApiIntegrationTest extends ApiIntegrationTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
-    private List<String> pinnedIds(Session session) {
+    /** The sidebar's one group, in the order it is drawn (0012 R98-R101). */
+    private List<Map<String, Object>> sidebar(Session session) {
         ResponseEntity<Map> sidebar = rest.exchange("/api/lists/sidebar", HttpMethod.GET,
                 new HttpEntity<>(headersFor(session)), Map.class);
-        return ((List<Map<String, Object>>) sidebar.getBody().get("pinned")).stream()
+        return (List<Map<String, Object>>) sidebar.getBody().get("lists");
+    }
+
+    private List<String> sidebarIds(Session session) {
+        return sidebar(session).stream().map(list -> (String) list.get("id")).toList();
+    }
+
+    private List<String> pinnedIds(Session session) {
+        return sidebar(session).stream()
+                .filter(list -> Boolean.TRUE.equals(list.get("pinned")))
                 .map(list -> (String) list.get("id")).toList();
     }
 
-    private List<String> recentIds(Session session) {
-        ResponseEntity<Map> sidebar = rest.exchange("/api/lists/sidebar", HttpMethod.GET,
-                new HttpEntity<>(headersFor(session)), Map.class);
-        return ((List<Map<String, Object>>) sidebar.getBody().get("recent")).stream()
-                .map(list -> (String) list.get("id")).toList();
+    private void touch(Session session, String id) {
+        rest.exchange("/api/lists/" + id + "/touch", HttpMethod.POST,
+                new HttpEntity<>(headersFor(session)), Void.class);
     }
 
     private List<String> names(Session session, String query) {

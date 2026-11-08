@@ -1,5 +1,6 @@
 package com.hatodo.data;
 
+import com.hatodo.household.InteractionWindow;
 import com.hatodo.list.ListIcon;
 import com.hatodo.user.AppUser;
 import com.hatodo.user.AppUserRepository;
@@ -44,18 +45,24 @@ public class DataListService {
     private final DataListRepository lists;
     private final DataListAccessRepository access;
     private final DataEntryRepository entries;
+    private final DataListInteractionRepository interactions;
+    private final InteractionWindow window;
     private final AppUserRepository users;
     private final CurrentUserProvider currentUser;
     private final EntityManager entityManager;
     private final ApplicationEventPublisher events;
 
     public DataListService(DataListRepository lists, DataListAccessRepository access,
-                           DataEntryRepository entries, AppUserRepository users,
+                           DataEntryRepository entries,
+                           DataListInteractionRepository interactions, InteractionWindow window,
+                           AppUserRepository users,
                            CurrentUserProvider currentUser, EntityManager entityManager,
                            ApplicationEventPublisher events) {
         this.lists = lists;
         this.access = access;
         this.entries = entries;
+        this.interactions = interactions;
+        this.window = window;
         this.users = users;
         this.currentUser = currentUser;
         this.entityManager = entityManager;
@@ -70,6 +77,42 @@ public class DataListService {
         return lists.findVisible(me, trimmed, icon, resolvedScope).stream()
                 .map(list -> summarise(list, me))
                 .toList();
+    }
+
+    /**
+     * The sidebar's collections group (0012 R98, R100, R102).
+     *
+     * <p>Every collection the member can see, ordered by how often they open
+     * it over the last month and capped at their own preference. No pins: a
+     * collection has no per-member state beyond its interaction buckets
+     * (adr/0029).
+     */
+    @Transactional(readOnly = true)
+    public DataListSidebarResponse sidebar() {
+        AppUser me = users.findById(currentUser.requireUserId()).orElseThrow(
+                () -> new IllegalStateException("Authenticated user no longer exists"));
+        return new DataListSidebarResponse(
+                lists.findForSidebar(me.getId(), window.since(), me.getSidebarListCount()).stream()
+                        .map(list -> summarise(list, me.getId()))
+                        .toList());
+    }
+
+    /**
+     * "I opened this collection." A POST rather than a side effect of the GET,
+     * for the reason a list's touch is one: a read stays a read, CSRF applies,
+     * and a prefetch cannot reorder somebody's sidebar.
+     *
+     * <p>Unlike a list there is no recency row to write - the bucket is the
+     * whole record, and its own upsert carries the dedup window (adr/0041).
+     */
+    @Transactional
+    public void touch(UUID listId) {
+        UUID me = currentUser.requireUserId();
+        readable(listId, me);
+        interactions.record(listId, me, window.today(), InteractionWindow.DEDUP_MINUTES);
+        // Self-pruning, scoped to the member: the buckets worth dropping belong
+        // to the collections they stopped opening.
+        interactions.prune(me, window.since());
     }
 
     @Transactional(readOnly = true)
