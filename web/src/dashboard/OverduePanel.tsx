@@ -81,8 +81,16 @@ export function OverduePanel({ scope }: { scope: DashboardScope }) {
   )
 }
 
+/**
+ * "item", not "chore". The product calls the things on a list items everywhere
+ * a member can act on one - the add form, the row, the completion snackbar -
+ * and the agenda is the one surface that reads across every list, so a second
+ * word for the same thing is most confusing exactly here. "Chore" survives in
+ * comments and in docs, where it is describing the domain rather than labelling
+ * a control.
+ */
 function headline(total: number): string {
-  return total === 1 ? '1 chore is overdue' : `${total} chores are overdue`
+  return total === 1 ? '1 item is overdue' : `${total} items are overdue`
 }
 
 /**
