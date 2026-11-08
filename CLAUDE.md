@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status
 
 **Everything specified so far is built, as of 2026-11-08.** Build, local stack, deploy scripts and all
-three test harnesses are real and passing: 249 backend unit tests, 241 integration tests, 259 frontend
+three test harnesses are real and passing: 249 backend unit tests, 241 integration tests, 262 frontend
 tests, 94 end-to-end.
 
 Implemented: **accounts and administration (R8-R12)** — username identity, optional per-user passwords, a
@@ -275,6 +275,16 @@ navigates and the invalid nesting `adr/0039` had to undo once does not grow back
 independent and nothing is drawn from both, so there is no pair of values that can disagree; a
 cross-aggregate read would be a third place that has to remember collections exist. `SidebarResponse`
 lost its `pinned`/`recent` split rather than gaining a field, so every reader broke at compile time.
+
+**The sidebar's groups distinguish three states, and must keep doing so.** `pending`, `error` and
+`ready`-but-empty are separate, because a group that reads its rows out of `data ?? []` is empty while
+the request is in flight **and** empty when the request failed — and in both cases announced "No lists
+yet", which is a confident lie about somebody's own data, shown for as long as the connection is slow or
+forever. `PinnedSection` had a `loaded` guard for exactly this from the start; `NavGroup` did not, and
+that shipped. `SideNav.test.tsx`'s "does not claim a group is empty while it is still loading" resolves
+against a promise that never settles, so the query cannot rescue the assertion. `PinnedSection` needs
+only **one** of the two requests to have succeeded — requiring both hid pins that had loaded fine when
+the other half failed.
 
 **A latent e2e bug was fixed in passing**:
 `test_dashboard.py::test_opening_an_item_is_a_url_the_back_button_closes` loaded

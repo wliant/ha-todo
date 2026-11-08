@@ -6,6 +6,7 @@ import ListItemButton from '@mui/material/ListItemButton'
 import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
 import ListSubheader from '@mui/material/ListSubheader'
+import Skeleton from '@mui/material/Skeleton'
 import Stack from '@mui/material/Stack'
 import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
@@ -60,8 +61,10 @@ export function SideNav({
   onSignOut: () => void
 }) {
   const { pathname } = useLocation()
-  const { data: sidebar } = useSidebar()
-  const { data: collections } = useCollectionSidebar()
+  const listsQuery = useSidebar()
+  const collectionsQuery = useCollectionSidebar()
+  const sidebar = listsQuery.data
+  const collections = collectionsQuery.data
 
   // Both open by default: these groups replace the Pinned and Recent sections
   // wholesale, so a sidebar that starts collapsed offers strictly less than the
@@ -93,7 +96,10 @@ export function SideNav({
       <Box sx={{ flex: 1, overflowY: 'auto' }}>
         <PinnedSection
           entries={pinnedEntries}
-          loaded={Boolean(sidebar && collections)}
+          // Either half is enough. If one request fails the other's pins are
+          // still worth drawing, and the group below reports its own failure -
+          // requiring both was the same conflation NavGroup had.
+          ready={listsQuery.isSuccess || collectionsQuery.isSuccess}
           pathname={pathname}
           onNavigate={onNavigate}
         />
@@ -127,6 +133,7 @@ export function SideNav({
             createTo="/lists/new"
             createLabel="Create a list"
             emptyLabel="No lists yet"
+            status={statusOf(listsQuery)}
             selected={pathname.startsWith('/lists')}
             onNavigate={onNavigate}
             entries={(sidebar?.lists ?? []).map(asListEntry)}
@@ -148,6 +155,7 @@ export function SideNav({
             createTo="/collections/new"
             createLabel="Create a collection"
             emptyLabel="No collections yet"
+            status={statusOf(collectionsQuery)}
             selected={pathname.startsWith('/collections')}
             onNavigate={onNavigate}
             entries={(collections?.collections ?? []).map(asCollectionEntry)}
@@ -200,6 +208,24 @@ export function SideNav({
   )
 }
 
+/**
+ * Which of three things a group has to say, kept apart deliberately.
+ *
+ * <p>Collapsing them is the defect this type exists to prevent: a group that
+ * reads its rows out of `data ?? []` is empty while the request is in flight
+ * and empty when the request *failed*, and in both cases announced "No lists
+ * yet" - a confident lie about somebody's own data, shown for exactly as long
+ * as their connection is slow, or forever.
+ */
+type GroupStatus = 'pending' | 'error' | 'ready'
+
+function statusOf(query: { isPending: boolean; isError: boolean }): GroupStatus {
+  if (query.isPending) {
+    return 'pending'
+  }
+  return query.isError ? 'error' : 'ready'
+}
+
 interface NavEntry {
   id: string
   name: string
@@ -241,19 +267,19 @@ const PINNED_MAX_HEIGHT = '15rem'
  */
 function PinnedSection({
   entries,
-  loaded,
+  ready,
   pathname,
   onNavigate,
 }: {
   entries: NavEntry[]
-  loaded: boolean
+  ready: boolean
   pathname: string
   onNavigate?: () => void
 }) {
-  // `loaded` keeps the section from flashing in and out on first paint: with no
+  // `ready` keeps the section from flashing in and out on first paint: with no
   // data yet, `entries` is empty for the same reason it is empty for a member
   // with no pins, and the two must not look the same.
-  if (!loaded || entries.length === 0) {
+  if (!ready || entries.length === 0) {
     return null
   }
   return (
@@ -299,6 +325,7 @@ function NavGroup({
   createTo,
   createLabel,
   emptyLabel,
+  status,
   selected,
   onNavigate,
   entries,
@@ -312,6 +339,7 @@ function NavGroup({
   createTo: string
   createLabel: string
   emptyLabel: string
+  status: GroupStatus
   selected: boolean
   onNavigate?: () => void
   entries: NavEntry[]
@@ -353,9 +381,28 @@ function NavGroup({
 
       <Collapse in={open} unmountOnExit>
         <List dense disablePadding sx={{ pl: 1 }}>
-          {entries.length === 0 && (
-            // R103: told there are none, rather than shown nothing and left to
-            // wonder whether the request failed.
+          {status === 'pending' && (
+            // Not the empty label. "No lists yet" while the request is still
+            // in flight is a confident lie about somebody's own data, and it
+            // is what a member saw for as long as their connection was slow.
+            <Box sx={{ px: 2, py: 1 }}>
+              <Skeleton width="70%" />
+              <Skeleton width="55%" />
+            </Box>
+          )}
+
+          {status === 'error' && (
+            <ListItemText
+              primary={`Couldn't load your ${label.toLowerCase()}.`}
+              sx={{ px: 2, py: 1 }}
+              slotProps={{ primary: { variant: 'body2', color: 'error.main' } }}
+            />
+          )}
+
+          {status === 'ready' && entries.length === 0 && (
+            // R103: told there are none - and only once we actually know that,
+            // rather than being shown nothing and left to wonder whether the
+            // request failed.
             <ListItemText
               primary={emptyLabel}
               sx={{ px: 2, py: 1 }}
