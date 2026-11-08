@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 import pytest
 from playwright.sync_api import Page, expect
 
-from conftest import DemoMember, TestData, ui_sign_in
+from conftest import DemoMember, TestData, fill_due, ui_sign_in
 
 
 def create_list(page: Page, name: str, share_with: str | None = None) -> str:
@@ -36,7 +36,7 @@ def add_dated_item(page: Page, description: str, when: datetime) -> None:
     page.get_by_role("button", name="Add item").click()
     page.get_by_role("button", name="More fields").click()
     page.get_by_role("textbox", name="Description").fill(description)
-    page.get_by_role("textbox", name="Due").fill(when.strftime("%Y-%m-%dT%H:%M"))
+    fill_due(page, when)
     page.get_by_role("button", name="Save").click()
     expect(page.get_by_text(description)).to_be_visible()
 
@@ -157,7 +157,12 @@ def test_opening_an_item_is_a_url_the_back_button_closes(
     tomorrow = (datetime.now() + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
     add_dated_item(page, "Tap me", tomorrow)
 
-    page.goto(f"{base_url}/dashboard/week")
+    # Anchored on the day the chore is due rather than on the current week.
+    # Without ?on=, this passes six days out of seven and fails on a Sunday,
+    # when "tomorrow" is the Monday of the *next* week and so is not in the
+    # grid at all (weeks start Monday). The popup is the subject here, not which
+    # week it happens to be.
+    page.goto(f"{base_url}/dashboard/week?on={tomorrow:%Y-%m-%d}")
     page.get_by_role("button", name=f"Tap me, on {name}").click()
 
     dialog = page.get_by_role("dialog")
@@ -189,7 +194,7 @@ def test_mine_narrows_the_dashboard_without_hiding_it_from_the_url(
     page.get_by_role("button", name="Add item").click()
     page.get_by_role("button", name="More fields").click()
     page.get_by_role("textbox", name="Description").fill("Nobody's job")
-    page.get_by_role("textbox", name="Due").fill(later_today.strftime("%Y-%m-%dT%H:%M"))
+    fill_due(page, later_today)
     page.get_by_role("button", name="Save").click()
     expect(page.get_by_text("Nobody's job")).to_be_visible()
 

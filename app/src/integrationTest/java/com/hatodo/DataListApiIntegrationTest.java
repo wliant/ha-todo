@@ -268,6 +268,127 @@ class DataListApiIntegrationTest extends ApiIntegrationTest {
     }
 
     @Test
+    void theSidebarReachesEveryCollectionAndOrdersItByUse() {
+        // 0012 R98, R100. A collection has no pin and no recency row
+        // (adr/0029), so its buckets are the only thing the order can read.
+        Member ana = givenMember("coll-sidebar");
+        Member ben = givenMember("coll-sidebar-sharer");
+        String often = newCollection(ana, "Zzz " + ana.username());
+        String once = newCollection(ana, "Aaa " + ana.username());
+        String theirs = newCollection(ben, "Theirs " + ben.username());
+        rest.exchange("/api/data-lists/" + theirs + "/access", HttpMethod.PUT, new HttpEntity<>(
+                "{\"version\":0,\"memberIds\":[\"%s\"]}".formatted(ana.id()),
+                headersFor(ben.session())), List.class);
+
+        hitsOnDifferentDays(ana, often, 3);
+        touch(ana.session(), once);
+
+        assertThat(sidebarIds(ana.session()))
+                .as("shared as well as owned, opened or not (R98)")
+                .contains(often, once, theirs);
+        assertThat(sidebarIds(ana.session())).as("most used first (R100)").startsWith(often);
+    }
+
+    @Test
+    void touchingACollectionTwiceInsideTheWindowCountsOnce() {
+        // The dedup window lives inside the bucket upsert, because a collection
+        // has no recency row to read it from (adr/0041). Only a real database
+        // can show that the ON CONFLICT ... WHERE holds.
+        Member ana = givenMember("coll-toucher");
+        String id = newCollection(ana, "Touched " + ana.username());
+
+        touch(ana.session(), id);
+        touch(ana.session(), id);
+
+        assertThat(jdbc.queryForObject("""
+                SELECT hits FROM data_list_interaction_day
+                WHERE data_list_id = ?::uuid AND user_id = ?::uuid
+                """, Integer.class, id, ana.id().toString())).isEqualTo(1);
+    }
+
+    @Test
+    void touchingACollectionNobodyGrantedIsA404() {
+        Member ana = givenMember("coll-touch-owner");
+        Member ben = givenMember("coll-touch-stranger");
+        String id = newCollection(ana, "Private " + ana.username());
+
+        assertThat(rest.exchange("/api/data-lists/" + id + "/touch", HttpMethod.POST,
+                new HttpEntity<>(headersFor(ben.session())), Map.class).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    private List<String> sidebarIds(Session session, String section) {
+        ResponseEntity<Map> sidebar = rest.exchange("/api/data-lists/sidebar", HttpMethod.GET,
+                new HttpEntity<>(headersFor(session)), Map.class);
+        return ((List<Map<String, Object>>) sidebar.getBody().get(section)).stream()
+                .map(row -> (String) row.get("id")).toList();
+    }
+
+    private List<String> sidebarIds(Session session) {
+        return sidebarIds(session, "collections");
+    }
+
+    private List<String> pinnedIds(Session session) {
+        return sidebarIds(session, "pinned");
+    }
+
+    private void touch(Session session, String id) {
+        rest.exchange("/api/data-lists/" + id + "/touch", HttpMethod.POST,
+                new HttpEntity<>(headersFor(session)), Void.class);
+    }
+
+    /** As in the list suite: a habit can only be simulated across days. */
+    private void hitsOnDifferentDays(Member member, String collectionId, int hits) {
+        touch(member.session(), collectionId);
+        for (int day = 1; day < hits; day++) {
+            jdbc.update("""
+                    INSERT INTO data_list_interaction_day
+                        (data_list_id, user_id, on_day, hits, last_at)
+                    VALUES (?::uuid, ?::uuid, current_date - ?, 1, now() - make_interval(days => ?))
+                    """, collectionId, member.id().toString(), day, day);
+        }
+    }
+
+    @Test
+    void pinningACollectionIsPersonalAndMovesItToItsOwnSection() {
+        // 0012 R104, R105 and adr/0043: a collection had no per-member state at
+        // all before this - list_user_state.list_id is an FK to todo_list and
+        // stays that way, which is why this is a table of its own.
+        Member ana = givenMember("coll-pinner");
+        Member ben = givenMember("coll-pin-witness");
+        String id = newCollection(ana, "Pinnable " + ana.username());
+        rest.exchange("/api/data-lists/" + id + "/access", HttpMethod.PUT, new HttpEntity<>(
+                "{\"version\":0,\"memberIds\":[\"%s\"]}".formatted(ben.id()),
+                headersFor(ana.session())), List.class);
+
+        assertThat(rest.exchange("/api/data-lists/" + id + "/pin", HttpMethod.PUT,
+                new HttpEntity<>(headersFor(ana.session())), Void.class).getStatusCode())
+                .isEqualTo(HttpStatus.NO_CONTENT);
+
+        assertThat(pinnedIds(ana.session())).contains(id);
+        assertThat(sidebarIds(ana.session())).doesNotContain(id);
+        assertThat(pinnedIds(ben.session())).as("one member's pins are their own")
+                .doesNotContain(id);
+        assertThat(sidebarIds(ben.session())).contains(id);
+
+        rest.exchange("/api/data-lists/" + id + "/pin", HttpMethod.DELETE,
+                new HttpEntity<>(headersFor(ana.session())), Void.class);
+        assertThat(pinnedIds(ana.session())).doesNotContain(id);
+        assertThat(sidebarIds(ana.session())).contains(id);
+    }
+
+    @Test
+    void pinningACollectionNobodyGrantedIsA404() {
+        Member ana = givenMember("coll-pin-owner");
+        Member ben = givenMember("coll-pin-stranger");
+        String id = newCollection(ana, "Private " + ana.username());
+
+        assertThat(rest.exchange("/api/data-lists/" + id + "/pin", HttpMethod.PUT,
+                new HttpEntity<>(headersFor(ben.session())), Map.class).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
     void anAnonymousCallerGetsNoCollectionsAndA401() {
         assertThat(rest.getForEntity("/api/data-lists", Map.class).getStatusCode())
                 .isEqualTo(HttpStatus.UNAUTHORIZED);

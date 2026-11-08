@@ -1,5 +1,6 @@
 package com.hatodo.list;
 
+import com.hatodo.household.InteractionWindow;
 import com.hatodo.user.AppUser;
 import com.hatodo.user.AppUserRepository;
 import com.hatodo.user.CurrentUserProvider;
@@ -11,7 +12,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,20 +37,13 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class TodoListService {
 
-    /** The sidebar is a glance, not a browse. */
-    private static final int RECENT_LIMIT = 6;
-
-    /**
-     * How long a repeat visit stops counting as a fresh interaction. Long
-     * enough that opening a list twice in a sitting writes once; short enough
-     * that "recent" still means recent.
-     */
-    private static final int TOUCH_WINDOW_MINUTES = 15;
 
     private final TodoListRepository lists;
     private final ListAccessRepository access;
     private final ListUserStateRepository states;
     private final ListFieldRepository fields;
+    private final ListInteractionRepository interactions;
+    private final InteractionWindow window;
     private final AppUserRepository users;
     private final CurrentUserProvider currentUser;
     private final EntityManager entityManager;
@@ -58,12 +51,15 @@ public class TodoListService {
 
     public TodoListService(TodoListRepository lists, ListAccessRepository access,
                            ListUserStateRepository states, ListFieldRepository fields,
+                           ListInteractionRepository interactions, InteractionWindow window,
                            AppUserRepository users, CurrentUserProvider currentUser,
                            EntityManager entityManager, ApplicationEventPublisher events) {
         this.lists = lists;
         this.access = access;
         this.states = states;
         this.fields = fields;
+        this.interactions = interactions;
+        this.window = window;
         this.users = users;
         this.currentUser = currentUser;
         this.entityManager = entityManager;
@@ -81,17 +77,29 @@ public class TodoListService {
                 .toList();
     }
 
+    /**
+     * The sidebar's lists: the pinned section, then the group (0012 R98-R106).
+     *
+     * <p>Pinned lists keep a section of their own (R105), uncapped because it
+     * scrolls. What changed from the old pair is the section underneath: it is
+     * no longer "recent" but every *other* list the member can see - including
+     * ones never opened on this account - ordered by how often they use it, and
+     * capped at their own preference.
+     */
     @Transactional(readOnly = true)
     public SidebarResponse sidebar() {
-        UUID me = currentUser.requireUserId();
-        List<ListSummaryResponse> pinned = states.findPinned(me).stream()
-                .map(list -> summarise(list, me))
+        AppUser me = users.findById(currentUser.requireUserId()).orElseThrow(
+                () -> new IllegalStateException("Authenticated user no longer exists"));
+        // Uncapped: the section that holds them scrolls (R106). The group below
+        // excludes them, so the two partition the member's lists.
+        List<ListSummaryResponse> pinned = lists.findPinnedForSidebar(me.getId()).stream()
+                .map(list -> summarise(list, me.getId()))
                 .toList();
-        List<ListSummaryResponse> recent =
-                states.findRecent(me, PageRequest.of(0, RECENT_LIMIT)).stream()
-                        .map(list -> summarise(list, me))
+        List<ListSummaryResponse> group =
+                lists.findForSidebar(me.getId(), window.since(), me.getSidebarListCount()).stream()
+                        .map(list -> summarise(list, me.getId()))
                         .toList();
-        return new SidebarResponse(pinned, recent);
+        return new SidebarResponse(pinned, group);
     }
 
     @Transactional(readOnly = true)
@@ -217,7 +225,15 @@ public class TodoListService {
     public void touch(UUID listId) {
         UUID me = currentUser.requireUserId();
         readable(listId, me);
-        states.touch(listId, me, TOUCH_WINDOW_MINUTES);
+        states.touch(listId, me, InteractionWindow.DEDUP_MINUTES);
+        // Two independent statements sharing one window, deliberately: at 00:02
+        // the recency write no-ops while this one opens a new day's bucket,
+        // because a visit after midnight is a new day's visit (adr/0041).
+        interactions.record(listId, me, window.today(), InteractionWindow.DEDUP_MINUTES);
+        // Self-pruning, so nothing accumulates and no scheduled job exists to
+        // forget to run. Scoped to the member: the buckets worth dropping
+        // belong to the lists they stopped opening.
+        interactions.prune(me, window.since());
     }
 
     // --- the two predicates -------------------------------------------------

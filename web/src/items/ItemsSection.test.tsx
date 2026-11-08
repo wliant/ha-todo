@@ -188,9 +188,10 @@ describe('ItemsSection', () => {
     expect(screen.getByRole('textbox', { name: 'Description' })).toBeVisible()
     expect(screen.getByRole('combobox', { name: 'Assignee' })).toBeVisible()
     // Never declared, so never rendered - not merely hidden behind the toggle.
-    // By label, not by role: a datetime-local input has no `textbox` role, so
-    // a role query here passes whether or not the input is there.
-    expect(screen.queryByLabelText(/^Due/)).not.toBeInTheDocument()
+    // Keyed off the due control's own date input rather than the "Due" legend:
+    // a legend labels no form control, so a label query against it reports
+    // nothing whether or not the control is there.
+    expect(screen.queryByLabelText(/^Date/)).not.toBeInTheDocument()
   })
 
   it('starts the add form with only what the list insists on', async () => {
@@ -207,7 +208,7 @@ describe('ItemsSection', () => {
 
     expect(screen.getByRole('textbox', { name: 'Description' })).toBeVisible()
     // Required, so it is asked for straight away.
-    expect(screen.getByLabelText(/^Due/)).toBeVisible()
+    expect(screen.getByLabelText(/^Date/)).toBeVisible()
     // Optional, so it waits behind the toggle.
     expect(screen.queryByRole('combobox', { name: 'Assignee' })).not.toBeInTheDocument()
 

@@ -1,6 +1,7 @@
 package com.hatodo.data;
 
 import com.hatodo.list.ListIcon;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -40,6 +41,58 @@ public interface DataListRepository extends JpaRepository<DataList, UUID> {
                                @Param("query") String query,
                                @Param("icon") ListIcon icon,
                                @Param("scope") String scope);
+
+    /**
+     * The sidebar's Collections group: the collections the member can see and
+     * has **not** pinned, ordered by how often they use each one (0012 R98,
+     * R100).
+     *
+     * <p>The todo-list query's shape, with {@code MAX(last_at)} from the bucket
+     * table as the tie-break - the only recency a collection has, and only a
+     * tie-break, since adr/0043 gave collections a pin but deliberately not a
+     * {@code last_interacted_at} of their own.
+     *
+     * @param since the first day of the frequency window, in the household's
+     *              zone. Supplied by the service, never by the caller.
+     */
+    @Query(value = """
+            SELECT l.* FROM data_list l
+            JOIN data_list_access a ON a.data_list_id = l.id AND a.user_id = :userId
+            LEFT JOIN data_list_user_state s
+                   ON s.data_list_id = l.id AND s.user_id = :userId
+            LEFT JOIN (
+                SELECT data_list_id, SUM(hits) AS hits, MAX(last_at) AS last_at
+                FROM data_list_interaction_day
+                WHERE user_id = :userId AND on_day >= :since
+                GROUP BY data_list_id
+            ) f ON f.data_list_id = l.id
+            WHERE s.pinned_at IS NULL
+            ORDER BY COALESCE(f.hits, 0) DESC,
+                     f.last_at DESC NULLS LAST,
+                     LOWER(l.name) ASC
+            LIMIT :limit
+            """, nativeQuery = true)
+    List<DataList> findForSidebar(@Param("userId") UUID userId,
+                                  @Param("since") LocalDate since,
+                                  @Param("limit") int limit);
+
+    /**
+     * Every collection the member has pinned (0012 R104-R106).
+     *
+     * <p>Uncapped and by name, for the reasons the list query gives: the
+     * section scrolls rather than truncating, and the two halves of it are
+     * merged on the client from two requests with no shared clock to interleave
+     * on.
+     */
+    @Query("""
+            SELECT s.list FROM DataListUserState s
+            WHERE s.user.id = :userId AND s.pinnedAt IS NOT NULL
+            AND EXISTS (
+                SELECT 1 FROM DataListAccess a WHERE a.list = s.list AND a.user.id = :userId
+            )
+            ORDER BY LOWER(s.list.name) ASC
+            """)
+    List<DataList> findPinnedForSidebar(@Param("userId") UUID userId);
 
     /** A collection the caller may see, or empty - which the service turns into 404. */
     @Query("""

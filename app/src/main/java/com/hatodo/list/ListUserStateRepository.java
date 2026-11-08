@@ -1,6 +1,5 @@
 package com.hatodo.list;
 
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -13,26 +12,12 @@ public interface ListUserStateRepository extends JpaRepository<ListUserState, Li
     @Query("SELECT s FROM ListUserState s WHERE s.list.id = :listId AND s.user.id = :userId")
     Optional<ListUserState> find(@Param("listId") UUID listId, @Param("userId") UUID userId);
 
-    /** The sidebar's pinned section (R27), newest pin first. */
-    @Query("""
-            SELECT s.list FROM ListUserState s
-            WHERE s.user.id = :userId AND s.pinnedAt IS NOT NULL
-            AND EXISTS (SELECT 1 FROM ListAccess a WHERE a.list = s.list AND a.user.id = :userId)
-            ORDER BY s.pinnedAt DESC
-            """)
-    List<TodoList> findPinned(@Param("userId") UUID userId);
-
-    /**
-     * The sidebar's recent section (R28). Pinned lists are excluded so the
-     * sidebar never shows the same list twice.
+    /*
+     * The old Pinned and Recent section queries lived here. 0012 replaced both
+     * sections with one group ordered in SQL by pins, then measured use - see
+     * TodoListRepository#findForSidebar. Nothing here answers "the sidebar" any
+     * more; this row is pins and the recency tie-break.
      */
-    @Query("""
-            SELECT s.list FROM ListUserState s
-            WHERE s.user.id = :userId AND s.lastInteractedAt IS NOT NULL AND s.pinnedAt IS NULL
-            AND EXISTS (SELECT 1 FROM ListAccess a WHERE a.list = s.list AND a.user.id = :userId)
-            ORDER BY s.lastInteractedAt DESC
-            """)
-    List<TodoList> findRecent(@Param("userId") UUID userId, org.springframework.data.domain.Pageable limit);
 
     /**
      * Stamps recency without reading first, and without touching the row at all

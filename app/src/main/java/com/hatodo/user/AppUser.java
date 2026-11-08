@@ -19,6 +19,16 @@ import java.util.UUID;
 @Table(name = "app_user")
 public class AppUser {
 
+    /** What 0012 R102 asks for out of the box. Mirrored by the column default. */
+    public static final int DEFAULT_SIDEBAR_LIST_COUNT = 10;
+
+    /**
+     * The bounds the check constraint enforces, stated here too so a bad value
+     * is a 400 from bean validation rather than a 500 from Postgres.
+     */
+    public static final int MIN_SIDEBAR_LIST_COUNT = 1;
+    public static final int MAX_SIDEBAR_LIST_COUNT = 30;
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
@@ -48,6 +58,14 @@ public class AppUser {
     @Enumerated(EnumType.STRING)
     @Column(name = "theme_preference", nullable = false)
     private ThemePreference themePreference = ThemePreference.SYSTEM;
+
+    /**
+     * How many lists and collections the sidebar shows in each group (0012
+     * R102). Personal rather than per-device, so it rides this row beside the
+     * theme rather than a browser's local storage.
+     */
+    @Column(name = "sidebar_list_count", nullable = false)
+    private int sidebarListCount = DEFAULT_SIDEBAR_LIST_COUNT;
 
     /** Null means initials are drawn instead. Nobody is obliged to have a face. */
     @ManyToOne(fetch = FetchType.LAZY)
@@ -144,6 +162,14 @@ public class AppUser {
 
     public void setThemePreference(ThemePreference themePreference) {
         this.themePreference = themePreference;
+    }
+
+    public int getSidebarListCount() {
+        return sidebarListCount;
+    }
+
+    public void setSidebarListCount(int sidebarListCount) {
+        this.sidebarListCount = sidebarListCount;
     }
 
     public Instant getCreatedAt() {

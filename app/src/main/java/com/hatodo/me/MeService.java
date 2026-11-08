@@ -45,6 +45,11 @@ public class MeService {
     public PreferencesResponse updatePreferences(PreferencesRequest request) {
         AppUser user = require();
         user.setThemePreference(request.theme());
+        // Absent means unchanged, not zero: a client editing the theme sends no
+        // sidebar size and must keep the one it has.
+        if (request.changesSidebarListCount()) {
+            user.setSidebarListCount(request.sidebarListCount());
+        }
         return PreferencesResponse.of(user);
     }
 

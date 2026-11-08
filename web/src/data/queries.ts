@@ -1,10 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { repin } from '../app/repin'
 import {
   createCollection,
   deleteCollection,
   fetchCollection,
+  fetchCollectionSidebar,
   fetchCollections,
   fetchTagSuggestions,
+  setCollectionPinned,
+  touchCollection,
   updateCollection,
   updateCollectionAccess,
   type CollectionFilters,
@@ -30,6 +34,7 @@ export const collectionKeys = {
   all: ['collections'] as const,
   search: (filters: CollectionFilters) => ['collections', 'search', filters] as const,
   detail: (id: string) => ['collections', 'detail', id] as const,
+  sidebar: ['collections', 'sidebar'] as const,
   tags: (id: string) => ['collections', 'detail', id, 'tags'] as const,
   entries: (id: string, query: EntryQuery) =>
     ['collections', 'detail', id, 'entries', query] as const,
@@ -176,4 +181,66 @@ export function useDeleteEntry() {
     mutationFn: ({ id, version }: { id: string; version: number }) => deleteEntry(id, version),
     onSuccess: invalidate,
   })
+}
+
+
+/**
+ * Optimistic, because a star must respond under the finger - the same shape
+ * `usePinList` has, against the collection key hierarchy. The server's answer
+ * still wins: a failure rolls the caches back to exactly what they held, and
+ * `onSettled` is what actually moves the row between the pinned section and
+ * the group.
+ */
+export function usePinCollection() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, pinned }: { id: string; pinned: boolean }) =>
+      setCollectionPinned(id, pinned),
+    onMutate: async ({ id, pinned }) => {
+      await queryClient.cancelQueries({ queryKey: collectionKeys.all })
+      const previous = queryClient.getQueriesData({ queryKey: collectionKeys.all })
+      queryClient.setQueriesData<unknown>({ queryKey: collectionKeys.all }, (data: unknown) =>
+        repin(data, id, pinned),
+      )
+      return previous
+    },
+    onError: (_error, _variables, previous) => {
+      previous?.forEach(([key, data]: [readonly unknown[], unknown]) =>
+        queryClient.setQueryData(key, data),
+      )
+    },
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: collectionKeys.all }),
+  })
+}
+
+/** The sidebar's pinned collections and the group below them (0012 R98, R104). */
+export function useCollectionSidebar() {
+  return useQuery({ queryKey: collectionKeys.sidebar, queryFn: fetchCollectionSidebar })
+}
+
+/**
+ * Records that the member opened a collection, once per collection per session.
+ *
+ * <p>The guard is module-level rather than component state for the reason
+ * `useTouchList`'s is: refetchOnWindowFocus would otherwise turn every glance
+ * at another tab into a write. Cleared on sign-out, where the query cache is
+ * cleared too.
+ */
+const touched = new Set<string>()
+
+export function clearTouchedCollections(): void {
+  touched.clear()
+}
+
+export function useTouchCollection() {
+  const queryClient = useQueryClient()
+  return (id: string) => {
+    if (touched.has(id)) {
+      return
+    }
+    touched.add(id)
+    void touchCollection(id)
+      .then(() => queryClient.invalidateQueries({ queryKey: collectionKeys.sidebar }))
+      .catch(() => touched.delete(id))
+  }
 }

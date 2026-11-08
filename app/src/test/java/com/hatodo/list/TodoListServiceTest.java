@@ -8,6 +8,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.hatodo.user.AppUser;
+import com.hatodo.household.HouseholdProperties;
+import com.hatodo.household.InteractionWindow;
 import com.hatodo.user.AppUserPrincipal;
 import com.hatodo.user.AppUserRepository;
 import com.hatodo.user.CurrentUserProvider;
@@ -39,6 +41,7 @@ class TodoListServiceTest {
     @Mock private ListAccessRepository access;
     @Mock private ListUserStateRepository states;
     @Mock private ListFieldRepository fields;
+    @Mock private ListInteractionRepository interactions;
     @Mock private AppUserRepository users;
     @Mock private EntityManager entityManager;
     @Mock private org.springframework.context.ApplicationEventPublisher events;
@@ -64,8 +67,9 @@ class TodoListServiceTest {
         when(access.findForList(any())).thenReturn(List.of());
         when(fields.save(any())).thenAnswer(call -> call.getArgument(0));
         CurrentUserProvider currentUser = () -> AppUserPrincipal.of(me);
-        service = new TodoListService(lists, access, states, fields, users, currentUser,
-                entityManager, events);
+        service = new TodoListService(lists, access, states, fields, interactions,
+                new InteractionWindow(new HouseholdProperties("Asia/Singapore")),
+                users, currentUser, entityManager, events);
     }
 
     @Test

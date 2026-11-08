@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '@mui/material/styles'
@@ -39,7 +39,7 @@ describe('ProfilePage', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
     window.localStorage.clear()
-    vi.spyOn(profileApi, 'fetchPreferences').mockResolvedValue({ theme: 'SYSTEM' })
+    vi.spyOn(profileApi, 'fetchPreferences').mockResolvedValue({ theme: 'SYSTEM', sidebarListCount: 10 })
   })
 
   it('starts on the stored preference', async () => {
@@ -49,10 +49,43 @@ describe('ProfilePage', () => {
     expect(await screen.findByRole('radio', { name: /Match my device/ })).toBeChecked()
   })
 
+  it('saves how many lists the sidebar shows', async () => {
+    // 0012 R102. The theme rides along because the server requires it; the
+    // sidebar size does not ride along with a theme change, so neither control
+    // can clobber the other.
+    const update = vi
+      .spyOn(profileApi, 'updatePreferences')
+      .mockResolvedValue({ theme: 'SYSTEM', sidebarListCount: 4 })
+    renderProfile()
+
+    // fireEvent, not userEvent: `tab()` out of this field does not take focus
+    // anywhere in jsdom, so the blur that commits the value never fires and the
+    // test would pass against a control that saves nothing.
+    const field = await screen.findByLabelText(/^Lists shown in each group/)
+    fireEvent.change(field, { target: { value: '4' } })
+    fireEvent.blur(field)
+
+    await waitFor(() => expect(update).toHaveBeenCalledWith('SYSTEM', 4))
+  })
+
+  it('sends nothing for a size outside the bounds, rather than a request that 400s', async () => {
+    const update = vi.spyOn(profileApi, 'updatePreferences')
+    renderProfile()
+
+    const field = await screen.findByLabelText(/^Lists shown in each group/)
+    fireEvent.change(field, { target: { value: '99' } })
+    fireEvent.blur(field)
+
+    expect(update).not.toHaveBeenCalled()
+    // And the box goes back to what is actually stored rather than keeping a
+    // number the account does not hold.
+    expect(field).toHaveValue(10)
+  })
+
   it('saves a chosen colour scheme to the account, not just the browser', async () => {
     const update = vi
       .spyOn(profileApi, 'updatePreferences')
-      .mockResolvedValue({ theme: 'DARK' })
+      .mockResolvedValue({ theme: 'DARK', sidebarListCount: 10 })
     renderProfile()
 
     await userEvent.click(await screen.findByRole('radio', { name: 'Dark' }))
@@ -66,7 +99,7 @@ describe('ProfilePage', () => {
     let resolve = (): void => {}
     vi.spyOn(profileApi, 'updatePreferences').mockReturnValue(
       new Promise((done) => {
-        resolve = () => done({ theme: 'DARK' })
+        resolve = () => done({ theme: 'DARK', sidebarListCount: 10 })
       }),
     )
     renderProfile()
@@ -89,7 +122,7 @@ describe('ProfilePage', () => {
   })
 
   it('reflects a preference stored against the account', async () => {
-    vi.spyOn(profileApi, 'fetchPreferences').mockResolvedValue({ theme: 'DARK' })
+    vi.spyOn(profileApi, 'fetchPreferences').mockResolvedValue({ theme: 'DARK', sidebarListCount: 10 })
     renderProfile()
 
     await waitFor(() =>

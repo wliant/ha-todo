@@ -16,11 +16,14 @@ import type { EntryDetail } from '../api/dataEntries'
 import { fetchEntry } from '../api/dataEntries'
 import { EntryForm } from '../data/EntryForm'
 import { EntryRow } from '../data/EntryRow'
+import { PinButton } from '../lists/PinButton'
 import {
   useCollection,
   useDeleteEntry,
   useEntries,
   useTagSuggestions,
+  usePinCollection,
+  useTouchCollection,
 } from '../data/queries'
 
 /**
@@ -48,6 +51,18 @@ export function CollectionDetailPage() {
   const { data: entries, isPending, isError } = useEntries(listId, query)
   const { data: suggestions } = useTagSuggestions(listId)
   const deleteEntry = useDeleteEntry()
+  const touch = useTouchCollection()
+  const pin = usePinCollection()
+
+  useEffect(() => {
+    if (collection) {
+      touch(collection.id)
+    }
+    // Once per collection, guarded inside the hook: refetch-on-focus must not
+    // turn into a write every time the member glances at another tab. This is
+    // the only thing that records a visit, and the sidebar's order is the only
+    // thing that reads it (0012 R100).
+  }, [collection, touch])
 
   const [openEntry, setOpenEntry] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
@@ -110,7 +125,14 @@ export function CollectionDetailPage() {
         <Typography component="h1" variant="h5" sx={{ overflowWrap: 'anywhere' }}>
           {collection?.name ?? 'Collection'}
         </Typography>
-        <Stack direction="row" spacing={1}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+          {collection && (
+            <PinButton
+              name={collection.name}
+              pinned={collection.pinned}
+              onToggle={(pinned) => pin.mutate({ id: collection.id, pinned })}
+            />
+          )}
           <Button variant="contained" startIcon={<AddRounded />} onClick={() => setAdding(true)}>
             New entry
           </Button>

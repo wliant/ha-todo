@@ -69,9 +69,17 @@ export interface ListField {
   choices: CostChoice[]
 }
 
+/**
+ * The sidebar's lists: the pinned section, then the group below it
+ * (0012 R98-R106).
+ *
+ * <p>The two partition the member's lists - `lists` excludes everything in
+ * `pinned` - so nothing is drawn twice. `pinned` is uncapped because its
+ * section scrolls; `lists` is capped at the member's preference.
+ */
 export interface Sidebar {
   pinned: ListSummary[]
-  recent: ListSummary[]
+  lists: ListSummary[]
 }
 
 export type ListScope = 'all' | 'owned' | 'shared'

@@ -9,6 +9,8 @@ and the second create fails on the per-owner unique index.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -121,9 +123,12 @@ def test_global_search_says_which_collection_a_hit_came_from(
     go_to_collections(page)
     page.get_by_role("textbox", name="Search everything").fill("zabaglione")
 
-    expect(page.get_by_text("Zabaglione", exact=True)).to_be_visible()
-    expect(page.get_by_role("link", name=recipes)).to_be_visible()
-    expect(page.get_by_role("link", name=words)).to_be_visible()
+    # Scoped to the main region: the sidebar's Collections group names both
+    # collections too now (0012 R98), so an unscoped link query is ambiguous.
+    results = page.get_by_role("main")
+    expect(results.get_by_text("Zabaglione", exact=True)).to_be_visible()
+    expect(results.get_by_role("link", name=recipes)).to_be_visible()
+    expect(results.get_by_role("link", name=words)).to_be_visible()
 
 
 @pytest.mark.collections
@@ -194,10 +199,17 @@ def test_a_collection_is_not_a_list_and_asks_for_no_due_date(
     ui_sign_in(page, base_url, demo_member)
 
     make_collection(page, name)
+
+    # 0012 R98: in the sidebar's Collections group straight away, without
+    # having been opened first.
+    expect(
+        page.get_by_role("navigation", name="Main").get_by_role("link", name=name)
+    ).to_be_visible()
+
     page.get_by_role("button", name="New entry").click()
 
     expect(page.get_by_role("textbox", name="Name", exact=True)).to_be_visible()
-    expect(page.get_by_label("Due")).to_have_count(0)
+    expect(page.get_by_label(re.compile(r"^Date"))).to_have_count(0)
     expect(page.get_by_role("button", name="Complete")).to_have_count(0)
 
 
@@ -263,3 +275,38 @@ def test_two_members_editing_one_entry_are_told_rather_than_losing_it(
 
     # Told, with the server's own wording, and the dialog stays open.
     expect(second_member_page.get_by_text("Someone else changed this entry")).to_be_visible()
+
+@pytest.mark.collections
+def test_a_collection_can_be_pinned_beside_a_list(
+    page: Page,
+    base_url: str,
+    demo_member: DemoMember,
+    test_data: TestData,
+    cleanup_collections,
+) -> None:
+    """
+    0012 R104, R105 and adr/0043. A collection had no per-member state at all
+    before this, so the star on its card is new - and the section it lands in is
+    the same one pinned lists use, because which kind a thing is is not how a
+    member thinks about what they are working from.
+    """
+    name = test_data.name("CollPinned")
+    cleanup_collections(name)
+    ui_sign_in(page, base_url, demo_member)
+
+    make_collection(page, name)
+
+    nav = page.get_by_role("navigation", name="Main")
+    pinned = page.get_by_role("list", name="Pinned")
+    expect(nav.get_by_role("link", name=name)).to_be_visible()
+
+    page.get_by_role("button", name=f"Pin {name}").click()
+
+    expect(pinned.get_by_role("link", name=name)).to_be_visible()
+    expect(nav.get_by_role("link", name=name)).to_have_count(0)
+
+    page.get_by_role("button", name=f"Unpin {name}").click()
+
+    expect(nav.get_by_role("link", name=name)).to_be_visible()
+    expect(pinned.get_by_role("link", name=name)).to_have_count(0)
+

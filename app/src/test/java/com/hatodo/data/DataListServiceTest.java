@@ -10,6 +10,8 @@ import static org.mockito.Mockito.when;
 
 import com.hatodo.list.ListIcon;
 import com.hatodo.user.AppUser;
+import com.hatodo.household.HouseholdProperties;
+import com.hatodo.household.InteractionWindow;
 import com.hatodo.user.AppUserPrincipal;
 import com.hatodo.user.AppUserRepository;
 import com.hatodo.user.CurrentUserProvider;
@@ -41,6 +43,8 @@ class DataListServiceTest {
     @Mock private DataListRepository lists;
     @Mock private DataListAccessRepository access;
     @Mock private DataEntryRepository entries;
+    @Mock private DataListUserStateRepository states;
+    @Mock private DataListInteractionRepository interactions;
     @Mock private AppUserRepository users;
     @Mock private EntityManager entityManager;
     @Mock private org.springframework.context.ApplicationEventPublisher events;
@@ -70,8 +74,9 @@ class DataListServiceTest {
         when(access.findForList(any())).thenReturn(List.of());
         when(entries.countForList(any())).thenReturn(0L);
         CurrentUserProvider currentUser = () -> AppUserPrincipal.of(me);
-        service = new DataListService(lists, access, entries, users, currentUser,
-                entityManager, events);
+        service = new DataListService(lists, access, entries, states, interactions,
+                new InteractionWindow(new HouseholdProperties("Asia/Singapore")),
+                users, currentUser, entityManager, events);
     }
 
     @Test
@@ -230,7 +235,8 @@ class DataListServiceTest {
     void anAnonymousCallerIsNotReadableRatherThanAnError() {
         // The image endpoint is permitAll, so this is reached without a
         // session - and must answer no rather than throw inside a transaction.
-        DataListService anonymous = new DataListService(lists, access, entries, users,
+        DataListService anonymous = new DataListService(lists, access, entries, states, interactions,
+                new InteractionWindow(new HouseholdProperties("Asia/Singapore")), users,
                 () -> {
                     throw new IllegalStateException("nobody");
                 }, entityManager, events);

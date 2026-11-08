@@ -47,9 +47,36 @@ class MeServiceTest {
         MeService me = serviceFor(ana);
 
         assertThat(me.preferences().theme()).isEqualTo(ThemePreference.SYSTEM);
-        assertThat(me.updatePreferences(new PreferencesRequest(ThemePreference.DARK)).theme())
+        assertThat(me.updatePreferences(new PreferencesRequest(ThemePreference.DARK, null)).theme())
                 .isEqualTo(ThemePreference.DARK);
         assertThat(ana.getThemePreference()).isEqualTo(ThemePreference.DARK);
+    }
+
+    @Test
+    void readsAndUpdatesHowManyListsTheSidebarShows() {
+        AppUser ana = AppUser.member("ana", "Ana", "$2y$10$hash");
+        MeService me = serviceFor(ana);
+
+        assertThat(me.preferences().sidebarListCount())
+                .isEqualTo(AppUser.DEFAULT_SIDEBAR_LIST_COUNT);
+        assertThat(me.updatePreferences(new PreferencesRequest(ThemePreference.SYSTEM, 3))
+                .sidebarListCount()).isEqualTo(3);
+        assertThat(ana.getSidebarListCount()).isEqualTo(3);
+    }
+
+    @Test
+    void leavesTheSidebarSizeAloneWhenTheRequestDoesNotMentionIt() {
+        // A client editing the theme sends no sidebar size. Were the component a
+        // primitive, Jackson would reject the request outright; were it boxed
+        // and unconditionally applied, it would silently reset the preference
+        // to zero - which the check constraint would then refuse as a 500.
+        AppUser ana = AppUser.member("ana", "Ana", "$2y$10$hash");
+        ana.setSidebarListCount(7);
+        MeService me = serviceFor(ana);
+
+        me.updatePreferences(new PreferencesRequest(ThemePreference.DARK, null));
+
+        assertThat(ana.getSidebarListCount()).isEqualTo(7);
     }
 
     @Test

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { repin } from '../app/repin'
 import {
   createList,
   deleteList,
@@ -147,23 +148,6 @@ export function usePinList() {
     },
     onSettled: () => void queryClient.invalidateQueries({ queryKey: listKeys.all }),
   })
-}
-
-/** Rewrites the pin flag wherever a list appears, whatever shape holds it. */
-function repin(data: unknown, id: string, pinned: boolean): unknown {
-  if (Array.isArray(data)) {
-    return data.map((entry) => repin(entry, id, pinned))
-  }
-  if (data && typeof data === 'object') {
-    const record = data as Record<string, unknown>
-    if ('pinned' in record && record.id === id) {
-      return { ...record, pinned }
-    }
-    if ('pinned' in record && 'recent' in record) {
-      return { pinned: repin(record.pinned, id, pinned), recent: repin(record.recent, id, pinned) }
-    }
-  }
-  return data
 }
 
 /**

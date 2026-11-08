@@ -14,7 +14,7 @@ import { useCurrentUser } from '../auth/useCurrentUser'
 import { useOwnPassword } from '../auth/useOwnPassword'
 import { AvatarUpload } from '../profile/AvatarUpload'
 import { CalendarFeeds } from '../profile/CalendarFeeds'
-import { useThemePreference } from '../theme/useThemePreference'
+import { useSidebarListCount, useThemePreference } from '../theme/useThemePreference'
 import type { ThemePreference } from '../api/profile'
 
 /** A member's own settings: how the app looks, and how they sign in. */
@@ -26,6 +26,7 @@ export function ProfilePage() {
       </Typography>
       <Picture />
       <Appearance />
+      <Navigation />
       <Calendars />
       <PasswordSection />
     </Stack>
@@ -120,6 +121,69 @@ function Appearance() {
     </Section>
   )
 }
+
+/**
+ * How many lists and collections the sidebar's groups show (0012 R102).
+ *
+ * <p>Its own section rather than a line inside Appearance: this is about what
+ * the navigation reaches, not about how the app looks. A number field with
+ * bounds rather than a slider - a member who wants seven wants seven, and the
+ * server refuses anything outside 1 to 30 anyway.
+ */
+function Navigation() {
+  const { count, choose, error } = useSidebarListCount()
+  // Held locally while it is being typed, because an empty box and a half-typed
+  // "1" of "12" are both states the server must not be sent. Seeded from the
+  // stored value once it arrives.
+  const [draft, setDraft] = useState<string | null>(null)
+  const shown = draft ?? (count === undefined ? '' : String(count))
+
+  function commit() {
+    const parsed = Number(draft)
+    setDraft(null)
+    if (!draft || !Number.isInteger(parsed) || parsed < MIN_SIDEBAR || parsed > MAX_SIDEBAR) {
+      return
+    }
+    if (parsed !== count) {
+      choose(parsed)
+    }
+  }
+
+  return (
+    <Section title="Navigation">
+      <Typography color="text.secondary">
+        The sidebar groups your lists and collections, showing the ones you use most
+        often first - with anything you have pinned ahead of them.
+      </Typography>
+
+      <TextField
+        label="Lists shown in each group"
+        type="number"
+        value={shown}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            commit()
+          }
+        }}
+        slotProps={{ htmlInput: { min: MIN_SIDEBAR, max: MAX_SIDEBAR, step: 1 } }}
+        helperText={`Between ${MIN_SIDEBAR} and ${MAX_SIDEBAR}.`}
+        sx={{ maxWidth: '16rem' }}
+      />
+
+      {error && (
+        <Alert severity="error">
+          {errorMessage(error, 'Could not save that preference.')}
+        </Alert>
+      )}
+    </Section>
+  )
+}
+
+/** Mirrors the bounds the server's check constraint enforces. */
+const MIN_SIDEBAR = 1
+const MAX_SIDEBAR = 30
 
 /**
  * Setting or clearing one's own password, with no current password asked for -

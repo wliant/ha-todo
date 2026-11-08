@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { clearTouchedLists } from '../lists/queries'
+import { clearTouchedCollections } from '../data/queries'
 import {
   fetchCurrentUser,
   fetchLoginUsers,
@@ -56,6 +57,7 @@ export function useLogout() {
       // which lists have already been marked as opened this session.
       queryClient.clear()
       clearTouchedLists()
+      clearTouchedCollections()
     },
   })
 }
