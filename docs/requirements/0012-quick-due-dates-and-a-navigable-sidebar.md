@@ -79,11 +79,27 @@ exactly backwards: a shortcut should privilege habit, not novelty.
   the last month.** Not by how recently: a list opened daily outranks one opened
   once yesterday. A month is the window, so a habit that stops decays out of the
   sidebar rather than holding its place forever.
-- **R101 Pinned lists come first.** A pin is an explicit instruction and
-  outranks measured habit. Pinning stays a property of lists only; collections
-  have no pins (`adr/0029`), so a collection group is ordered by use alone.
+- **R101 Pinned things are not merely sorted first - they have a section.**
+  Superseded in this document by R104-R106, which is where the sidebar's shape
+  is actually specified. A pin is an explicit instruction, and folding it into
+  an ordering makes it indistinguishable from something that merely happens to
+  be used a lot.
 - **R102 How many each group shows is a personal preference.** Ten by default,
   changeable by the member, and personal rather than per-device.
+- **R104 A collection can be pinned, exactly as a list can.** The star is on a
+  collection's card and its own screen, it is personal, and pinning something
+  shared with you changes nothing for whoever shared it. A recipe collection
+  somebody is cooking from this week is the case pinning exists for.
+- **R105 Pinned lists and pinned collections share one section, above the
+  groups.** A member pins the handful of things they are working from, and which
+  of them is a list and which a collection is not how they think about it. The
+  section and the groups **partition** what the member can see: a pinned thing
+  leaves its group, so nothing is drawn twice.
+- **R106 The pinned section is never truncated.** A member may pin as many
+  things as they like. The section is bounded in *height* and scrolls, rather
+  than being capped at a count - R102's preference governs the groups below it
+  only. Dropping somebody's twelfth pin is the sidebar overruling an explicit
+  instruction.
 
 ### Should have
 
@@ -93,8 +109,9 @@ exactly backwards: a shortcut should privilege habit, not novelty.
 
 ### Out of scope
 
-- **A pinned collection.** `adr/0029` keeps collections out of
-  `list_user_state`, R101 accepts the consequence, and nothing here loosens it.
+- **Loosening `list_user_state.list_id`.** R104 gives collections a pin, but
+  `adr/0029`'s separation stands: it is a table of their own
+  (`data_list_user_state`), not a widened foreign key. See `adr/0043`.
 - **A recurring due date from this control.** Recurrence is a rule on a list
   (0005 R41), not a property of one item's date field.
 - **Ordering the `/lists` index by use.** The index is a browse and sorts by
@@ -105,7 +122,10 @@ exactly backwards: a shortcut should privilege habit, not novelty.
 
 ## Open questions
 
+- Whether a member should be able to reorder the pinned section by hand. It is
+  ordered by name today; "most recently pinned first" would need a pin timestamp
+  the API deliberately does not expose (`adr/0043`).
 - Whether a member should be able to reorder a group by hand, which would be a
-  third ordering input competing with pins and measured use.
+  second ordering input competing with measured use.
 - Whether the frequency window should be configurable. One month is a guess,
   chosen because a household's habits turn over in weeks.

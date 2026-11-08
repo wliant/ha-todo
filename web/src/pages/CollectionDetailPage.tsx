@@ -16,11 +16,13 @@ import type { EntryDetail } from '../api/dataEntries'
 import { fetchEntry } from '../api/dataEntries'
 import { EntryForm } from '../data/EntryForm'
 import { EntryRow } from '../data/EntryRow'
+import { PinButton } from '../lists/PinButton'
 import {
   useCollection,
   useDeleteEntry,
   useEntries,
   useTagSuggestions,
+  usePinCollection,
   useTouchCollection,
 } from '../data/queries'
 
@@ -50,6 +52,7 @@ export function CollectionDetailPage() {
   const { data: suggestions } = useTagSuggestions(listId)
   const deleteEntry = useDeleteEntry()
   const touch = useTouchCollection()
+  const pin = usePinCollection()
 
   useEffect(() => {
     if (collection) {
@@ -122,7 +125,14 @@ export function CollectionDetailPage() {
         <Typography component="h1" variant="h5" sx={{ overflowWrap: 'anywhere' }}>
           {collection?.name ?? 'Collection'}
         </Typography>
-        <Stack direction="row" spacing={1}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+          {collection && (
+            <PinButton
+              name={collection.name}
+              pinned={collection.pinned}
+              onToggle={(pinned) => pin.mutate({ id: collection.id, pinned })}
+            />
+          )}
           <Button variant="contained" startIcon={<AddRounded />} onClick={() => setAdding(true)}>
             New entry
           </Button>

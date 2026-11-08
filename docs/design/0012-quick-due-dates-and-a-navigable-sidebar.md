@@ -1,12 +1,13 @@
 # 0012 - Quick due dates and a sidebar that reaches every list
 
 Design for [requirements/0012](../requirements/0012-quick-due-dates-and-a-navigable-sidebar.md)
-(R94-R103). Two independent features that ship together because both are small
+(R94-R106). Two independent features that ship together because both are small
 and both are in the path a member walks every day.
 
 Decisions this implements rather than argues:
 [adr/0041](../adr/0041-interaction-frequency-is-a-pruned-daily-bucket.md),
-[adr/0042](../adr/0042-a-nav-group-owns-its-own-disclosure.md).
+[adr/0042](../adr/0042-a-nav-group-owns-its-own-disclosure.md),
+[adr/0043](../adr/0043-a-collection-can-be-pinned.md).
 
 ## Scope
 
@@ -14,8 +15,8 @@ Two tracks, in this order, because the second is the one with a migration:
 
 1. **The due-date control** (R94-R97). Frontend only. One new component, one
    deletion from `ItemForm`.
-2. **The sidebar** (R98-R103). A migration, two ordered reads, a new touch
-   endpoint, one preference, and `SideNav` rebuilt.
+2. **The sidebar** (R98-R106). Two migrations, four ordered reads, a touch
+   endpoint, a collection pin, one preference, and `SideNav` rebuilt.
 
 ## What is already there
 
@@ -84,7 +85,7 @@ named `toLocalInput` sitting in the file is an invitation.
 
 ## Track 2 - the sidebar
 
-### Step 1 - the migration (V917)
+### Step 1 - the migrations (V917, V918)
 
 ```sql
 CREATE TABLE list_interaction_day (
@@ -99,6 +100,21 @@ ALTER TABLE app_user ADD COLUMN sidebar_list_count INT NOT NULL DEFAULT 10;
 `adr/0041` for why it is not generated. The prune index is on
 `(user_id, on_day)` and not `(list_id, ...)`, because the prune is scoped to the
 member.
+
+V918 gives collections a pin (R104), in a table of their own because
+`list_user_state.list_id` is an FK to `todo_list` and `adr/0029` keeps it that
+way:
+
+```sql
+CREATE TABLE data_list_user_state (
+    data_list_id UUID, user_id UUID, pinned_at TIMESTAMPTZ,
+    PRIMARY KEY (data_list_id, user_id));
+```
+
+Deliberately thinner than `list_user_state`: **no `last_interacted_at` twin**. A
+collection's recency comes from its interaction buckets, and a second column
+holding it is a second thing to keep true. See `adr/0043`, which also records
+which earlier statements this overrides.
 
 ### Step 2 - the writes
 
@@ -146,22 +162,43 @@ LIMIT :limit
 - The `JOIN` on `list_access` is the access filter, in SQL, as every list read
   is. The owner holds a grant of their own, so the join alone answers it.
 - Both outer joins are **LEFT**, which is R98: a list with no state row and no
-  buckets still comes back, sorted among the other zeroes by name.
-- `(s.pinned_at IS NOT NULL) DESC` is R101. A boolean sorts false-then-true
-  ascending in Postgres, so pinned-first is `DESC`.
+  buckets still comes back, sorted among the other zeroes by name. A reader who
+  "tidies" either into an inner join restores the old only-what-you-opened
+  behaviour, silently.
+- `WHERE s.pinned_at IS NULL` is R105: a pinned list is drawn in its own section
+  above, so it leaves the group. That is also what keeps the cap honest - a
+  member who pins twelve things still sees a group underneath them rather than
+  a cap spent entirely on pins.
 - `:since` is `today - 30 days` in the household's zone, computed by the
   service. It is **not** a parameter of the endpoint, for `adr/0040`'s reason:
   a window a caller supplies is a window that drifts.
 
-The data-list query is the same shape minus the pin and recency terms, with
-`MAX(last_at)` as the tie-break.
+The data-list query is the same shape with `MAX(last_at)` as the tie-break,
+since a collection has no `last_interacted_at` of its own.
+
+Two more reads, one per aggregate, for the pinned section:
+
+```
+findPinnedForSidebar(userId) -- pinned_at IS NOT NULL, same access guard,
+                             -- ORDER BY LOWER(name), no LIMIT
+```
+
+**Uncapped** is R106 - the section scrolls rather than truncating. **By name**
+rather than by `pinned_at` because the two halves arrive from two requests with
+no shared clock to interleave on, and the alternative is a per-member timestamp
+on DTOs the whole app reads (`adr/0043`).
 
 ### Step 4 - the endpoints
 
-- `GET /api/lists/sidebar` keeps its path and changes its body:
-  `SidebarResponse(List<ListSummaryResponse> lists)`. The `pinned`/`recent`
-  split is gone, so every reader breaks at compile time (`adr/0042`).
-- `GET /api/data-lists/sidebar` is new, in `DataListController`.
+- `GET /api/lists/sidebar` keeps its path and changes its body to
+  `SidebarResponse(pinned, lists)`. Still two components, but they now
+  **partition** rather than overlap: `lists` excludes everything in `pinned`.
+  One request per aggregate, because a split that could disagree while one half
+  was in flight would draw a list in both sections or in neither.
+- `GET /api/data-lists/sidebar` is new, in `DataListController`, the same shape.
+- `PUT` / `DELETE /api/data-lists/{id}/pin` are new (R104), checking
+  **readable** rather than **managed**, exactly as a list's pin does: a pin is
+  the caller's own note about something they can see.
 - `POST /api/data-lists/{id}/touch` is new.
 - `PATCH /api/me/preferences` grows `sidebarListCount`, bounded `1..30`.
   `Integer` with a defaulting accessor, not `int`, because Jackson rejects a
@@ -170,27 +207,55 @@ The data-list query is the same shape minus the pin and recency terms, with
 
 ### Step 5 - `SideNav`
 
-The Pinned and Recent sections are **deleted**. The menu becomes:
+The Recent section is **deleted**; Pinned stays and grows to hold both kinds:
 
 ```
+Pinned                      (max-height 15rem, scrolls - R106)
+  <icon> Chores                 lists and collections, merged by name
+  <icon> Recipes
+
+Menu
 Agenda
 Lists         ▾   +        -> /lists
-  <icon> Groceries              (ordered by adr/0041)
+  <icon> Groceries              everything NOT pinned, ordered by adr/0041
   ...
 Collections   ▾   +        -> /collections
-  <icon> Recipes
+  <icon> Cooking
 Users (admin only)
 ```
 
-One `NavGroup` component drawn twice. Its own state lives in `SideNav` as
-`open: { lists: boolean; collections: boolean }`, both true by default
-(`adr/0042`). The chevron is a separate `IconButton` **beside** the
+`PinnedSection` renders **nothing at all** when empty - unlike the two groups
+below, which say "no lists yet" because they are permanent fixtures carrying a
+create button. An empty labelled Pinned section is noise. It takes a `loaded`
+flag so it does not flash in on first paint: with no data yet, its entries are
+empty for the same reason they are empty for a member with no pins, and the two
+must not look the same.
+
+One `NavGroup` component drawn twice for the groups. Their open state lives in
+`SideNav` as `open: { lists: boolean; collections: boolean }`, both true by
+default (`adr/0042`). The chevron is a separate `IconButton` **beside** the
 `ListItemButton`, not inside it - the group's label still navigates (R99), and a
 button inside a button is the invalid nesting `adr/0039` already had to undo
 once.
 
-An empty group renders one disabled row saying so, with the group's own create
+An empty group renders one row saying so, with the group's own create
 affordance beside the header (R103).
+
+### Step 7 - the star on both kinds
+
+`PinButton` stops reaching for `usePinList` and takes an `onToggle` instead.
+`ListCard` and `ListDetailPage` wire `usePinList`; `CollectionCard` and
+`CollectionDetailPage` wire the new `usePinCollection`. A button that picked
+between two hooks would have to call both on every render to keep hook order
+stable, and the caller already knows which kind it draws.
+
+`repin` - the optimistic flag rewrite - moves to `app/repin.ts`, shared by both
+query modules. It handles a bare array of summaries and a sidebar envelope, and
+distinguishes the two by `typeof record.pinned === 'boolean'`: a summary's
+`pinned` is a boolean, an envelope's is an array. It deliberately does **not**
+move the entry between the envelope's arrays - where it belongs depends on an
+ordering only the server computes, so the star flips instantly and `onSettled`
+relocates the row.
 
 ### Step 6 - the preference
 
@@ -204,16 +269,19 @@ it from `/api/me/preferences`, which the shell already fetches for the theme.
 | R94, R97 | `DueAtField.test.tsx` - chips, steppers, clear |
 | R95 | the same, asserting `23:59` on a freshly picked date |
 | R96 | the same, with the household zone set away from the test runner's |
-| R98 | `ListSidebarIntegrationTest` - a just-created list appears |
+| R98 | `ListApiIntegrationTest` - a just-created list appears |
 | R100 | the same - a list opened three times outranks one opened once later |
-| R101 | the same - a pin jumps a more-used list |
-| R102 | `MeServiceTest`, and the bound rejected |
-| R99, R103 | `SideNav.test.tsx` |
+| R102 | `MeServiceTest`, the bound rejected, and the cap read through the endpoint |
+| R104 | `DataListApiIntegrationTest` - personal, 404 without a grant |
+| R105 | both suites - a pin moves the row out of the group, and back |
+| R106 | `ListApiIntegrationTest` - four pins survive a preference of two |
+| R99, R103, R105 | `SideNav.test.tsx` |
 | end to end | `e2e/tests/test_sidebar.py`, plus the due-date fills already in `test_dashboard.py` and `test_fields.py` updated to the new control |
 
 ## What this deliberately does not do
 
 - Order `/lists` by use. The index is a browse (R-out-of-scope).
 - Persist the collapsed state. `adr/0042`.
-- Give collections a pin. `adr/0029`, and R101 accepts it.
+- Give collections a `last_interacted_at`, a "Pinned only" filter on the
+  collections index, or an interleaved-by-pin-time section. `adr/0043`.
 - Count anything but a visit. A second signal is a second thing to keep true.

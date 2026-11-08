@@ -23,7 +23,7 @@ import { RecurrenceSection } from '../items/RecurrenceSection'
 import { ListIcon } from '../lists/listIcons'
 import { PinButton } from '../lists/PinButton'
 import type { ListDetail, ListField } from '../api/lists'
-import { useList, useListFields, useTouchList } from '../lists/queries'
+import { useList, useListFields, usePinList, useTouchList } from '../lists/queries'
 
 /** What the tabs below the header are handed, so neither refetches the list. */
 type ListContext = { list: ListDetail; fields: ListField[] }
@@ -48,6 +48,7 @@ export function ListDetailPage() {
   const { data: list, isPending, error } = useList(listId)
   const { data: fields } = useListFields(listId)
   const touch = useTouchList()
+  const pin = usePinList()
 
   useEffect(() => {
     if (list) {
@@ -118,7 +119,11 @@ export function ListDetailPage() {
           sx={{ alignItems: 'center', flexShrink: 0, flexWrap: 'wrap' }}
         >
           <ListAudience members={list.members} />
-          <PinButton id={list.id} name={list.name} pinned={list.pinned} />
+          <PinButton
+            name={list.name}
+            pinned={list.pinned}
+            onToggle={(pinned) => pin.mutate({ id: list.id, pinned })}
+          />
           {list.owned && (
             <Button
               component={RouterLink}

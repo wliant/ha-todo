@@ -49,8 +49,8 @@ public interface TodoListRepository extends JpaRepository<TodoList, UUID> {
                                @Param("pinnedOnly") boolean pinnedOnly);
 
     /**
-     * The sidebar's one group: every list the member can see, ordered by how
-     * they use it (0012 R98, R100, R101).
+     * The sidebar's Lists group: the lists the member can see and has **not**
+     * pinned, ordered by how often they use each one (0012 R98, R100).
      *
      * <p>Native, because of the {@code NULLS LAST} and the aggregate join -
      * both of which JPQL cannot say.
@@ -63,10 +63,13 @@ public interface TodoListRepository extends JpaRepository<TodoList, UUID> {
      *       state row and no buckets still comes back. The old "recent" query
      *       required a state row, so a list nobody had opened on this account -
      *       including one just created, and every list somebody else shared -
-     *       was absent from the sidebar entirely.
-     *   <li>{@code (s.pinned_at IS NOT NULL) DESC} is R101. A boolean sorts
-     *       false before true ascending in Postgres, so pinned-first is
-     *       {@code DESC}.
+     *       was absent from the sidebar entirely. A reader who "tidies" either
+     *       into an inner join restores that silently.
+     *   <li>Pinned lists are excluded, because {@link #findPinnedForSidebar}
+     *       draws them in their own section above (R105). That is also what
+     *       keeps the cap honest: a member who pins twelve things still sees a
+     *       group of lists underneath them rather than a cap spent entirely on
+     *       pins.
      * </ul>
      *
      * @param since the first day of the frequency window, in the household's
@@ -84,8 +87,8 @@ public interface TodoListRepository extends JpaRepository<TodoList, UUID> {
                 WHERE user_id = :userId AND on_day >= :since
                 GROUP BY list_id
             ) f ON f.list_id = l.id
-            ORDER BY (s.pinned_at IS NOT NULL) DESC,
-                     COALESCE(f.hits, 0) DESC,
+            WHERE s.pinned_at IS NULL
+            ORDER BY COALESCE(f.hits, 0) DESC,
                      s.last_interacted_at DESC NULLS LAST,
                      LOWER(l.name) ASC
             LIMIT :limit
@@ -93,6 +96,25 @@ public interface TodoListRepository extends JpaRepository<TodoList, UUID> {
     List<TodoList> findForSidebar(@Param("userId") UUID userId,
                                   @Param("since") LocalDate since,
                                   @Param("limit") int limit);
+
+    /**
+     * Every list the member has pinned (0012 R104-R106).
+     *
+     * <p>Uncapped on purpose: the sidebar's pinned section scrolls rather than
+     * truncating, because a pin is an explicit instruction and silently
+     * dropping the twelfth one is the sidebar deciding it knows better. By
+     * name, so the section does not reorder under a member who pins something
+     * new while looking at it - and so it can be merged with the pinned
+     * collections, which arrive from a different request and carry no shared
+     * clock to interleave on (adr/0043).
+     */
+    @Query("""
+            SELECT s.list FROM ListUserState s
+            WHERE s.user.id = :userId AND s.pinnedAt IS NOT NULL
+            AND EXISTS (SELECT 1 FROM ListAccess a WHERE a.list = s.list AND a.user.id = :userId)
+            ORDER BY LOWER(s.list.name) ASC
+            """)
+    List<TodoList> findPinnedForSidebar(@Param("userId") UUID userId);
 
     /** A list the caller may see, or empty - which the service turns into 404. */
     @Query("""

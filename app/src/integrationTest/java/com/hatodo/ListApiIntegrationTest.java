@@ -218,12 +218,16 @@ class ListApiIntegrationTest extends ApiIntegrationTest {
                 .isEqualTo(HttpStatus.NO_CONTENT);
 
         assertThat(pinnedIds(ana.session())).contains(id);
-        assertThat(sidebarIds(ana.session())).as("a pin sorts first (R101)").startsWith(id);
+        // R105: the two sections partition the member's lists, so a pinned list
+        // leaves the group rather than appearing in both.
+        assertThat(sidebarIds(ana.session())).doesNotContain(id);
         assertThat(pinnedIds(ben.session())).as("one member's pins are their own").doesNotContain(id);
+        assertThat(sidebarIds(ben.session())).as("and it is still in their group").contains(id);
 
         rest.exchange("/api/lists/" + id + "/pin", HttpMethod.DELETE,
                 new HttpEntity<>(headersFor(ana.session())), Void.class);
         assertThat(pinnedIds(ana.session())).doesNotContain(id);
+        assertThat(sidebarIds(ana.session())).as("and comes back to the group").contains(id);
     }
 
     @Test
@@ -277,8 +281,9 @@ class ListApiIntegrationTest extends ApiIntegrationTest {
     }
 
     @Test
-    void aPinOutranksTheListTheMemberUsesMost() {
-        // R101. A pin is an explicit instruction and beats measured habit.
+    void aPinLiftsAListOutOfTheGroupHoweverLittleItIsUsed() {
+        // R105. A pin is an explicit instruction, so it is not competing with
+        // measured habit at all - it moves the list to a section of its own.
         Member ana = givenMember("pin-over-habit");
         String often = (String) createList(ana.session(), "Often " + ana.username()).getBody().get("id");
         String pinned = (String) createList(ana.session(), "Pinned " + ana.username()).getBody().get("id");
@@ -287,7 +292,28 @@ class ListApiIntegrationTest extends ApiIntegrationTest {
         rest.exchange("/api/lists/" + pinned + "/pin", HttpMethod.PUT,
                 new HttpEntity<>(headersFor(ana.session())), Void.class);
 
-        assertThat(sidebarIds(ana.session())).startsWith(pinned, often);
+        assertThat(pinnedIds(ana.session())).contains(pinned).doesNotContain(often);
+        assertThat(sidebarIds(ana.session())).startsWith(often).doesNotContain(pinned);
+    }
+
+    @Test
+    void thePinnedSectionIsNotCappedByTheSidebarPreference() {
+        // R106. The section scrolls rather than truncating: silently dropping a
+        // pin is the sidebar overruling an explicit instruction.
+        Member ana = givenMember("many-pins");
+        rest.exchange("/api/me/preferences", HttpMethod.PATCH,
+                new HttpEntity<>("{\"theme\":\"SYSTEM\",\"sidebarListCount\":2}",
+                        headersFor(ana.session())), Map.class);
+
+        for (int index = 0; index < 4; index++) {
+            String id = (String) createList(ana.session(), "Pinned " + index + " " + ana.username())
+                    .getBody().get("id");
+            rest.exchange("/api/lists/" + id + "/pin", HttpMethod.PUT,
+                    new HttpEntity<>(headersFor(ana.session())), Void.class);
+        }
+
+        assertThat(pinnedIds(ana.session())).hasSize(4);
+        assertThat(sidebarIds(ana.session())).isEmpty();
     }
 
     @Test
@@ -393,21 +419,21 @@ class ListApiIntegrationTest extends ApiIntegrationTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
-    /** The sidebar's one group, in the order it is drawn (0012 R98-R101). */
-    private List<Map<String, Object>> sidebar(Session session) {
+    /** One of the sidebar's two sections, in the order it is drawn. */
+    private List<String> sidebarIds(Session session, String section) {
         ResponseEntity<Map> sidebar = rest.exchange("/api/lists/sidebar", HttpMethod.GET,
                 new HttpEntity<>(headersFor(session)), Map.class);
-        return (List<Map<String, Object>>) sidebar.getBody().get("lists");
+        return ((List<Map<String, Object>>) sidebar.getBody().get(section)).stream()
+                .map(list -> (String) list.get("id")).toList();
     }
 
+    /** The capped group below the pinned section (0012 R98-R100). */
     private List<String> sidebarIds(Session session) {
-        return sidebar(session).stream().map(list -> (String) list.get("id")).toList();
+        return sidebarIds(session, "lists");
     }
 
     private List<String> pinnedIds(Session session) {
-        return sidebar(session).stream()
-                .filter(list -> Boolean.TRUE.equals(list.get("pinned")))
-                .map(list -> (String) list.get("id")).toList();
+        return sidebarIds(session, "pinned");
     }
 
     private void touch(Session session, String id) {

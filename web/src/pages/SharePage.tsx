@@ -47,13 +47,16 @@ export function SharePage() {
   const [captured] = useState(() => captureSharedLink(params))
   const { data: sidebar } = useSidebar()
 
-  const lists: ListSummary[] = sidebar?.lists ?? []
+  // Pinned first, then the group - the sidebar's own order. The two arrays
+  // partition the member's lists, so this is every list they can see, with the
+  // ones they pinned ahead of the ones they merely use.
+  const lists: ListSummary[] = [...(sidebar?.pinned ?? []), ...(sidebar?.lists ?? [])]
   const { data: collections } = useCollections({ scope: 'all' })
 
   type Target = { kind: 'list' | 'collection'; id: string }
   const [chosen, setChosen] = useState<Target | null>(null)
   // The first list the sidebar would show - pinned, else the one they use most
-  // (0012 R100, R101). Falls through to a collection only when the member has
+  // (0012 R100, R105). Falls through to a collection only when the member has
   // no lists at all.
   const fallback: Target | null = lists[0]
     ? { kind: 'list', id: lists[0].id }

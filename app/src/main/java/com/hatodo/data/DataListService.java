@@ -45,6 +45,7 @@ public class DataListService {
     private final DataListRepository lists;
     private final DataListAccessRepository access;
     private final DataEntryRepository entries;
+    private final DataListUserStateRepository states;
     private final DataListInteractionRepository interactions;
     private final InteractionWindow window;
     private final AppUserRepository users;
@@ -53,7 +54,7 @@ public class DataListService {
     private final ApplicationEventPublisher events;
 
     public DataListService(DataListRepository lists, DataListAccessRepository access,
-                           DataEntryRepository entries,
+                           DataEntryRepository entries, DataListUserStateRepository states,
                            DataListInteractionRepository interactions, InteractionWindow window,
                            AppUserRepository users,
                            CurrentUserProvider currentUser, EntityManager entityManager,
@@ -61,6 +62,7 @@ public class DataListService {
         this.lists = lists;
         this.access = access;
         this.entries = entries;
+        this.states = states;
         this.interactions = interactions;
         this.window = window;
         this.users = users;
@@ -80,21 +82,54 @@ public class DataListService {
     }
 
     /**
-     * The sidebar's collections group (0012 R98, R100, R102).
+     * The sidebar's collections: the pinned ones, then the group (0012 R98,
+     * R100, R102, R104-R106).
      *
-     * <p>Every collection the member can see, ordered by how often they open
-     * it over the last month and capped at their own preference. No pins: a
-     * collection has no per-member state beyond its interaction buckets
-     * (adr/0029).
+     * <p>Pinned collections are uncapped, because the section holding them
+     * scrolls; the group below excludes them and is capped at the member's
+     * preference, so the two partition what they can see. A collection could
+     * not be pinned at all until adr/0043.
      */
     @Transactional(readOnly = true)
     public DataListSidebarResponse sidebar() {
         AppUser me = users.findById(currentUser.requireUserId()).orElseThrow(
                 () -> new IllegalStateException("Authenticated user no longer exists"));
-        return new DataListSidebarResponse(
+        List<DataListSummaryResponse> pinned = lists.findPinnedForSidebar(me.getId()).stream()
+                .map(list -> summarise(list, me.getId()))
+                .toList();
+        List<DataListSummaryResponse> group =
                 lists.findForSidebar(me.getId(), window.since(), me.getSidebarListCount()).stream()
                         .map(list -> summarise(list, me.getId()))
-                        .toList());
+                        .toList();
+        return new DataListSidebarResponse(pinned, group);
+    }
+
+    /**
+     * Pins or unpins a collection for the caller (0012 R104).
+     *
+     * <p>Readable, not managed: a pin is the caller's own note about something
+     * they can see, exactly as it is for a list. Pinning something shared with
+     * you changes nothing for the member who shared it.
+     */
+    @Transactional
+    public void pin(UUID listId, boolean pinned) {
+        AppUser me = requireCurrentUser();
+        DataList list = readable(listId, me.getId());
+        DataListUserState state = stateFor(list, me);
+        if (pinned) {
+            state.pin();
+        } else {
+            state.unpin();
+        }
+    }
+
+    private DataListUserState stateFor(DataList list, AppUser me) {
+        return states.find(list.getId(), me.getId())
+                .orElseGet(() -> states.save(new DataListUserState(list, me)));
+    }
+
+    private boolean isPinned(UUID listId, UUID userId) {
+        return states.find(listId, userId).map(DataListUserState::isPinned).orElse(false);
     }
 
     /**
@@ -304,14 +339,15 @@ public class DataListService {
 
     private DataListSummaryResponse summarise(DataList list, UUID me) {
         return new DataListSummaryResponse(list.getId(), list.getName(), list.getDescription(),
-                list.getIcon(), list.isOwnedBy(me), access.findForList(list.getId()).size(),
+                list.getIcon(), list.isOwnedBy(me), isPinned(list.getId(), me),
+                access.findForList(list.getId()).size(),
                 entries.countForList(list.getId()));
     }
 
     private DataListDetailResponse detail(DataList list, UUID me) {
         return new DataListDetailResponse(list.getId(), list.getName(), list.getDescription(),
-                list.getIcon(), list.isOwnedBy(me), list.getVersion(), membersOf(list),
-                list.getCreatedAt());
+                list.getIcon(), list.isOwnedBy(me), isPinned(list.getId(), me), list.getVersion(),
+                membersOf(list), list.getCreatedAt());
     }
 
     private AppUser requireCurrentUser() {

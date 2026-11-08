@@ -50,13 +50,13 @@ def test_member_creates_a_list_and_then_finds_it_by_name(
 
 
 @pytest.mark.lists
-def test_pinning_a_list_marks_it_in_the_sidebar(
+def test_pinning_a_list_moves_it_into_the_pinned_section(
     page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
 ) -> None:
     """
-    0012 R98, R101. The sidebar reaches every list now, so the list being
-    *there* is no longer what a pin changes - what it changes is that the row
-    sorts first and says why.
+    0012 R98, R105. The sidebar reaches every list now, so the list being
+    *there* is no longer what a pin changes - what it changes is which of the
+    two sections holds it. They partition, so nothing is drawn twice.
     """
     name = test_data.name("Pinned")
     cleanup_lists(name)
@@ -70,16 +70,21 @@ def test_pinning_a_list_marks_it_in_the_sidebar(
     page.get_by_role("button", name="Create list").click()
     expect(page.get_by_role("heading", name=name)).to_be_visible()
 
-    # In the sidebar before anything is pinned or even opened twice.
-    row = page.get_by_role("link", name=re.compile(rf"^{re.escape(name)}"))
-    expect(row).to_be_visible()
-    expect(row.get_by_label("Pinned")).to_have_count(0)
+    nav = page.get_by_role("navigation", name="Main")
+    pinned = page.get_by_role("list", name="Pinned")
+
+    # In the sidebar's group before anything is pinned or even opened twice.
+    expect(nav.get_by_role("link", name=name)).to_be_visible()
 
     page.get_by_role("button", name=f"Pin {name}").click()
-    expect(row.get_by_label("Pinned")).to_have_count(1)
+
+    expect(pinned.get_by_role("link", name=name)).to_be_visible()
+    expect(nav.get_by_role("link", name=name)).to_have_count(0)
 
     page.get_by_role("button", name=f"Unpin {name}").click()
-    expect(row.get_by_label("Pinned")).to_have_count(0)
+
+    expect(nav.get_by_role("link", name=name)).to_be_visible()
+    expect(pinned.get_by_role("link", name=name)).to_have_count(0)
 
 
 @pytest.mark.lists

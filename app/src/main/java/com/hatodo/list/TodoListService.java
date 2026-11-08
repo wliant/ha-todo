@@ -78,23 +78,28 @@ public class TodoListService {
     }
 
     /**
-     * The sidebar's one group of lists (0012 R98-R102).
+     * The sidebar's lists: the pinned section, then the group (0012 R98-R106).
      *
-     * <p>One group, not the old Pinned and Recent pair: a pin now sorts first
-     * inside it (R101) rather than living in a section of its own, and the
-     * group reaches **every** list the member can see rather than only those
-     * with a recorded interaction. How many it shows is the member's own
-     * preference.
+     * <p>Pinned lists keep a section of their own (R105), uncapped because it
+     * scrolls. What changed from the old pair is the section underneath: it is
+     * no longer "recent" but every *other* list the member can see - including
+     * ones never opened on this account - ordered by how often they use it, and
+     * capped at their own preference.
      */
     @Transactional(readOnly = true)
     public SidebarResponse sidebar() {
         AppUser me = users.findById(currentUser.requireUserId()).orElseThrow(
                 () -> new IllegalStateException("Authenticated user no longer exists"));
+        // Uncapped: the section that holds them scrolls (R106). The group below
+        // excludes them, so the two partition the member's lists.
+        List<ListSummaryResponse> pinned = lists.findPinnedForSidebar(me.getId()).stream()
+                .map(list -> summarise(list, me.getId()))
+                .toList();
         List<ListSummaryResponse> group =
                 lists.findForSidebar(me.getId(), window.since(), me.getSidebarListCount()).stream()
                         .map(list -> summarise(list, me.getId()))
                         .toList();
-        return new SidebarResponse(group);
+        return new SidebarResponse(pinned, group);
     }
 
     @Transactional(readOnly = true)

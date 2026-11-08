@@ -17,6 +17,7 @@ function collection(id: string, name: string, entryCount = 3): CollectionSummary
     description: null,
     icon: 'GROCERIES',
     owned: true,
+    pinned: false,
     memberCount: 1,
     entryCount,
   }
@@ -106,10 +107,15 @@ describe('CollectionsPage', () => {
     expect(await screen.findByText(/what you look up again/)).toBeVisible()
   })
 
-  it('offers no pin control, because a collection has no per-member state', async () => {
+  it('offers the same star a list card does', async () => {
+    // Reversed from what this file used to assert. A collection had no
+    // per-member state at all until adr/0043 gave it a pin; 0012 R104 is why.
+    const pin = vi.spyOn(collectionsApi, 'setCollectionPinned').mockResolvedValue(undefined)
     renderPage()
     await screen.findByText('Recipes')
 
-    expect(screen.queryByRole('button', { name: /Pin/ })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Pin Recipes' }))
+
+    expect(pin).toHaveBeenCalledWith('id-recipes', true)
   })
 })

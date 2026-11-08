@@ -9,8 +9,10 @@ import { Link as RouterLink } from 'react-router-dom'
 import type { ListSummary } from '../api/lists'
 import { ListIcon } from './listIcons'
 import { PinButton } from './PinButton'
+import { usePinList } from './queries'
 
 export function ListCard({ list }: { list: ListSummary }) {
+  const pin = usePinList()
   return (
     <Card variant="outlined" sx={{ height: '100%' }}>
       <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
@@ -47,7 +49,11 @@ export function ListCard({ list }: { list: ListSummary }) {
           </Stack>
         </CardActionArea>
         <Box sx={{ p: 1 }}>
-          <PinButton id={list.id} name={list.name} pinned={list.pinned} />
+          <PinButton
+            name={list.name}
+            pinned={list.pinned}
+            onToggle={(pinned) => pin.mutate({ id: list.id, pinned })}
+          />
         </Box>
       </Box>
     </Card>

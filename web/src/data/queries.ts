@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { repin } from '../app/repin'
 import {
   createCollection,
   deleteCollection,
@@ -6,6 +7,7 @@ import {
   fetchCollectionSidebar,
   fetchCollections,
   fetchTagSuggestions,
+  setCollectionPinned,
   touchCollection,
   updateCollection,
   updateCollectionAccess,
@@ -182,7 +184,36 @@ export function useDeleteEntry() {
 }
 
 
-/** The sidebar's collections group (0012 R98). */
+/**
+ * Optimistic, because a star must respond under the finger - the same shape
+ * `usePinList` has, against the collection key hierarchy. The server's answer
+ * still wins: a failure rolls the caches back to exactly what they held, and
+ * `onSettled` is what actually moves the row between the pinned section and
+ * the group.
+ */
+export function usePinCollection() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, pinned }: { id: string; pinned: boolean }) =>
+      setCollectionPinned(id, pinned),
+    onMutate: async ({ id, pinned }) => {
+      await queryClient.cancelQueries({ queryKey: collectionKeys.all })
+      const previous = queryClient.getQueriesData({ queryKey: collectionKeys.all })
+      queryClient.setQueriesData<unknown>({ queryKey: collectionKeys.all }, (data: unknown) =>
+        repin(data, id, pinned),
+      )
+      return previous
+    },
+    onError: (_error, _variables, previous) => {
+      previous?.forEach(([key, data]: [readonly unknown[], unknown]) =>
+        queryClient.setQueryData(key, data),
+      )
+    },
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: collectionKeys.all }),
+  })
+}
+
+/** The sidebar's pinned collections and the group below them (0012 R98, R104). */
 export function useCollectionSidebar() {
   return useQuery({ queryKey: collectionKeys.sidebar, queryFn: fetchCollectionSidebar })
 }

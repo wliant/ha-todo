@@ -33,6 +33,7 @@ function collection(id: string, name: string): CollectionSummary {
     description: null,
     icon: 'GROCERIES',
     owned: true,
+    pinned: false,
     memberCount: 1,
     entryCount: 0,
   }
@@ -70,6 +71,7 @@ describe('SharePage', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
     vi.spyOn(listsApi, 'fetchSidebar').mockResolvedValue({
+      pinned: [],
       lists: [list('id-recent', 'Groceries'), list('id-older', 'Chores')],
     })
     // The picker now asks for both kinds (R59). Mocked here so every existing
@@ -158,7 +160,7 @@ describe('SharePage', () => {
   })
 
   it('sends a member with no lists to make one', async () => {
-    vi.spyOn(listsApi, 'fetchSidebar').mockResolvedValue({ lists: [] })
+    vi.spyOn(listsApi, 'fetchSidebar').mockResolvedValue({ pinned: [], lists: [] })
     vi.spyOn(dataListsApi, 'fetchCollections').mockResolvedValue([])
     renderShare('?url=https://example.com')
 

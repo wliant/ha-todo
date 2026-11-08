@@ -103,6 +103,22 @@ public class DataListController {
     }
 
     /**
+     * Pins or unpins a collection for the caller (0012 R104). PUT and DELETE
+     * rather than a body, as on a list: the pin is the resource.
+     */
+    @PutMapping("/{id}/pin")
+    public ResponseEntity<Void> pin(@PathVariable UUID id) {
+        collections.pin(id, true);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/{id}/pin")
+    public ResponseEntity<Void> unpin(@PathVariable UUID id) {
+        collections.pin(id, false);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
      * "I opened this collection." A POST, not a side effect of the GET, so a
      * read stays a read and a prefetch cannot reorder somebody's sidebar.
      */

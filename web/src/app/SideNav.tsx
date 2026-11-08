@@ -14,7 +14,6 @@ import ChecklistRounded from '@mui/icons-material/ChecklistRounded'
 import CollectionsBookmarkRounded from '@mui/icons-material/CollectionsBookmarkRounded'
 import ExpandLessRounded from '@mui/icons-material/ExpandLessRounded'
 import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded'
-import PushPinRounded from '@mui/icons-material/PushPinRounded'
 import TodayRounded from '@mui/icons-material/TodayRounded'
 import GroupRounded from '@mui/icons-material/GroupRounded'
 import LogoutRounded from '@mui/icons-material/LogoutRounded'
@@ -22,7 +21,8 @@ import IconButton from '@mui/material/IconButton'
 import { useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import type { CurrentUser } from '../api/auth'
-import type { ListIcon as ListIconToken } from '../api/lists'
+import type { ListIcon as ListIconToken, ListSummary } from '../api/lists'
+import type { CollectionSummary } from '../api/dataLists'
 import { ListIcon } from '../lists/listIcons'
 import { useSidebar } from '../lists/queries'
 import { useCollectionSidebar } from '../data/queries'
@@ -32,12 +32,19 @@ import { MemberAvatar } from './MemberAvatar'
  * The one navigation surface (R25), now reaching every list and collection the
  * member can see (0012 R98-R103).
  *
- * <p>The old Pinned and Recent sections are gone. They showed only lists with a
- * recorded interaction, so a list just created - and every list somebody else
- * shared - was absent until it had been opened once, which is the opposite of
- * what a shortcut is for. Lists and Collections are now expandable groups in
- * the menu, each ordered by the member's own use of it over the last month
- * (adr/0041), each capped at their own preference.
+ * <p>Three sections. **Pinned** is first and holds both kinds together - a
+ * member pins the handful of things they are actually working from, and which
+ * of them is a list and which a collection is not how they think about it
+ * (adr/0043). It is uncapped and scrolls, because a pin is an explicit
+ * instruction and silently dropping the twelfth is the sidebar deciding it
+ * knows better.
+ *
+ * <p>Below it, **Lists** and **Collections** are expandable groups holding
+ * everything *not* pinned, ordered by the member's own use over the last month
+ * (adr/0041) and capped at their preference. The old Recent section showed only
+ * lists with a recorded interaction, so a list just created - and every list
+ * somebody else shared - was absent until it had been opened once, which is the
+ * opposite of what a shortcut is for.
  *
  * <p>Which groups are open lives here, in this component's own state - see
  * adr/0042 for why that does not reopen adr/0015's rule: a group the member
@@ -63,6 +70,16 @@ export function SideNav({
   // within the session, which is the whole span anybody would notice.
   const [open, setOpen] = useState({ lists: true, collections: true })
 
+  // Both kinds in one section, merged by name. Deliberately not interleaved by
+  // when each was pinned: the two halves arrive from two requests (adr/0042)
+  // with no shared clock to order them by, and exposing a pin timestamp on a
+  // DTO this widely used to answer a question nobody asked is the worse trade.
+  // The icon says which kind a row is.
+  const pinnedEntries: NavEntry[] = [
+    ...(sidebar?.pinned ?? []).map(asListEntry),
+    ...(collections?.pinned ?? []).map(asCollectionEntry),
+  ].sort((left, right) => left.name.localeCompare(right.name))
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <Toolbar sx={{ px: 2 }}>
@@ -74,6 +91,13 @@ export function SideNav({
       <Divider />
 
       <Box sx={{ flex: 1, overflowY: 'auto' }}>
+        <PinnedSection
+          entries={pinnedEntries}
+          loaded={Boolean(sidebar && collections)}
+          pathname={pathname}
+          onNavigate={onNavigate}
+        />
+
         <List
           component="nav"
           aria-label="Main"
@@ -105,13 +129,7 @@ export function SideNav({
             emptyLabel="No lists yet"
             selected={pathname.startsWith('/lists')}
             onNavigate={onNavigate}
-            entries={(sidebar?.lists ?? []).map((list) => ({
-              id: list.id,
-              name: list.name,
-              icon: list.icon,
-              pinned: list.pinned,
-              to: `/lists/${list.id}`,
-            }))}
+            entries={(sidebar?.lists ?? []).map(asListEntry)}
             pathname={pathname}
           />
 
@@ -132,13 +150,7 @@ export function SideNav({
             emptyLabel="No collections yet"
             selected={pathname.startsWith('/collections')}
             onNavigate={onNavigate}
-            entries={(collections?.collections ?? []).map((collection) => ({
-              id: collection.id,
-              name: collection.name,
-              icon: collection.icon,
-              pinned: false,
-              to: `/collections/${collection.id}`,
-            }))}
+            entries={(collections?.collections ?? []).map(asCollectionEntry)}
             pathname={pathname}
           />
 
@@ -192,8 +204,81 @@ interface NavEntry {
   id: string
   name: string
   icon: ListIconToken
-  pinned: boolean
   to: string
+}
+
+function asListEntry(list: ListSummary): NavEntry {
+  return { id: list.id, name: list.name, icon: list.icon, to: `/lists/${list.id}` }
+}
+
+function asCollectionEntry(collection: CollectionSummary): NavEntry {
+  return {
+    id: collection.id,
+    name: collection.name,
+    icon: collection.icon,
+    to: `/collections/${collection.id}`,
+  }
+}
+
+/**
+ * How tall the pinned section is allowed to get before it scrolls (0012 R106).
+ *
+ * <p>A height rather than a row count, because what matters is how much of the
+ * sidebar the section is allowed to eat - the menu underneath has to stay
+ * visible without scrolling the whole drawer. Roughly eight rows.
+ */
+const PINNED_MAX_HEIGHT = '15rem'
+
+/**
+ * The things the member pinned, lists and collections together (0012
+ * R104-R106).
+ *
+ * <p>Scrolls inside itself rather than capping, and renders nothing at all
+ * when empty - unlike the two groups below, which say "no lists yet" because
+ * they are permanent fixtures with a create button. An empty labelled Pinned
+ * section is noise, and a member who has never pinned anything does not need
+ * telling.
+ */
+function PinnedSection({
+  entries,
+  loaded,
+  pathname,
+  onNavigate,
+}: {
+  entries: NavEntry[]
+  loaded: boolean
+  pathname: string
+  onNavigate?: () => void
+}) {
+  // `loaded` keeps the section from flashing in and out on first paint: with no
+  // data yet, `entries` is empty for the same reason it is empty for a member
+  // with no pins, and the two must not look the same.
+  if (!loaded || entries.length === 0) {
+    return null
+  }
+  return (
+    <List
+      dense
+      aria-label="Pinned"
+      subheader={<ListSubheader disableSticky>Pinned</ListSubheader>}
+      sx={{ px: 1, maxHeight: PINNED_MAX_HEIGHT, overflowY: 'auto' }}
+    >
+      {entries.map((entry) => (
+        <ListItemButton
+          key={`${entry.to}`}
+          component={NavLink}
+          to={entry.to}
+          onClick={onNavigate}
+          selected={pathname === entry.to}
+        >
+          <ListItemIcon sx={{ minWidth: 36 }}>
+            <ListIcon token={entry.icon} fontSize="small" />
+          </ListItemIcon>
+          <ListItemText primary={entry.name} slotProps={{ primary: { noWrap: true } }} />
+        </ListItemButton>
+      ))}
+    </List>
+  )
 }
 
 /**
@@ -293,14 +378,6 @@ function NavGroup({
                 primary={entry.name}
                 slotProps={{ primary: { noWrap: true } }}
               />
-              {/* The pin is why this row is first (R101), so it says so. */}
-              {entry.pinned && (
-                <PushPinRounded
-                  fontSize="small"
-                  aria-label="Pinned"
-                  sx={{ color: 'text.secondary', fontSize: '1rem' }}
-                />
-              )}
             </ListItemButton>
           ))}
         </List>

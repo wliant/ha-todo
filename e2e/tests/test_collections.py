@@ -275,3 +275,38 @@ def test_two_members_editing_one_entry_are_told_rather_than_losing_it(
 
     # Told, with the server's own wording, and the dialog stays open.
     expect(second_member_page.get_by_text("Someone else changed this entry")).to_be_visible()
+
+@pytest.mark.collections
+def test_a_collection_can_be_pinned_beside_a_list(
+    page: Page,
+    base_url: str,
+    demo_member: DemoMember,
+    test_data: TestData,
+    cleanup_collections,
+) -> None:
+    """
+    0012 R104, R105 and adr/0043. A collection had no per-member state at all
+    before this, so the star on its card is new - and the section it lands in is
+    the same one pinned lists use, because which kind a thing is is not how a
+    member thinks about what they are working from.
+    """
+    name = test_data.name("CollPinned")
+    cleanup_collections(name)
+    ui_sign_in(page, base_url, demo_member)
+
+    make_collection(page, name)
+
+    nav = page.get_by_role("navigation", name="Main")
+    pinned = page.get_by_role("list", name="Pinned")
+    expect(nav.get_by_role("link", name=name)).to_be_visible()
+
+    page.get_by_role("button", name=f"Pin {name}").click()
+
+    expect(pinned.get_by_role("link", name=name)).to_be_visible()
+    expect(nav.get_by_role("link", name=name)).to_have_count(0)
+
+    page.get_by_role("button", name=f"Unpin {name}").click()
+
+    expect(nav.get_by_role("link", name=name)).to_be_visible()
+    expect(pinned.get_by_role("link", name=name)).to_have_count(0)
+
