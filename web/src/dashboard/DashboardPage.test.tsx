@@ -606,7 +606,7 @@ describe('DashboardPage', () => {
       })
       renderAt('/dashboard/day')
 
-      expect(await screen.findByText('1 chore is overdue')).toBeVisible()
+      expect(await screen.findByText('1 item is overdue')).toBeVisible()
       // Collapsed by default - the count is the whole message until asked.
       expect(screen.queryByText('Missed by 2')).not.toBeInTheDocument()
 
@@ -625,7 +625,7 @@ describe('DashboardPage', () => {
       })
       renderAt('/dashboard/day')
 
-      expect(await screen.findByText('38 chores are overdue')).toBeVisible()
+      expect(await screen.findByText('38 items are overdue')).toBeVisible()
       await userEvent.click(screen.getByRole('button', { name: 'Show' }))
       expect(await screen.findByText('and 37 more')).toBeVisible()
     })
@@ -639,13 +639,13 @@ describe('DashboardPage', () => {
       })
       renderAt('/dashboard/month')
 
-      expect(await screen.findByText('1 chore is overdue')).toBeVisible()
+      expect(await screen.findByText('1 item is overdue')).toBeVisible()
       expect(fetched).toHaveBeenCalledOnce()
       expect(fetched).toHaveBeenCalledWith('all')
 
       await userEvent.click(screen.getByRole('button', { name: 'Next month' }))
 
-      expect(await screen.findByText('1 chore is overdue')).toBeVisible()
+      expect(await screen.findByText('1 item is overdue')).toBeVisible()
       // One cache entry for every period, so stepping through months is not a
       // request - and cannot be a different answer.
       expect(fetched).toHaveBeenCalledOnce()
@@ -658,7 +658,7 @@ describe('DashboardPage', () => {
       })
       renderAt('/dashboard/week')
 
-      expect(await screen.findByText('1 chore is overdue')).toBeVisible()
+      expect(await screen.findByText('1 item is overdue')).toBeVisible()
     })
 
     it('narrows with the scope', async () => {
