@@ -136,6 +136,49 @@ describe('SideNav', () => {
     )
   })
 
+  it('does not claim a group is empty while it is still loading', async () => {
+    // The regression. "No lists yet" is a confident lie about somebody's own
+    // data, and before this it was what every member saw for as long as the
+    // request took - most visibly right after a deploy, against a cold server.
+    // Resolved against a promise that never settles, so the query cannot rescue
+    // the assertion.
+    vi.spyOn(listsApi, 'fetchSidebar').mockReturnValue(new Promise(() => {}))
+    vi.spyOn(dataListsApi, 'fetchCollectionSidebar').mockReturnValue(new Promise(() => {}))
+    renderNav()
+
+    expect(await screen.findByRole('link', { name: 'Lists' })).toBeVisible()
+    expect(screen.queryByText('No lists yet')).not.toBeInTheDocument()
+    expect(screen.queryByText('No collections yet')).not.toBeInTheDocument()
+  })
+
+  it('says so when a group cannot be loaded, rather than saying it is empty', async () => {
+    vi.spyOn(listsApi, 'fetchSidebar').mockRejectedValue(new Error('offline'))
+    vi.spyOn(dataListsApi, 'fetchCollectionSidebar').mockResolvedValue({
+      pinned: [],
+      collections: [collection('id-c', 'Cooking')],
+    })
+    renderNav()
+
+    expect(await screen.findByText("Couldn't load your lists.")).toBeVisible()
+    expect(screen.queryByText('No lists yet')).not.toBeInTheDocument()
+    // The half that worked is unaffected.
+    expect(screen.getByRole('link', { name: 'Cooking' })).toBeVisible()
+  })
+
+  it('still draws pinned lists when the collections request fails', async () => {
+    // Requiring both halves before drawing the section was the same conflation
+    // in a second place: one failure hid pins that had loaded fine.
+    vi.spyOn(listsApi, 'fetchSidebar').mockResolvedValue({
+      pinned: [list('id-g', 'Groceries', true)],
+      lists: [],
+    })
+    vi.spyOn(dataListsApi, 'fetchCollectionSidebar').mockRejectedValue(new Error('offline'))
+    renderNav()
+
+    const pinned = await screen.findByRole('list', { name: 'Pinned' })
+    expect(within(pinned).getByRole('link', { name: 'Groceries' })).toBeVisible()
+  })
+
   it('says a group is empty rather than showing nothing', async () => {
     // R103. Nothing at all reads as a request that failed.
     given([], [])
