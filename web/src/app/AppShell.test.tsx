@@ -29,6 +29,25 @@ function atWidth(wide: boolean) {
   })
 }
 
+/**
+ * The compiled CSS for one element's emotion class.
+ *
+ * Needed because the two assertions below are about safe-area insets, and
+ * jsdom resolves `env(safe-area-inset-top)` to 0 - there is no notch in a test
+ * runner - so getComputedStyle cannot tell a shell that reserves the inset
+ * from one that does not. The generated rule can. Read through the element's
+ * own class rather than a literal, so a restyle moves the assertion with it.
+ */
+function rulesFor(element: HTMLElement) {
+  const generated = element.className
+    .split(' ')
+    .find((name) => name.startsWith('css-'))
+  const sheets = Array.from(document.querySelectorAll('style'))
+    .map((style) => style.textContent ?? '')
+    .join('')
+  return new RegExp(`\\.${generated}\\{([^}]*)\\}`).exec(sheets)?.[1] ?? ''
+}
+
 function renderShell(role: UserRole, { wide = true } = {}) {
   atWidth(wide)
   vi.spyOn(client, 'fetchCurrentUser').mockResolvedValue({
@@ -118,6 +137,32 @@ describe('AppShell', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Open navigation' }))
 
     expect(screen.getByRole('link', { name: 'Lists' })).toBeVisible()
+  })
+
+  /*
+   * iOS draws a standalone PWA under the status bar, and the system takes any
+   * tap that lands there - so an app bar at top: 0 with no inset leaves the
+   * hamburger, the only control on the bar, unpressable on a notched iPhone
+   * while working perfectly on Android, which does not paint under its status
+   * bar. These two assert the inset is reserved and then cleared, because
+   * reserving it on the bar without clearing it in main hides the heading of
+   * every screen behind the taller bar.
+   */
+  it('keeps the hamburger clear of an iPhone’s status bar', async () => {
+    renderShell('MEMBER', { wide: false })
+    await screen.findByText('the lists screen')
+
+    const bar = screen.getByRole('banner')
+
+    expect(rulesFor(bar)).toContain('padding-top:env(safe-area-inset-top)')
+  })
+
+  it('clears the inset the app bar reserves, as well as the bar', async () => {
+    renderShell('MEMBER', { wide: false })
+
+    const main = await screen.findByRole('main')
+
+    expect(rulesFor(main)).toContain('env(safe-area-inset-top)')
   })
 
   it('closes the overlay when a destination is chosen, so it cannot cover the new screen', async () => {

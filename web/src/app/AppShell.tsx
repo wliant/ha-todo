@@ -52,7 +52,16 @@ export function AppShell() {
   return (
     <Box sx={{ display: 'flex', minHeight: '100dvh' }}>
       {!wide && (
-        <AppBar position="fixed">
+        <AppBar
+          position="fixed"
+          // iOS draws a standalone PWA under the status bar (viewport-fit=cover
+          // plus black-translucent in index.html), so without this the toolbar
+          // - and the only control on it - is underneath it, where the system
+          // swallows the taps. The padding is on the bar rather than the
+          // toolbar so the bar's background still fills the inset. Zero on
+          // Android, which does not paint under the status bar.
+          sx={{ pt: 'env(safe-area-inset-top)' }}
+        >
           <Toolbar>
             <IconButton
               edge="start"
@@ -81,6 +90,7 @@ export function AppShell() {
           '& .MuiDrawer-paper': {
             width: SIDEBAR_WIDTH,
             boxSizing: 'border-box',
+            pt: 'env(safe-area-inset-top)',
             pb: 'env(safe-area-inset-bottom)',
           },
         }}
@@ -98,7 +108,7 @@ export function AppShell() {
           // Deliberately not written alongside `py`: sx applies system props in
           // its own order rather than the object's, so a `py` here would win
           // and drop the page heading underneath the app bar.
-          pt: wide ? 3 : 'calc(3.5rem + 1rem)',
+          pt: wide ? 3 : 'calc(3.5rem + 1rem + env(safe-area-inset-top))',
           pb: 'calc(1.5rem + env(safe-area-inset-bottom))',
         }}
       >
