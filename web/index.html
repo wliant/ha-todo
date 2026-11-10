@@ -3,7 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <!-- viewport-fit=cover so the layout can reach under an iPhone's rounded
-         corners; the bottom navigation adds the safe-area inset back. -->
+         corners. Everything that draws into an inset adds it back itself with
+         env(safe-area-inset-*): the app bar and the drawer at the top, the
+         drawer and main at the bottom. Forgetting the top one puts the
+         hamburger under the status bar, where iOS takes the taps. -->
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"

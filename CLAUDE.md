@@ -528,6 +528,16 @@ are expanded (`adr/0042`), on the same reasoning — disclosure is not placement
 something sits is still CSS, and nothing else calls `useMediaQuery`. The drawer's open state is
 *derived* from the pathname (`openedOver === pathname`), so a navigation closes it by construction, back
 button included.
+
+**Every surface at the top of the shell must add `env(safe-area-inset-top)` back.** `index.html` sets
+`viewport-fit=cover` and `black-translucent`, so iOS draws a standalone PWA *under* the status bar and
+takes every tap that lands there. The app bar sits at `top: 0` and its only control is the hamburger, so
+omitting the inset made it unpressable on a notched iPhone while working perfectly on Android, which
+does not paint under its status bar - and the inset must be cleared in `main` as well as reserved on the
+bar, or the taller bar covers every screen's heading. The original comment said "the bottom navigation
+adds the safe-area inset back", which was true when the nav *was* a bottom bar and nothing sat at the
+top; it survived the bottom bar's removal. `AppShell.test.tsx` reads the compiled emotion rule rather
+than `getComputedStyle`, because jsdom resolves `env()` to 0 and so cannot tell the two apart.
 The bottom bar is gone; a second navigation surface is how two layouts start to drift.
 
 **Styling is the MUI theme, and nothing else.** `web/src/theme/theme.ts` is the single source of truth
