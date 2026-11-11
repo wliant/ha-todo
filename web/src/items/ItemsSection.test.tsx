@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ThemeProvider } from '@mui/material/styles'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ItemsSection } from './ItemsSection'
 import * as itemsApi from '../api/items'
@@ -62,17 +63,32 @@ function item(overrides: Partial<Item> = {}): Item {
   }
 }
 
-function renderItems(fields: ListField[] = [description]) {
+/**
+ * @param at the address the list is opened at, which is where the filter lives
+ *           (adr/0045). Several tests below start at `?status=open,done`
+ *           because the default filter is To do and they are about a completed
+ *           item - the server used to do that narrowing, so a mock could
+ *           return a finished item and have it drawn regardless (adr/0044).
+ */
+function renderItems(fields: ListField[] = [description], at = '/lists/id-list') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   return render(
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider theme={theme} defaultMode="light">
-        <ItemsSection list={list} fields={fields} />
-      </ThemeProvider>
-    </QueryClientProvider>,
+    <MemoryRouter initialEntries={[at]}>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider theme={theme} defaultMode="light">
+          <ItemsSection list={list} fields={fields} />
+        </ThemeProvider>
+      </QueryClientProvider>
+    </MemoryRouter>,
   )
+}
+
+const BOTH = '/lists/id-list?status=open,done'
+
+function assigneeField(): ListField {
+  return field({ id: 'id-assignee', kind: 'ASSIGNEE', required: false })
 }
 
 const conflict = {
@@ -130,14 +146,29 @@ describe('ItemsSection', () => {
         settle = () => done(item({ completed: true }))
       }),
     )
+    renderItems([description], BOTH)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Complete Buy milk' }))
+
+    // Showing both statuses, so the row stays and swaps its control: Reopen
+    // instead of Complete is the optimistic move.
+    expect(screen.getByRole('button', { name: 'Reopen Buy milk' })).toBeVisible()
+    settle()
+  })
+
+  it('says what happened when the filter takes the row away', async () => {
+    // R119, and the reason it exists: with the default To do filter the
+    // optimistic write makes the row vanish at once, and a row disappearing
+    // cannot be the only feedback (adr/0039's rule, on a list).
+    vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([item()])
+    // Never settles, so the refetch cannot do this assertion's work for it.
+    vi.spyOn(itemsApi, 'setItemCompleted').mockReturnValue(new Promise(() => {}))
     renderItems()
 
     await userEvent.click(await screen.findByRole('button', { name: 'Complete Buy milk' }))
 
-    // The completed row offers Reopen instead of Complete, so the swap is the
-    // optimistic move - there is no checkbox to watch any more.
-    expect(screen.getByRole('button', { name: 'Reopen Buy milk' })).toBeVisible()
-    settle()
+    expect(await screen.findByText('Finished “Buy milk”.')).toBeVisible()
+    expect(screen.queryByText('Buy milk')).not.toBeInTheDocument()
   })
 
   it('tells the member who got there first, and shows what actually happened', async () => {
@@ -154,7 +185,7 @@ describe('ItemsSection', () => {
       .mockResolvedValueOnce([item()])
       .mockResolvedValue([completedByBen])
     vi.spyOn(itemsApi, 'setItemCompleted').mockRejectedValue(conflict)
-    renderItems()
+    renderItems([description], BOTH)
 
     await userEvent.click(await screen.findByRole('button', { name: 'Complete Buy milk' }))
 
@@ -280,7 +311,7 @@ describe('ItemsSection', () => {
         completedAt: '2026-11-05T09:00:00Z',
       }),
     ])
-    renderItems()
+    renderItems([description], BOTH)
 
     expect(await screen.findByText('Buy milk')).toBeVisible()
     expect(screen.queryByText('Semi-skimmed')).not.toBeInTheDocument()
@@ -430,6 +461,77 @@ describe('ItemsSection', () => {
     )
   })
 
+  it('reads the filter out of the address, and narrows the list by it', async () => {
+    // R115: a reload, a navigation back, and a pasted link all show this.
+    vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([
+      item({ id: 'id-a', description: 'Ben’s', assignee: { id: 'id-ben', displayName: 'Ben', avatarImageId: null } }),
+      item({ id: 'id-b', description: 'Nobody’s' }),
+    ])
+    renderItems([description, assigneeField()], '/lists/id-list?who=id-ben')
+
+    expect(await screen.findByText('Ben’s')).toBeVisible()
+    expect(screen.queryByText('Nobody’s')).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('1 filter')
+  })
+
+  it('says a filtered list is filtered, not that it is empty', async () => {
+    // R117. "Nothing to do here" is a confident statement about somebody's own
+    // list, and here it is false - the same mistake the sidebar's groups made
+    // by reading their rows out of `data ?? []`.
+    vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([item()])
+    // Unassigned, so filtering to Ben's work matches nothing.
+    renderItems([description, assigneeField()], '/lists/id-list?who=id-ben')
+
+    expect(await screen.findByText('Nothing matches these filters.')).toBeVisible()
+    expect(screen.queryByText('Nothing to do here.')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+
+    // R118: clearing is one action, and it brings the list back - which is
+    // also what proves the address was written rather than some local state.
+    expect(await screen.findByText('Buy milk')).toBeVisible()
+  })
+
+  it('says an empty list is empty', async () => {
+    vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([])
+    renderItems()
+
+    expect(await screen.findByText('Nothing to do here.')).toBeVisible()
+  })
+
+  it('shows both statuses at once, which the old toggle could not', async () => {
+    // R108: "All" was a word for the empty filter, and the exclusive toggle
+    // made the one combination anybody wanted unreachable (adr/0046).
+    vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([
+      item({ id: 'id-a', description: 'Open one' }),
+      item({ id: 'id-b', description: 'Finished one', completed: true }),
+    ])
+    renderItems([description], BOTH)
+
+    expect(await screen.findByText('Open one')).toBeVisible()
+    expect(screen.getByText('Finished one')).toBeVisible()
+  })
+
+  it('cannot select an item the filter is hiding', async () => {
+    // R121: "2 selected" must always be two rows the member can see.
+    vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([
+      item({ id: 'id-a', description: 'Open one' }),
+      item({ id: 'id-b', description: 'Finished one', completed: true }),
+    ])
+    renderItems([description], BOTH)
+
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Select Open one' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select Finished one' }))
+    expect(screen.getByText('2 selected')).toBeVisible()
+
+    // Narrow to the open work; the finished row's selection stops counting
+    // rather than being carried into a bulk write the member cannot see.
+    await userEvent.click(screen.getByRole('button', { name: /^Status:/ }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Just to do' }))
+
+    expect(await screen.findByText('1 selected')).toBeVisible()
+  })
+
   it('reopens a completed item, which takes its points back', async () => {
     vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([
       item({
@@ -439,7 +541,7 @@ describe('ItemsSection', () => {
       }),
     ])
     const reopen = vi.spyOn(itemsApi, 'setItemCompleted').mockResolvedValue(item())
-    renderItems()
+    renderItems([description], BOTH)
 
     await userEvent.click(await screen.findByRole('button', { name: 'Reopen Buy milk' }))
 

@@ -563,10 +563,19 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
         assertThat(openDescriptions(ana, listId)).containsExactly("Back again");
     }
 
+    /**
+     * The open items, picked out here rather than asked for.
+     *
+     * <p>The endpoint returns the whole list: which part of it a member is
+     * shown is decided in the browser (0013, adr/0044). What this still pins is
+     * the thing R49 broke once - that `completed` goes false again on a reopen,
+     * and that the reopened item comes back rather than staying finished.
+     */
     private List<String> openDescriptions(Member member, String listId) {
-        ResponseEntity<List> open = rest.exchange("/api/lists/" + listId + "/items?status=open",
+        ResponseEntity<List> all = rest.exchange("/api/lists/" + listId + "/items",
                 HttpMethod.GET, new HttpEntity<>(headersFor(member.session())), List.class);
-        return ((List<Map<String, Object>>) open.getBody()).stream()
+        return ((List<Map<String, Object>>) all.getBody()).stream()
+                .filter(item -> !Boolean.TRUE.equals(item.get("completed")))
                 .map(item -> (String) item.get("description"))
                 .toList();
     }

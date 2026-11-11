@@ -51,10 +51,16 @@ export interface MemberPoints {
   points: number
 }
 
-export type ItemStatus = 'all' | 'open' | 'done'
-
-export async function fetchItems(listId: string, status: ItemStatus): Promise<Item[]> {
-  const { data } = await api.get<Item[]>(`/lists/${listId}/items`, { params: { status } })
+/**
+ * One list, whole.
+ *
+ * <p>No status argument, and deliberately no `ItemStatus` type to pass one:
+ * narrowing a list by status, assignee, due date or cost happens in the
+ * browser over this payload (0013, adr/0044), so there is one implementation
+ * of each predicate and the cache holds one array per list.
+ */
+export async function fetchItems(listId: string): Promise<Item[]> {
+  const { data } = await api.get<Item[]>(`/lists/${listId}/items`)
   return data
 }
 

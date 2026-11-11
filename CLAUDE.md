@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-**Everything specified so far is built, as of 2026-11-08.** Build, local stack, deploy scripts and all
-three test harnesses are real and passing: 249 backend unit tests, 241 integration tests, 262 frontend
-tests, 94 end-to-end.
+**Everything specified so far is built, as of 2026-11-11.** Build, local stack, deploy scripts and all
+three test harnesses are real and passing: 249 backend unit tests, 241 integration tests, 302 frontend
+tests, 95 end-to-end (13 skip without `E2E_ADMIN_PASSWORD`).
 
 Implemented: **accounts and administration (R8-R12)** — username identity, optional per-user passwords, a
 pick-a-user sign-in screen, and a single admin who adds and deletes users. **The PWA (R13, R14)** —
@@ -164,7 +164,9 @@ caller's grant and compares the version first, and `DashboardItemResponse` alrea
 
 **The scheduled query keeps `done = FALSE`**, so a completed chore *leaves* the agenda rather than
 staying struck through as it does on a list — the agenda answers "what is left", and a month grid of
-one-line chips filled with finished work answers something else. A snackbar says what happened, because
+one-line chips filled with finished work answers something else. (Since 0013 a list leaves it struck
+through only when the status filter is showing Done; under the default To do filter the row goes there
+too, which is what R119's snackbar is for.) A snackbar says what happened, because
 the row vanishing cannot be the only feedback.
 
 **The thing this breaks is a premise.** `dashboard/queries.ts` said its keys could live outside the
@@ -290,6 +292,52 @@ the other half failed.
 `test_dashboard.py::test_opening_an_item_is_a_url_the_back_button_closes` loaded
 `/dashboard/week` and looked for a chore due *tomorrow*. Weeks start Monday, so it passed six days out
 of seven and failed on a Sunday. It now anchors on `?on=<the chore's day>`.
+
+**R107-R122 are implemented.** `docs/requirements/0013` and `docs/design/0013` make a list
+**filterable and sortable**, with `docs/adr/0044`-`0046` recording the decisions. A list is narrowed by
+status, by assignee (including *unassigned*), by due date (overdue / today / next 7 days / undated / an
+explicit range) and by **each cost it declares** - choices for a FIXED cost, a range for a NUMERIC one -
+and ordered by one key in either direction, manual order still being the default.
+
+**It all happens in the browser, over one unfiltered fetch** (`docs/adr/0044`). `ItemResponse` already
+carried every input, a list is never paginated, and a household's list is not big enough to justify a
+second implementation of these predicates in SQL. So the server's `status` parameter is **gone** -
+`findForList(listId)` takes no filter, and `ItemStatus` was deleted from the client rather than left
+exported. **The threshold for revisiting this is pagination**: the moment the client stops holding the
+whole list, every predicate has to move to the server *at once*, because a filter applied to a page is a
+filter applied to a sample.
+
+**Status is a filter dimension, not a `FieldKind`** (`docs/adr/0046`). To do and Done are independently
+selectable chips; "All" is gone, because it was a word for the empty filter. Both selected and neither
+selected both mean *everything* - an empty set is an absent filter everywhere on that bar, and a list
+that silently shows nothing because two chips were unticked is a bug nobody can diagnose. A per-list
+status with choices (Blocked, Waiting) was declined deliberately: it would change what "done" means for
+the dashboard, the agenda, the leaderboard, the recurrence job and the overdue strip.
+
+**The filter lives in the address** (`docs/adr/0045`), as `?status=&who=&due=&cost.<fieldId>=&sort=&dir=`,
+written with `replace` so four taps are not four history entries, and the default view writes **nothing** -
+the same rule `?on=` follows (`adr/0037`). Parsing is defensive and **independent per value**: a broken
+`due` must not take the status filter with it, and an id naming a deleted cost, a removed choice or a
+revoked member is dropped rather than left to hide every row.
+
+**Five things in there are easy to break.** `items/filters.ts` takes **today as a `Civil`**, never a
+clock: `ItemsSection` calls `now(zone)` *inside* its `useMemo`, because a `Civil` computed during render
+changes identity every time and `new Date()` there is what the purity lint rule exists to catch. Due
+buckets are **day-granular in `app.timezone`** for `adr/0040`'s reason - a chore due at 09:00 is today's
+until midnight. An item that never answered a cost is **excluded** by any active filter on it unless "Not
+answered" is ticked (R111): a blank is not a small amount. Blanks sort **last in both directions**, which
+is one `null` branch in `visibleItems` rather than one per key - and the sort's tie-break is the item's
+index in the fetched array, because `ItemResponse` carries no `position`. And **manual order is that
+array's order**, so a reader who "helpfully" sorts the fetched items before handing them over destroys
+it silently.
+
+**The thing this changes about completing** is that the row now leaves *at once* rather than after the
+refetch, since the optimistic write flips `completed` and the default filter is To do. R119 is why
+`ItemsSection` raises a snackbar naming what was finished - the same rule the agenda follows
+(`adr/0039`). In `e2e/`, that snackbar contains the item's description, so a
+`get_by_text(description)` assertion after a completion now matches **twice** and fails strict mode;
+assert on the row's own disclosure button instead. `conftest.show_status` is how a test changes which
+statuses a list shows.
 
 Keep this file true: when a decision here turns out wrong, update it in the same change.
 

@@ -12,22 +12,21 @@ import org.springframework.data.repository.query.Param;
 
 public interface TodoItemRepository extends JpaRepository<TodoItem, UUID> {
 
-    /*
-     * "Open" and "done" test the generated `done` column rather than
-     * completed_at, because a reopened item keeps its completion time (R49,
-     * adr/0024). Written as `i.done` and not the underlying expression so the
-     * partial indexes defined on it stay usable.
+    /**
+     * One list's items, whole, in the order a member arranged them.
+     *
+     * <p>Unfiltered: narrowing a list by status, assignee, due date or cost is
+     * the browser's job, over this one payload (0013, adr/0044). The `status`
+     * parameter this query used to take is gone with the client that sent it -
+     * a predicate implemented on both sides of the wire is how two notions of
+     * "done" start to disagree.
+     *
+     * <p>The generated `done` column still has one reader, in
+     * {@link #findScheduledFor} and its neighbours: the dashboard reads across
+     * every list a member can see and cannot fetch them all.
      */
-
-    @Query("""
-            SELECT i FROM TodoItem i
-            WHERE i.list.id = :listId
-            AND (:status = 'all'
-                 OR (:status = 'open' AND i.done = FALSE)
-                 OR (:status = 'done' AND i.done = TRUE))
-            ORDER BY i.position ASC
-            """)
-    List<TodoItem> findForList(@Param("listId") UUID listId, @Param("status") String status);
+    @Query("SELECT i FROM TodoItem i WHERE i.list.id = :listId ORDER BY i.position ASC")
+    List<TodoItem> findForList(@Param("listId") UUID listId);
 
     @Query("SELECT COALESCE(MAX(i.position), -1) FROM TodoItem i WHERE i.list.id = :listId")
     int highestPosition(@Param("listId") UUID listId);

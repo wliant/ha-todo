@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
@@ -8,16 +9,26 @@ import DialogTitle from '@mui/material/DialogTitle'
 import Paper from '@mui/material/Paper'
 import Snackbar from '@mui/material/Snackbar'
 import Stack from '@mui/material/Stack'
-import ToggleButton from '@mui/material/ToggleButton'
-import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
 import AddRounded from '@mui/icons-material/AddRounded'
 import HowToRegRounded from '@mui/icons-material/HowToRegRounded'
 import { errorMessage, isConflict } from '../api/http'
-import type { Item, ItemStatus, SaveItem } from '../api/items'
+import type { Item, SaveItem } from '../api/items'
 import type { ListDetail, ListField } from '../api/lists'
 import { useCurrentUser } from '../auth/useCurrentUser'
+import { useHouseholdZone } from '../app/useHouseholdZone'
+import { now } from '../dashboard/calendar'
 import { CompletionNoteDialog } from './CompletionNoteDialog'
+import { FilterBar } from './FilterBar'
+import {
+  DEFAULT_FILTER,
+  isFiltered,
+  matchesFilter,
+  parseFilter,
+  visibleItems,
+  writeFilter,
+  type ItemFilter,
+} from './filters'
 import { ItemForm } from './ItemForm'
 import { ItemRow } from './ItemRow'
 import {
@@ -46,9 +57,16 @@ function fromItem(item: Item): SaveItem & { id: string } {
 }
 
 export function ItemsSection({ list, fields }: { list: ListDetail; fields: ListField[] }) {
-  const [status, setStatus] = useState<ItemStatus>('open')
+  // The filter lives in the address, not in state (adr/0045): a reload, a
+  // navigation away and back, and a pasted link all show the same view, and
+  // there is nothing here that can disagree with the URL.
+  const [params, setParams] = useSearchParams()
+  const zone = useHouseholdZone()
   const [editing, setEditing] = useState<(SaveItem & { id?: string }) | null>(null)
-  const [conflict, setConflict] = useState<string | null>(null)
+  // One snackbar for everything that happens after the fact: a conflict
+  // somebody else caused, and a row leaving because it no longer matches the
+  // filter (R119). The member's intent already happened either way.
+  const [notice, setNotice] = useState<string | null>(null)
   // One id, so "at most one row expanded" (R38) is true by construction rather
   // than by rows coordinating with one another.
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -59,20 +77,64 @@ export function ItemsSection({ list, fields }: { list: ListDetail; fields: ListF
   const [showAllFields, setShowAllFields] = useState(false)
 
   const { data: me } = useCurrentUser()
-  const { data: items, isPending } = useItems(list.id, status)
+  const { data: items, isPending } = useItems(list.id)
+
+  const shape = useMemo(
+    () => ({ fields, memberIds: list.members.map((member) => member.id) }),
+    [fields, list.members],
+  )
+  const filter = useMemo(() => parseFilter(params, shape), [params, shape])
+  // `now(zone)` inside the memo rather than as a dependency: a `Civil` read
+  // during render would change identity every time, and the due buckets only
+  // move at midnight. The clock is reached through `calendar.ts` so that no
+  // component here reads the device (adr/0036).
+  const visible = useMemo(
+    () => visibleItems(items ?? [], filter, fields, zone, now(zone)),
+    [items, filter, fields, zone],
+  )
+  const filtered = isFiltered(filter)
+
+  function applyFilter(next: ItemFilter) {
+    // `replace`, so four taps on the bar are not four entries in the history
+    // and leaving the list is one back press.
+    setParams(writeFilter(next), { replace: true })
+  }
+
   const create = useCreateItem(list.id)
   const update = useUpdateItem(list.id)
   const remove = useDeleteItem(list.id)
-  const toggle = useToggleCompletion(list.id, setConflict)
+  const toggle = useToggleCompletion(list.id, setNotice)
   const assign = useAssignItems(list.id)
 
+  /**
+   * Completing something that the filter will then hide (R119).
+   *
+   * <p>The optimistic write flips `completed`, so with the default To do filter
+   * the row goes at once. The row vanishing cannot be the only feedback - the
+   * same rule the agenda follows (0010 R87, adr/0039).
+   */
+  function complete(item: Item, noteHtml?: string | null) {
+    const surviving = matchesFilter(
+      { ...item, completed: true },
+      filter,
+      fields,
+      zone,
+      now(zone),
+    )
+    toggle.mutate({ item, completed: true, noteHtml })
+    if (!surviving) {
+      setNotice(`Finished “${item.description}”.`)
+    }
+  }
   const saving = create.isPending || update.isPending
   const saveError = create.error ?? update.error
 
   // Derived rather than pruned in an effect: ids that have gone - another
-  // member deleted one, or the status filter changed - simply stop counting,
-  // so nothing stale can be assigned and there is no second render to do it.
-  const chosen = (items ?? []).filter((item) => selected.has(item.id))
+  // member deleted one, or the filter stopped matching it - simply stop
+  // counting, so nothing stale can be assigned and there is no second render
+  // to do it. Derived from what is *drawn*, so "4 selected" is always four
+  // rows the member can see (R121).
+  const chosen = visible.filter((item) => selected.has(item.id))
 
   function save() {
     if (!editing) return
@@ -113,7 +175,7 @@ export function ItemsSection({ list, fields }: { list: ListDetail; fields: ListF
           const missed = new Set(result.conflicts.map((entry) => entry.id))
           setSelected(missed)
           if (result.conflicts.length > 0) {
-            setConflict(
+            setNotice(
               result.assigned.length > 0
                 ? `Took ${result.assigned.length}. ${result.conflicts.length} had already changed.`
                 : result.conflicts[0].error,
@@ -121,7 +183,7 @@ export function ItemsSection({ list, fields }: { list: ListDetail; fields: ListF
           }
         },
         onError: (error) =>
-          setConflict(errorMessage(error, 'Could not take those items.')),
+          setNotice(errorMessage(error, 'Could not take those items.')),
       },
     )
   }
@@ -141,23 +203,17 @@ export function ItemsSection({ list, fields }: { list: ListDetail; fields: ListF
         <Typography component="h2" variant="h6">
           Items
         </Typography>
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-          <ToggleButtonGroup
-            exclusive
-            size="small"
-            value={status}
-            onChange={(_event, next: ItemStatus | null) => next && setStatus(next)}
-            aria-label="Which items"
-          >
-            <ToggleButton value="open">To do</ToggleButton>
-            <ToggleButton value="done">Done</ToggleButton>
-            <ToggleButton value="all">All</ToggleButton>
-          </ToggleButtonGroup>
-          <Button variant="contained" startIcon={<AddRounded />} onClick={startAdding}>
-            Add item
-          </Button>
-        </Stack>
+        <Button variant="contained" startIcon={<AddRounded />} onClick={startAdding}>
+          Add item
+        </Button>
       </Stack>
+
+      <FilterBar
+        filter={filter}
+        fields={fields}
+        members={list.members}
+        onChange={applyFilter}
+      />
 
       {chosen.length > 0 && (
         <Paper variant="outlined" sx={{ p: 1, bgcolor: 'action.hover' }}>
@@ -187,14 +243,25 @@ export function ItemsSection({ list, fields }: { list: ListDetail; fields: ListF
 
       {isPending && <Typography role="status">Loading items…</Typography>}
 
-      {items && items.length === 0 && (
-        <Typography role="status" color="text.secondary">
-          {status === 'done' ? 'Nothing finished yet.' : 'Nothing to do here.'}
-        </Typography>
+      {/* Three states, not two (R117). A filtered list that matches nothing is
+          not an empty list, and saying "Nothing to do here" about somebody's
+          own list is a confident statement that is false - the same mistake
+          the sidebar's groups made with `data ?? []`. */}
+      {items && visible.length === 0 && (
+        <Stack spacing={1} sx={{ alignItems: 'flex-start' }}>
+          <Typography role="status" color="text.secondary">
+            {filtered ? 'Nothing matches these filters.' : 'Nothing to do here.'}
+          </Typography>
+          {filtered && (
+            <Button size="small" onClick={() => applyFilter(DEFAULT_FILTER)}>
+              Clear filters
+            </Button>
+          )}
+        </Stack>
       )}
 
       <Stack spacing={1}>
-        {items?.map((item) => (
+        {visible.map((item) => (
           <ItemRow
             key={item.id}
             item={item}
@@ -203,7 +270,7 @@ export function ItemsSection({ list, fields }: { list: ListDetail; fields: ListF
             selected={selected.has(item.id)}
             onToggleExpand={() => setExpandedId(expandedId === item.id ? null : item.id)}
             onSelect={(isSelected) => select(item.id, isSelected)}
-            onComplete={() => toggle.mutate({ item, completed: true })}
+            onComplete={() => complete(item)}
             onWriteNote={() => setNoting(item)}
             onReopen={() => toggle.mutate({ item, completed: false })}
             onEdit={() => {
@@ -223,7 +290,7 @@ export function ItemsSection({ list, fields }: { list: ListDetail; fields: ListF
           description={noting.description}
           onCancel={() => setNoting(null)}
           onComplete={(noteHtml) => {
-            toggle.mutate({ item: noting, completed: true, noteHtml })
+            complete(noting, noteHtml)
             setNoting(null)
           }}
         />
@@ -279,10 +346,10 @@ export function ItemsSection({ list, fields }: { list: ListDetail; fields: ListF
       {/* A snackbar, not a dialog: the member's intent already happened, and
           there is nothing left for them to decide. */}
       <Snackbar
-        open={conflict !== null}
+        open={notice !== null}
         autoHideDuration={6000}
-        onClose={() => setConflict(null)}
-        message={conflict ?? ''}
+        onClose={() => setNotice(null)}
+        message={notice ?? ''}
       />
     </Stack>
   )

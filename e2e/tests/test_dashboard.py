@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 import pytest
 from playwright.sync_api import Page, expect
 
-from conftest import DemoMember, TestData, fill_due, ui_sign_in
+from conftest import DemoMember, TestData, fill_due, show_status, ui_sign_in
 
 
 def create_list(page: Page, name: str, share_with: str | None = None) -> str:
@@ -318,7 +318,7 @@ def test_a_member_completes_a_chore_from_the_agenda(
     # The assertion no unit test can make: it is the *same* write. The list
     # shows it finished, by whoever actually did it (0005 R38).
     page.goto(f"{base_url}/lists/{list_id}")
-    page.get_by_role("button", name="Done").click()
+    show_status(page, "Done")
     expect(page.get_by_text(chore)).to_be_visible()
     # The completion chip, which the points panel's own mention of her name
     # cannot be mistaken for.
