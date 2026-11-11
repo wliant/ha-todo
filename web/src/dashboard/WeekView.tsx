@@ -8,6 +8,7 @@ import { DashboardItemChip } from './DashboardItemChip'
 import { useDashboardView } from './dashboardView'
 import { dayKey, isSameDay, now, weekDays, weekRange, windowOf } from './calendar'
 import { byDayEntries } from './entries'
+import { onlyLists } from './listFilter'
 import { periodName } from './period'
 import { useScheduled } from './queries'
 
@@ -21,7 +22,7 @@ import { useScheduled } from './queries'
  * overflow lives here.
  */
 export function WeekView() {
-  const { scope, zone, anchor, open, openEvent } = useDashboardView()
+  const { scope, lists, zone, anchor, open, openEvent } = useDashboardView()
   // Once per mount: a range snapped to midnight is stable through a day, and
   // computing it during every render would make the query key - and therefore
   // the refetch - depend on when React happened to re-render.
@@ -31,7 +32,8 @@ export function WeekView() {
   const window = useMemo(() => windowOf(weekRange(anchor), zone), [anchor, zone])
   const { data, isPending } = useScheduled(window.from, window.to, scope)
   const days = weekDays(anchor)
-  const grouped = byDayEntries(data?.items ?? [], data?.events ?? [], zone)
+  // Chores only: an event has no list to be narrowed by (R126).
+  const grouped = byDayEntries(onlyLists(data?.items ?? [], lists), data?.events ?? [], zone)
 
   return (
     <Stack spacing={1.5}>

@@ -16,6 +16,7 @@ import {
   windowOf,
 } from './calendar'
 import { byDayEntries } from './entries'
+import { onlyLists } from './listFilter'
 import { useScheduled } from './queries'
 
 const COLUMN_HEADS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -27,7 +28,7 @@ const COLUMN_HEADS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
  * months and make the page jump. Descriptions only, as in the week view.
  */
 export function MonthView() {
-  const { scope, zone, anchor, open, openEvent } = useDashboardView()
+  const { scope, lists, zone, anchor, open, openEvent } = useDashboardView()
   // Once per mount: a range snapped to midnight is stable through a day, and
   // computing it during every render would make the query key - and therefore
   // the refetch - depend on when React happened to re-render.
@@ -36,7 +37,8 @@ export function MonthView() {
   const window = useMemo(() => windowOf(monthRange(anchor), zone), [anchor, zone])
   const { data, isPending } = useScheduled(window.from, window.to, scope)
   const grid = monthGrid(anchor)
-  const grouped = byDayEntries(data?.items ?? [], data?.events ?? [], zone)
+  // Chores only: an event has no list to be narrowed by (R126).
+  const grouped = byDayEntries(onlyLists(data?.items ?? [], lists), data?.events ?? [], zone)
 
   return (
     <Stack spacing={1.5}>

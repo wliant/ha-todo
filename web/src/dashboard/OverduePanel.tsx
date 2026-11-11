@@ -10,6 +10,7 @@ import { AgendaItemRow } from './AgendaItemRow'
 import { civilIn, now, type Zone } from './calendar'
 import { useDashboardView } from './dashboardView'
 import { latenessLabel } from './period'
+import { onlyLists } from './listFilter'
 import { useOverdue } from './queries'
 
 /**
@@ -29,14 +30,19 @@ import { useOverdue } from './queries'
  * nothing at all, because a strip reading "nothing is late" is a line of
  * furniture on every view forever.
  */
-export function OverduePanel({ scope }: { scope: DashboardScope }) {
+export function OverduePanel({ scope, lists }: { scope: DashboardScope; lists: string[] }) {
   const { zone, open, complete, writeNote } = useDashboardView()
   const { data } = useOverdue(scope)
   const [expanded, setExpanded] = useState(false)
 
+  const rows = onlyLists(data?.items ?? [], lists)
+  const capped = data ? data.total > data.items.length : false
+
   // Nothing while it loads, too: this sits above the grid, and a placeholder
-  // here pushes the whole agenda down and then lets it spring back.
-  if (!data || data.total === 0) {
+  // here pushes the whole agenda down and then lets it spring back. Nothing
+  // either when the filter leaves no late work: a strip announcing other
+  // lists' arrears is the one thing a narrowed agenda promised not to show.
+  if (!data || rows.length === 0) {
     return null
   }
 
@@ -51,7 +57,11 @@ export function OverduePanel({ scope }: { scope: DashboardScope }) {
           {/* The count is in the text rather than only in a badge, because the
               `role="status"` is what tells a member who cannot see the grid
               that something is behind them. */}
-          <AlertTitle sx={{ mb: 0 }}>{headline(data.total)}</AlertTitle>
+          {/* Filtered, the count is of the rows on screen: `total` counts
+              what the server holds across every list (adr/0047). */}
+          <AlertTitle sx={{ mb: 0 }}>
+            {headline(lists.length > 0 ? rows.length : data.total)}
+          </AlertTitle>
           <Button size="small" color="inherit" onClick={() => setExpanded(!expanded)}>
             {expanded ? 'Hide' : 'Show'}
           </Button>
@@ -59,7 +69,7 @@ export function OverduePanel({ scope }: { scope: DashboardScope }) {
 
         <Collapse in={expanded} unmountOnExit>
           <Stack spacing={1}>
-            {data.items.map((item) => (
+            {rows.map((item) => (
               <AgendaItemRow
                 key={item.id}
                 item={item}
@@ -69,9 +79,9 @@ export function OverduePanel({ scope }: { scope: DashboardScope }) {
                 onWriteNote={() => writeNote(item)}
               />
             ))}
-            {data.total > data.items.length && (
+            {capped && (
               <Typography variant="caption">
-                and {data.total - data.items.length} more
+                {lists.length > 0 ? 'and possibly more' : `and ${data.total - data.items.length} more`}
               </Typography>
             )}
           </Stack>

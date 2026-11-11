@@ -11,6 +11,7 @@ import { useDashboardView } from './dashboardView'
 import { civilIn, dayKey, dayRange, now, windowOf, type Zone } from './calendar'
 import { periodName } from './period'
 import { byDayEntries, eventSources, eventTime, type DayEntry } from './entries'
+import { onlyLists } from './listFilter'
 import { useScheduled } from './queries'
 
 /**
@@ -23,14 +24,17 @@ import { useScheduled } from './queries'
  * and an appointment at seven is why nobody can take the seven o'clock chore.
  */
 export function MyDayView() {
-  const { scope, zone, anchor, open, openEvent, complete, writeNote } = useDashboardView()
+  const { scope, lists, zone, anchor, open, openEvent, complete, writeNote } = useDashboardView()
   // The day on screen, which is today unless the member stepped away from it
   // (R74). See WeekView for why ranges are not computed during render.
   const window = useMemo(() => windowOf(dayRange(anchor), zone), [anchor, zone])
   const { data, isPending } = useScheduled(window.from, window.to, scope)
 
+  // The chores are narrowed; the events are passed through untouched (R126).
   const entries =
-    byDayEntries(data?.items ?? [], data?.events ?? [], zone).get(dayKey(anchor)) ?? []
+    byDayEntries(onlyLists(data?.items ?? [], lists), data?.events ?? [], zone).get(
+      dayKey(anchor),
+    ) ?? []
 
   return (
     <Stack spacing={1.5}>
@@ -42,7 +46,9 @@ export function MyDayView() {
 
       {data && entries.length === 0 && (
         <Typography role="status" color="text.secondary">
-          Nothing is due, and nothing is happening.
+          {lists.length > 0
+            ? 'Nothing from the lists you picked, and nothing is happening.'
+            : 'Nothing is due, and nothing is happening.'}
         </Typography>
       )}
 

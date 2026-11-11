@@ -339,6 +339,36 @@ refetch, since the optimistic write flips `completed` and the default filter is 
 assert on the row's own disclosure button instead. `conftest.show_status` is how a test changes which
 statuses a list shows.
 
+**R123-R130 are implemented.** `docs/requirements/0014` and `docs/design/0014` put a **list filter on
+the agenda**, with `docs/adr/0047` recording the decisions. A **Lists** chip beside the Everything /
+Mine toggle opens a checkbox menu of every list the member can see; picking some narrows the Day, Week
+and Month views, the overdue strip and the undated panel. Picking none means every list - an empty set
+is an absent filter, the same rule the list's bar follows (`adr/0046`). The selection lives in the
+address as `?lists=<id>,<id>`, written with `replace`, omitted when empty.
+
+**Frontend only, over the fetch already being made** (`adr/0047`). `DashboardItem` already carried
+`listId`, and `DashboardService` caps each query at 500 as a safety bound rather than paginating, so
+the rows in hand are the rows there are; the query keys deliberately do **not** mention the filter, so
+one cached payload serves every selection and ticking a list costs no request. The revisit threshold is
+`adr/0044`'s, inherited: the day a dashboard payload is genuinely paginated, this predicate moves to
+the server, because a filter applied to a page is a filter applied to a sample.
+
+**Three things in there are easy to break.** **Events are passed through unfiltered on purpose** -
+`byDayEntries(onlyLists(items, lists), events, zone)` is the shape in all three views, because an event
+belongs to a calendar feed and has no list (R126); a view that "tidies" this into filtering both
+arguments takes somebody's appointments off their agenda and nothing outside `DashboardPage.test.tsx`
+fails. **`total` is a server count a client filter cannot narrow**, so while a filter is active the
+undated panel and overdue strip count the rows they are showing and say "and possibly more" rather than
+subtracting their way to a confident number about rows they never saw. And **`known()` runs once, in
+`DashboardPage`**, not per view: it drops ids for lists the member cannot see, which can empty the
+selection - and an empty selection is no filter, so a link naming a deleted list shows the **whole**
+agenda rather than an empty one (R128). A view that narrowed for itself would filter every row out
+while the chip showed no filter at all.
+
+`MenuChip` now lives in `web/src/app/MenuChip.tsx` and is shared by the list's `FilterBar` and the
+agenda's chip. The menu's options come from `useLists({})`, **never** `useSidebar()`, whose `lists`
+array is capped at `sidebar_list_count` and partitioned against the pinned section.
+
 Keep this file true: when a decision here turns out wrong, update it in the same change.
 
 ## What this product is

@@ -10,6 +10,8 @@ import { MyDayView } from './MyDayView'
 import { WeekView } from './WeekView'
 import * as dashboardApi from '../api/dashboard'
 import * as itemsApi from '../api/items'
+import * as listsApi from '../api/lists'
+import type { ListSummary } from '../api/lists'
 import type { DashboardItem } from '../api/dashboard'
 import type { CalendarEvent } from '../api/calendars'
 import { addDays, civilIn, dayKey, instantOf, startOfDay } from './calendar'
@@ -76,6 +78,18 @@ function payload(overrides: Partial<dashboardApi.Scheduled> = {}): dashboardApi.
   }
 }
 
+function summary(id: string, name: string): ListSummary {
+  return {
+    id,
+    name,
+    description: null,
+    icon: 'CHECKLIST',
+    owned: true,
+    pinned: false,
+    memberCount: 1,
+  }
+}
+
 /** MemoryRouter keeps its own history, so the address has to be read from it. */
 function LocationProbe() {
   const { pathname, search } = useLocation()
@@ -115,6 +129,7 @@ describe('DashboardPage', () => {
     vi.spyOn(dashboardApi, 'fetchScheduled').mockResolvedValue(payload())
     vi.spyOn(dashboardApi, 'fetchUndated').mockResolvedValue({ items: [], total: 0 })
     vi.spyOn(dashboardApi, 'fetchOverdue').mockResolvedValue({ items: [], total: 0 })
+    vi.spyOn(listsApi, 'fetchLists').mockResolvedValue([summary('id-list', 'Chores')])
   })
 
   it('opens on today', async () => {
@@ -754,5 +769,141 @@ describe('DashboardPage', () => {
     )
     expect(new Date(from).toISOString()).toMatch(/T16:00:00/)
     expect(Date.parse(to) - Date.parse(from)).toBe(86_400_000)
+  })
+  describe('filtering by list (0014 R123-R130)', () => {
+    const groceries = item({
+      id: 'id-groceries-item',
+      listId: 'id-groceries',
+      listName: 'Groceries',
+      description: 'Buy milk',
+    })
+
+    beforeEach(() => {
+      vi.spyOn(listsApi, 'fetchLists').mockResolvedValue([
+        summary('id-list', 'Chores'),
+        summary('id-groceries', 'Groceries'),
+      ])
+    })
+
+    async function pick(name: string) {
+      await userEvent.click(await screen.findByRole('button', { name: /^Lists/ }))
+      await userEvent.click(await screen.findByRole('menuitem', { name }))
+      await userEvent.keyboard('{Escape}')
+    }
+
+    it('takes the other lists out of the day, and leaves the calendar alone', async () => {
+      // R126 is the half that is easy to lose: an event belongs to a feed, not
+      // to a list, so narrowing to one list must not hide an appointment.
+      vi.spyOn(dashboardApi, 'fetchScheduled').mockResolvedValue(
+        payload({ items: [item(), groceries], events: [event()] }),
+      )
+      renderAt('/dashboard/day')
+
+      expect(await screen.findByText('Take the bins out')).toBeVisible()
+
+      await pick('Groceries')
+
+      await waitFor(() => expect(screen.queryByText('Take the bins out')).not.toBeInTheDocument())
+      expect(screen.getByText('Buy milk')).toBeVisible()
+      expect(screen.getByText('Parents evening')).toBeVisible()
+    })
+
+    it('writes the selection into the address, keeping the period, without a history entry', async () => {
+      const anchor = dayKey(addDays(civilIn(new Date(), ZONE), 3))
+      renderAt(`/dashboard/day?on=${anchor}`)
+
+      await screen.findByRole('heading', { level: 1, name: 'Agenda' })
+      await pick('Groceries')
+
+      await waitFor(() =>
+        expect(screen.getByTestId('address')).toHaveTextContent(
+          `/dashboard/day?on=${anchor}&lists=id-groceries`,
+        ),
+      )
+      // `replace`, so the back button leaves the agenda rather than undoing a
+      // tap on a chip (adr/0045).
+      expect(window.history.length).toBeLessThan(3)
+    })
+
+    it('names the one list it is showing, and counts beyond that', async () => {
+      renderAt('/dashboard/day?lists=id-groceries')
+
+      expect(await screen.findByRole('button', { name: 'Lists: Groceries' })).toBeVisible()
+
+      await pick('Chores')
+
+      expect(await screen.findByRole('button', { name: 'Lists: 2' })).toBeVisible()
+    })
+
+    it('narrows the undated panel and the overdue strip too', async () => {
+      // R125. Either one left unfiltered contradicts the chip on screen.
+      vi.spyOn(dashboardApi, 'fetchUndated').mockResolvedValue({
+        items: [item({ id: 'id-undated', description: 'Someday' }), groceries],
+        total: 2,
+      })
+      vi.spyOn(dashboardApi, 'fetchOverdue').mockResolvedValue({
+        items: [item({ id: 'id-late', description: 'Missed it' }), groceries],
+        total: 2,
+      })
+      renderAt('/dashboard/day?lists=id-groceries')
+
+      expect(await screen.findByText('1 item is overdue')).toBeVisible()
+      await userEvent.click(screen.getByRole('button', { name: 'Show' }))
+      await waitFor(() => expect(screen.queryByText('Missed it')).not.toBeInTheDocument())
+      expect(screen.queryByText('Someday')).not.toBeInTheDocument()
+    })
+
+    it('will not put a number on what it did not see', async () => {
+      // The total counts every list on the server, so a filtered panel cannot
+      // subtract its way to an honest figure (adr/0047).
+      vi.spyOn(dashboardApi, 'fetchUndated').mockResolvedValue({
+        items: [groceries],
+        total: 38,
+      })
+      renderAt('/dashboard/day?lists=id-groceries')
+
+      expect(await screen.findByText('and possibly more')).toBeVisible()
+      expect(screen.queryByText('and 37 more')).not.toBeInTheDocument()
+    })
+
+    it('shows the whole agenda when the address names a list that is gone', async () => {
+      // R128: a link outliving a deleted list, or a revoked grant, must not be
+      // an empty agenda nobody can explain.
+      vi.spyOn(dashboardApi, 'fetchScheduled').mockResolvedValue(
+        payload({ items: [item(), groceries] }),
+      )
+      renderAt('/dashboard/day?lists=id-deleted')
+
+      expect(await screen.findByText('Take the bins out')).toBeVisible()
+      expect(screen.getByText('Buy milk')).toBeVisible()
+      expect(screen.getByRole('button', { name: 'Lists' })).toBeVisible()
+    })
+
+    it('says an empty day is empty because of the filter', async () => {
+      // R127. "Nothing is due" about a day holding four chores is a lie.
+      vi.spyOn(dashboardApi, 'fetchScheduled').mockResolvedValue(payload({ items: [item()] }))
+      renderAt('/dashboard/day?lists=id-groceries')
+
+      expect(
+        await screen.findByText('Nothing from the lists you picked, and nothing is happening.'),
+      ).toBeVisible()
+    })
+
+    it('costs no request', async () => {
+      // R130, which is the whole reason this happens in the browser: the query
+      // keys do not mention the filter, so one payload serves every selection.
+      const fetched = vi
+        .spyOn(dashboardApi, 'fetchScheduled')
+        .mockResolvedValue(payload({ items: [item(), groceries] }))
+      renderAt('/dashboard/day')
+
+      await screen.findByText('Take the bins out')
+      const before = fetched.mock.calls.length
+
+      await pick('Groceries')
+
+      await waitFor(() => expect(screen.queryByText('Take the bins out')).not.toBeInTheDocument())
+      expect(fetched.mock.calls.length).toBe(before)
+    })
   })
 })
