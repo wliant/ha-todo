@@ -1,12 +1,9 @@
-import { useState, type ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
-import Chip from '@mui/material/Chip'
 import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import ListItemText from '@mui/material/ListItemText'
-import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Radio from '@mui/material/Radio'
 import Stack from '@mui/material/Stack'
@@ -15,6 +12,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import ArrowDownwardRounded from '@mui/icons-material/ArrowDownwardRounded'
 import ArrowUpwardRounded from '@mui/icons-material/ArrowUpwardRounded'
+import { MenuChip } from '../app/MenuChip'
 import type { ListField, ListMember } from '../api/lists'
 import {
   DEFAULT_FILTER,
@@ -213,42 +211,6 @@ export function FilterBar({
         </>
       )}
     </Stack>
-  )
-}
-
-/**
- * A chip that opens a menu.
- *
- * <p>Filled when its filter is narrowing the list and outlined when it is not,
- * so the bar reads at a glance - the colour is never the only cue, because the
- * chip's own label names the selection.
- */
-function MenuChip({
-  label,
-  active,
-  children,
-}: {
-  label: string
-  active: boolean
-  children: (close: () => void) => ReactNode
-}) {
-  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
-  const close = () => setAnchor(null)
-  return (
-    <>
-      <Chip
-        label={label}
-        aria-haspopup="menu"
-        aria-expanded={anchor !== null}
-        color={active ? 'primary' : 'default'}
-        variant={active ? 'filled' : 'outlined'}
-        onClick={(event) => setAnchor(event.currentTarget)}
-        sx={{ flexShrink: 0 }}
-      />
-      <Menu anchorEl={anchor} open={anchor !== null} onClose={close}>
-        {children(close)}
-      </Menu>
-    </>
   )
 }
 

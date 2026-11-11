@@ -15,11 +15,14 @@ import { DashboardItemDialog } from './DashboardItemDialog'
 import { OutsideWindowNotice } from './OutsideWindowNotice'
 import { OverduePanel } from './OverduePanel'
 import { StaleFeedsNotice } from './StaleFeedsNotice'
+import { ListFilterChip } from './ListFilterChip'
 import { ViewContext, useDashboardView } from './dashboardView'
+import { known, parseLists, writeLists } from './listFilter'
 import { UndatedPanel } from './UndatedPanel'
 import { CompletionNoteDialog } from '../items/CompletionNoteDialog'
 import { useCompleteFromAgenda, useOverdue, useScheduled, useUndated } from './queries'
 import { useHouseholdZone } from '../app/useHouseholdZone'
+import { useLists } from '../lists/queries'
 import { useState } from 'react'
 import {
   addDays,
@@ -60,6 +63,17 @@ export function DashboardPage() {
   const [noting, setNoting] = useState<DashboardItem | null>(null)
   const [said, setSaid] = useState<string | null>(null)
   const scope: DashboardScope = params.get('scope') === 'mine' ? 'mine' : 'all'
+  // The lists this member can see. The same query the chip draws its menu
+  // from and the same cache entry, so asking here costs nothing - and this is
+  // the one place that decides what the selection means, rather than each view
+  // deciding for itself.
+  const { data: visibleLists } = useLists({})
+  // Which lists the agenda is narrowed to (R123). From the address beside the
+  // scope, never from state - so a narrowed agenda is a link (adr/0045). Ids
+  // naming a list that is gone are dropped here, which can empty the selection
+  // - and an empty selection is no filter, so such a link shows the whole
+  // agenda rather than an empty one (R128).
+  const picked = useMemo(() => known(parseLists(params), visibleLists), [params, visibleLists])
   const tab = pathname.endsWith('/week') ? 'week' : pathname.endsWith('/month') ? 'month' : 'day'
   // The day being looked at (R76). Today unless the address says otherwise, and
   // today for anything unparseable - this is the landing page, so a bad ?on=
@@ -124,6 +138,15 @@ export function DashboardPage() {
     setParams(next)
   }
 
+  /**
+   * `replace`, not `push`: ticking four lists is one decision and must not be
+   * four entries in the history (adr/0045). The page's other writers push,
+   * because moving the period and opening an item are navigations.
+   */
+  function setLists(ids: string[]) {
+    setParams(writeLists(params, ids), { replace: true })
+  }
+
   function setScope(next: DashboardScope) {
     const updated = new URLSearchParams(params)
     if (next === 'all') {
@@ -145,7 +168,7 @@ export function DashboardPage() {
   }
 
   return (
-    <ViewContext.Provider value={{ scope, zone, anchor, open, openEvent, complete, writeNote: setNoting }}>
+    <ViewContext.Provider value={{ scope, lists: picked, zone, anchor, open, openEvent, complete, writeNote: setNoting }}>
       <Stack spacing={2.5}>
         <Stack
           direction={{ xs: 'column', sm: 'row' }}
@@ -155,16 +178,21 @@ export function DashboardPage() {
           <Typography component="h1" variant="h5">
             Agenda
           </Typography>
-          <ToggleButtonGroup
-            exclusive
-            size="small"
-            value={scope}
-            onChange={(_event, next: DashboardScope | null) => next && setScope(next)}
-            aria-label="Whose items"
-          >
-            <ToggleButton value="all">Everything</ToggleButton>
-            <ToggleButton value="mine">Mine</ToggleButton>
-          </ToggleButtonGroup>
+          {/* The two narrowing controls together, and in this order: whose
+              work, then which lists. Both parameterise every view below. */}
+          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+            <ToggleButtonGroup
+              exclusive
+              size="small"
+              value={scope}
+              onChange={(_event, next: DashboardScope | null) => next && setScope(next)}
+              aria-label="Whose items"
+            >
+              <ToggleButton value="all">Everything</ToggleButton>
+              <ToggleButton value="mine">Mine</ToggleButton>
+            </ToggleButtonGroup>
+            <ListFilterChip picked={picked} onChange={setLists} />
+          </Stack>
         </Stack>
 
         {/* The active tab's own window, so this shares the view's cache entry
@@ -173,7 +201,7 @@ export function DashboardPage() {
 
         {/* Above the tabs, and outside everything the period parameterises: it
             takes `scope` and nothing else, which is R89 at the call site. */}
-        <OverduePanel scope={scope} />
+        <OverduePanel scope={scope} lists={picked} />
 
         <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
           {/* Named for the range rather than for the present: a tab that can
@@ -199,7 +227,7 @@ export function DashboardPage() {
             <Outlet />
           </Box>
           <Box sx={{ width: { xs: '100%', md: '16rem' }, flexShrink: 0 }}>
-            <UndatedPanel scope={scope} />
+            <UndatedPanel scope={scope} lists={picked} />
           </Box>
         </Stack>
       </Stack>

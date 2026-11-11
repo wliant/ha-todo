@@ -6,6 +6,16 @@ import type { Civil, Zone } from './calendar'
 /** What the three range views need from the layout around them. */
 export interface DashboardView {
   scope: DashboardScope
+  /**
+   * The lists the agenda is narrowed to, empty meaning every list (0014 R123).
+   *
+   * <p>Applied by each view to the rows it already has, never to the query:
+   * the filter happens in the browser over one fetch, so changing it costs no
+   * request (adr/0047). **Events are never filtered by it** - an event belongs
+   * to a calendar feed and has no list, so narrowing to the grocery list must
+   * not take somebody's dentist appointment off the day (R126).
+   */
+  lists: string[]
   /** The household's zone (adr/0036): every day boundary on this page. */
   zone: Zone
   /**

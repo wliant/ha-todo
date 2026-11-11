@@ -452,3 +452,51 @@ def test_a_chore_whose_day_has_gone_is_shown_on_every_range(
     strip.get_by_role("button", name=f"Complete {chore}", exact=True).click()
     expect(page.get_by_text(f"{chore} is done.")).to_be_visible()
     expect(page.get_by_text(chore, exact=True)).not_to_be_visible()
+
+
+@pytest.mark.dashboard
+def test_the_agenda_can_be_narrowed_to_one_list(
+    page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
+) -> None:
+    """
+    0014 R123, R125, R127: two lists, one chosen, and the other one leaves.
+
+    Also the half that is easy to lose: the selection is in the address, so it
+    survives a reload (R124's corollary, adr/0045).
+    """
+    kept = test_data.name("Filter kept")
+    hidden = test_data.name("Filter hidden")
+    cleanup_lists(kept)
+    cleanup_lists(hidden)
+    ui_sign_in(page, base_url, demo_member)
+
+    # Late enough today that the household day has not rolled over mid-test.
+    later_today = datetime.now().replace(hour=23, minute=0, second=0, microsecond=0)
+    create_list(page, kept)
+    add_dated_item(page, "Chore on the kept list", later_today)
+    create_list(page, hidden)
+    add_dated_item(page, "Chore on the hidden list", later_today)
+
+    page.goto(f"{base_url}/dashboard/day")
+    main = page.get_by_role("main")
+    expect(main.get_by_text("Chore on the kept list")).to_be_visible()
+    expect(main.get_by_text("Chore on the hidden list")).to_be_visible()
+
+    page.get_by_role("button", name=re.compile(r"^Lists")).click()
+    page.get_by_role("menuitem", name=kept).click()
+    page.keyboard.press("Escape")
+
+    expect(main.get_by_text("Chore on the hidden list")).not_to_be_visible()
+    expect(main.get_by_text("Chore on the kept list")).to_be_visible()
+    # The chip names the list rather than only counting it (R129).
+    expect(page.get_by_role("button", name=f"Lists: {kept}")).to_be_visible()
+
+    # A narrowed agenda is a link (adr/0045), so reloading keeps it.
+    page.reload()
+    expect(main.get_by_text("Chore on the kept list")).to_be_visible()
+    expect(main.get_by_text("Chore on the hidden list")).not_to_be_visible()
+
+    # And the way back is one tap, named rather than implied (R124).
+    page.get_by_role("button", name=f"Lists: {kept}").click()
+    page.get_by_role("menuitem", name="All lists").click()
+    expect(main.get_by_text("Chore on the hidden list")).to_be_visible()
