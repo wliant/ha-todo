@@ -16,7 +16,7 @@ from playwright.sync_api import Page, expect
 import struct
 import zlib
 
-from conftest import DemoMember, TestData, ui_sign_in
+from conftest import DemoMember, TestData, show_status, ui_sign_in
 
 
 def tiny_png() -> bytes:
@@ -84,9 +84,13 @@ def test_a_member_adds_an_item_and_ticks_it_off(
     # is its own control (R48, adr/0027).
     page.get_by_role("button", name="Complete Buy milk", exact=True).click()
 
-    # "To do" is the default view, so a finished item leaves it.
-    expect(page.get_by_text("Buy milk")).not_to_be_visible()
-    page.get_by_role("button", name="Done").click()
+    # "To do" is the default view, so a finished item leaves it - and says so
+    # in a snackbar, because the row vanishing cannot be the only feedback
+    # (0013 R119). The row is matched by its own disclosure button rather than
+    # by text: that snackbar names the item too.
+    expect(page.get_by_text("Finished “Buy milk”.")).to_be_visible()
+    expect(page.get_by_role("button", name="Buy milk", exact=True)).not_to_be_visible()
+    show_status(page, "Done")
     expect(page.get_by_text("Buy milk")).to_be_visible()
 
 
@@ -166,7 +170,10 @@ def test_the_second_member_to_tick_an_item_is_told_who_got_there_first(
     second_member_page.get_by_role(
         "button", name="Complete Take the bins out", exact=True
     ).click()
-    expect(second_member_page.get_by_text("Take the bins out")).not_to_be_visible()
+    # By the row's disclosure button: R119's snackbar names the item as well.
+    expect(
+        second_member_page.get_by_role("button", name="Take the bins out", exact=True)
+    ).not_to_be_visible()
 
     # Ana completes the item her screen still shows as open.
     page.get_by_role("button", name="Complete Take the bins out", exact=True).click()
@@ -174,8 +181,8 @@ def test_the_second_member_to_tick_an_item_is_told_who_got_there_first(
     expect(page.get_by_text(f"{passwordless_member.display_name} completed this first")
            ).to_be_visible()
     # And her screen now agrees with the server rather than with her click.
-    page.get_by_role("button", name="Done").click()
-    expect(page.get_by_text("Take the bins out")).to_be_visible()
+    show_status(page, "Done")
+    expect(page.get_by_role("button", name="Take the bins out", exact=True)).to_be_visible()
 
 
 @pytest.mark.items
@@ -361,7 +368,7 @@ def test_a_member_says_how_the_work_went_and_the_other_reads_it(
     # Ben opens the same list and reads it.
     ui_sign_in(second_member_page, base_url, passwordless_member)
     second_member_page.goto(f"{base_url}/lists/{list_id}")
-    second_member_page.get_by_role("button", name="Done").click()
+    show_status(second_member_page, "Done")
     second_member_page.get_by_role("button", name="Fix the tap", exact=True).click()
 
     expect(second_member_page.get_by_text("Washer was perished")).to_be_visible()
@@ -406,11 +413,11 @@ def test_reopening_an_item_takes_its_points_back(
     expect(points.get_by_text("50")).to_be_visible()
 
     page.get_by_role("tab", name="Items").click()
-    page.get_by_role("button", name="Done").click()
+    show_status(page, "Done")
     page.get_by_role("button", name="Reopen Worth something").click()
 
     # Back on the to-do list, and the points are gone with it.
-    page.get_by_role("button", name="To do").click()
+    show_status(page, "Just to do")
     expect(page.get_by_text("Worth something")).to_be_visible()
     page.get_by_role("tab", name="Activity").click()
     # Scoped to the Points panel, as the assertion above is. Unscoped, "50" is
@@ -465,6 +472,62 @@ def test_a_member_claims_several_items_and_everybody_sees_it(
     # Ana sees the same thing: claimed, not merely assigned.
     page.reload()
     expect(page.get_by_label(claimed)).to_have_count(2)
+
+
+@pytest.mark.items
+def test_a_filtered_list_is_an_address_a_reload_keeps(
+    page: Page,
+    base_url: str,
+    demo_member: DemoMember,
+    passwordless_member: DemoMember,
+    test_data: TestData,
+    cleanup_lists,
+) -> None:
+    """0013 R107-R115: filter to one member's work, and reload onto the same view.
+
+    The reload is the assertion no unit test can make: the filter lives in the
+    address rather than in component state (adr/0045), so a refresh, a back
+    button and a pasted link all show the same subset.
+
+    The item descriptions are deliberately unlike any control's label: a shared
+    list's items also appear on the agenda, where other tests in this suite
+    query buttons by name - an item called "Mine" collides with the agenda's
+    own Mine toggle.
+    """
+    name = test_data.name("Filtering")
+    cleanup_lists(name)
+    ui_sign_in(page, base_url, demo_member)
+    list_id = create_list(page, name, share_with=passwordless_member.display_name)
+
+    page.goto(f"{base_url}/lists/{list_id}/settings")
+    page.get_by_role("switch", name="Assignee").click()
+    page.get_by_role("button", name="Save changes").click()
+    expect(page.get_by_role("heading", name=name)).to_be_visible()
+
+    add_item(page, "Taken by Ana")
+    add_item(page, "Up for grabs")
+    page.get_by_role("checkbox", name="Select Taken by Ana").click()
+    page.get_by_role("button", name="Assign to me").click()
+    expect(page.get_by_label(f"{demo_member.display_name} claimed this")).to_be_visible()
+
+    page.get_by_role("button", name=re.compile(r"^Assignee:")).click()
+    page.get_by_role("menuitem", name=demo_member.display_name, exact=True).click()
+    page.keyboard.press("Escape")
+
+    expect(page.get_by_text("Taken by Ana", exact=True)).to_be_visible()
+    expect(page.get_by_text("Up for grabs", exact=True)).not_to_be_visible()
+    expect(page.get_by_role("status").filter(has_text="1 filter")).to_be_visible()
+    # The filter is in the address, so the reload lands on the same view.
+    assert "who=" in page.url
+
+    page.reload()
+
+    expect(page.get_by_text("Taken by Ana", exact=True)).to_be_visible()
+    expect(page.get_by_text("Up for grabs", exact=True)).not_to_be_visible()
+
+    # And clearing it is one action, which brings the other item back (R118).
+    page.get_by_role("button", name="Clear").click()
+    expect(page.get_by_text("Up for grabs", exact=True)).to_be_visible()
 
 
 @pytest.mark.activity

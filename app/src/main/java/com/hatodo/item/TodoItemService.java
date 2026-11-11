@@ -70,9 +70,9 @@ public class TodoItemService {
     }
 
     @Transactional(readOnly = true)
-    public List<ItemResponse> list(UUID listId, String status) {
+    public List<ItemResponse> list(UUID listId) {
         lists.requireReadable(listId);
-        return items.findForList(listId, status == null ? "all" : status).stream()
+        return items.findForList(listId).stream()
                 .map(ItemResponse::of)
                 .toList();
     }

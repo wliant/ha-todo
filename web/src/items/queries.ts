@@ -10,7 +10,6 @@ import {
   updateItem,
   type AssignmentResult,
   type Item,
-  type ItemStatus,
   type SaveItem,
 } from '../api/items'
 import { conflictingItem } from '../api/items'
@@ -18,19 +17,22 @@ import { isConflict } from '../api/http'
 import { listKeys } from '../lists/queries'
 
 export const itemKeys = {
+  /**
+   * The only items key. There was one per status value until 0013 moved the
+   * filter into the browser (adr/0044) - the optimistic writes below target
+   * this by prefix either way, which is why they did not have to change.
+   */
   all: (listId: string) => ['lists', 'detail', listId, 'items'] as const,
-  filtered: (listId: string, status: ItemStatus) =>
-    ['lists', 'detail', listId, 'items', status] as const,
   points: (listId: string) => ['lists', 'detail', listId, 'points'] as const,
   activityAll: (listId: string) => ['lists', 'detail', listId, 'activity'] as const,
   activity: (listId: string, from: string, to: string) =>
     ['lists', 'detail', listId, 'activity', from, to] as const,
 }
 
-export function useItems(listId: string | undefined, status: ItemStatus) {
+export function useItems(listId: string | undefined) {
   return useQuery({
-    queryKey: itemKeys.filtered(listId ?? 'none', status),
-    queryFn: () => fetchItems(listId!, status),
+    queryKey: itemKeys.all(listId ?? 'none'),
+    queryFn: () => fetchItems(listId!),
     enabled: Boolean(listId),
   })
 }

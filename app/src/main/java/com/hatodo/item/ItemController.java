@@ -35,10 +35,16 @@ public class ItemController {
         this.todoItems = todoItems;
     }
 
+    /**
+     * The whole list, in the member's order.
+     *
+     * <p>No filter parameters: narrowing a list is done in the browser over
+     * this payload (0013, adr/0044), so there is one implementation of what
+     * "done" means and it is not split across the wire.
+     */
     @GetMapping("/lists/{listId}/items")
-    public List<ItemResponse> list(@PathVariable UUID listId,
-                                   @RequestParam(required = false, defaultValue = "all") String status) {
-        return todoItems.list(listId, status);
+    public List<ItemResponse> list(@PathVariable UUID listId) {
+        return todoItems.list(listId);
     }
 
     @PostMapping("/lists/{listId}/items")

@@ -241,6 +241,26 @@ def fill_due(page, when) -> None:
     page.get_by_label(re.compile(r"^Time")).fill(when.strftime("%H:%M"))
 
 
+def show_status(page, *labels: str) -> None:
+    """
+    Pick which statuses a list shows (0013 R108).
+
+    The To do / Done / All toggle is gone: status is one chip on the filter bar
+    whose values are independently selectable, so "both" is reachable and "All"
+    no longer needs a word of its own (adr/0046). The chip's label names the
+    current selection, which is why it is matched by prefix.
+    """
+    from playwright.sync_api import expect
+
+    page.get_by_role("button", name=re.compile(r"^Status:")).click()
+    for label in labels:
+        page.get_by_role("menuitem", name=label, exact=True).click()
+    # Escape rather than a click outside: the menu is modal, and a click on the
+    # page behind it lands on the backdrop and is swallowed.
+    page.keyboard.press("Escape")
+    expect(page.get_by_role("menu")).to_have_count(0)
+
+
 def ui_sign_in(page, base_url: str, member: DemoMember) -> None:
     """
     Sign in through the real screen: pick the person, then type a password only

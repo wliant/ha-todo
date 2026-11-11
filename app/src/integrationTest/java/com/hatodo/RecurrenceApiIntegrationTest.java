@@ -60,7 +60,7 @@ class RecurrenceApiIntegrationTest extends ApiIntegrationTest {
     }
 
     private List<Map<String, Object>> itemsOn(Member member, String listId) {
-        return rest.exchange("/api/lists/" + listId + "/items?status=all", HttpMethod.GET,
+        return rest.exchange("/api/lists/" + listId + "/items", HttpMethod.GET,
                 new HttpEntity<>(headersFor(member.session())), List.class).getBody();
     }
 
