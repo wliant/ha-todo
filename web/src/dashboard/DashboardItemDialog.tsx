@@ -11,6 +11,7 @@ import Typography from '@mui/material/Typography'
 import { Link as RouterLink } from 'react-router-dom'
 import type { DashboardItem } from '../api/dashboard'
 import { MemberAvatar } from '../app/MemberAvatar'
+import EventBusyRounded from '@mui/icons-material/EventBusyRounded'
 import { CompleteControl } from '../items/CompleteControl'
 import { ListIcon } from '../lists/listIcons'
 
@@ -31,11 +32,13 @@ export function DashboardItemDialog({
   onClose,
   onComplete,
   onWriteNote,
+  onLapse,
 }: {
   item: DashboardItem
   onClose: () => void
   onComplete: () => void
   onWriteNote: () => void
+  onLapse: () => void
 }) {
   return (
     <Dialog open fullWidth maxWidth="sm" onClose={onClose}>
@@ -123,6 +126,16 @@ export function DashboardItemDialog({
           onComplete={onComplete}
           onWriteNote={onWriteNote}
         />
+        {/* Spelled out rather than an icon, because a dialog has the room and
+            this is the one surface where the member opened the chore to think
+            about it (0015 R138). */}
+        <Button
+          startIcon={<EventBusyRounded fontSize="small" />}
+          onClick={onLapse}
+          color="inherit"
+        >
+          Lapse
+        </Button>
       </DialogActions>
     </Dialog>
   )

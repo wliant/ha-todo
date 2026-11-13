@@ -32,9 +32,15 @@ public record ActivityResponse(Instant from, Instant to,
                         boolean reopened) {
 
         static Event of(TodoItem item) {
+            // "No longer standing", not "has a reopen stamp". Since 0015 a
+            // lapse clears that stamp (it is what makes the item terminal
+            // again), so an item completed, reopened and then lapsed has a
+            // null reopened_at and a completion that very much was undone -
+            // which the older test reported as still standing. This query only
+            // ever selects rows with a completedAt, so the negation is exact.
             return new Event(item.getId(), item.getDescription(), item.getCompletedAt(),
                     ItemMemberResponse.of(item.getCompletedBy()), item.getPointsEarned(),
-                    item.getReopenedAt() != null);
+                    !item.isCompleted());
         }
     }
 }

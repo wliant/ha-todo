@@ -285,6 +285,43 @@ def test_stepping_past_what_has_been_read_says_so(
 
 
 @pytest.mark.dashboard
+def test_a_member_lapses_a_chore_from_the_agenda(
+    page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
+) -> None:
+    """
+    0015 R136, R138: the agenda is where "we are not getting to this" is
+    actually decided, and a lapsed chore leaves it as a completed one does.
+    """
+    name = test_data.name("Giving up")
+    cleanup_lists(name)
+    ui_sign_in(page, base_url, demo_member)
+    list_id = create_list(page, name)
+
+    # Named for the run: the agenda crosses every list this member can see.
+    chore = test_data.name("Sort the garage")
+    later_today = datetime.now().replace(hour=23, minute=0, second=0, microsecond=0)
+    add_dated_item(page, chore, later_today)
+
+    page.get_by_role("link", name="Agenda").click()
+    main = page.get_by_role("main")
+    expect(main.get_by_text(chore)).to_be_visible()
+
+    page.get_by_role("button", name=f"Lapse {chore}", exact=True).click()
+
+    expect(page.get_by_text(f"{chore} has lapsed.")).to_be_visible()
+    # Exact: the snackbar's own message contains the description too.
+    expect(main.get_by_text(chore, exact=True)).not_to_be_visible()
+
+    # The same write, seen from the list: lapsed rather than done, and so not
+    # under the Done status.
+    page.goto(f"{base_url}/lists/{list_id}")
+    show_status(page, "Done")
+    expect(page.get_by_role("button", name=chore, exact=True)).not_to_be_visible()
+    show_status(page, "Done", "Lapsed")
+    expect(page.get_by_role("button", name=chore, exact=True)).to_be_visible()
+
+
+@pytest.mark.dashboard
 def test_a_member_completes_a_chore_from_the_agenda(
     page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
 ) -> None:

@@ -71,6 +71,40 @@ def open_add_form(page: Page) -> None:
 
 
 @pytest.mark.items
+def test_a_member_lapses_an_item_and_puts_it_back(
+    page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
+) -> None:
+    """
+    0015 R131, R135, R137: planned and never got to is a terminal state of its
+    own - not finished, worth nothing, and reversible.
+    """
+    name = test_data.name("Lapsing")
+    cleanup_lists(name)
+    ui_sign_in(page, base_url, demo_member)
+    create_list(page, name)
+
+    add_item(page, "Paint the shed")
+    page.get_by_role("button", name="Lapse Paint the shed", exact=True).click()
+
+    # Leaves the default To do view exactly as a completion does, and says so
+    # for the same reason (R119). Matched by its own disclosure button: the
+    # snackbar names the item too, and get_by_text would match twice.
+    expect(page.get_by_text("Lapsed “Paint the shed”.")).to_be_visible()
+    expect(page.get_by_role("button", name="Paint the shed", exact=True)).not_to_be_visible()
+
+    # Its own status, not folded into Done.
+    show_status(page, "Done")
+    expect(page.get_by_role("button", name="Paint the shed", exact=True)).not_to_be_visible()
+    show_status(page, "Done", "Lapsed")
+    expect(page.get_by_role("button", name="Paint the shed", exact=True)).to_be_visible()
+
+    # And it is not a delete: reopening puts it back on the list.
+    page.get_by_role("button", name="Reopen Paint the shed", exact=True).click()
+    show_status(page, "Lapsed")
+    expect(page.get_by_role("button", name="Paint the shed", exact=True)).to_be_visible()
+
+
+@pytest.mark.items
 def test_a_member_adds_an_item_and_ticks_it_off(
     page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
 ) -> None:

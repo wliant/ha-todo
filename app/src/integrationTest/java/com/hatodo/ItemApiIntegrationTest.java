@@ -82,18 +82,16 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
                 new HttpEntity<>(body, headersFor(member.session())), Map.class);
     }
 
-    private ResponseEntity<Map> setCompleted(Member member, String itemId, long version,
-                                             boolean completed) {
-        return rest.exchange("/api/items/" + itemId + "/completion", HttpMethod.PUT,
-                new HttpEntity<>("{\"version\":%d,\"completed\":%s}".formatted(version, completed),
-                        headersFor(member.session())), Map.class);
+    private ResponseEntity<Map> setState(Member member, String itemId, long version,
+                                         String state) {
+        return setState(member, itemId, version, state, null);
     }
 
-    private ResponseEntity<Map> setCompleted(Member member, String itemId, long version,
-                                             boolean completed, String noteHtml) {
-        return rest.exchange("/api/items/" + itemId + "/completion", HttpMethod.PUT,
-                new HttpEntity<>("{\"version\":%d,\"completed\":%s,\"noteHtml\":%s}"
-                        .formatted(version, completed,
+    private ResponseEntity<Map> setState(Member member, String itemId, long version,
+                                         String state, String noteHtml) {
+        return rest.exchange("/api/items/" + itemId + "/state", HttpMethod.PUT,
+                new HttpEntity<>("{\"version\":%d,\"state\":\"%s\",\"noteHtml\":%s}"
+                        .formatted(version, state,
                                 noteHtml == null ? "null" : "\"" + noteHtml + "\""),
                         headersFor(member.session())), Map.class);
     }
@@ -107,7 +105,7 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
 
         assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(created.getBody().get("description")).isEqualTo("Buy milk");
-        assertThat(created.getBody().get("completed")).isEqualTo(false);
+        assertThat(created.getBody().get("state")).isEqualTo("OPEN");
 
         ResponseEntity<List> listed = rest.exchange("/api/lists/" + listId + "/items",
                 HttpMethod.GET, new HttpEntity<>(headersFor(ana.session())), List.class);
@@ -139,11 +137,11 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
         String listId = newList(ana, ben.id().toString());
         Map created = addItem(ana, listId, "{\"description\":\"Shared chore\"}").getBody();
 
-        ResponseEntity<Map> completed = setCompleted(ben, (String) created.get("id"),
-                ((Number) created.get("version")).longValue(), true);
+        ResponseEntity<Map> completed = setState(ben, (String) created.get("id"),
+                ((Number) created.get("version")).longValue(), "COMPLETED");
 
         assertThat(completed.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(completed.getBody().get("completed")).isEqualTo(true);
+        assertThat(completed.getBody().get("state")).isEqualTo("COMPLETED");
     }
 
     @Test
@@ -167,8 +165,8 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
                 """.formatted(ben.id(), cost.get("id"), choiceId)).getBody();
 
         // Ana completes an item assigned to Ben.
-        ResponseEntity<Map> completed = setCompleted(ana, (String) created.get("id"),
-                ((Number) created.get("version")).longValue(), true);
+        ResponseEntity<Map> completed = setState(ana, (String) created.get("id"),
+                ((Number) created.get("version")).longValue(), "COMPLETED");
         assertThat(completed.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(completed.getBody().get("pointsEarned")).isEqualTo(50);
 
@@ -196,12 +194,12 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
                 {"description":"An hour of work","costValues":[{"fieldId":"%s","amount":1}]}
                 """.formatted(fieldId)).getBody();
 
-        Map completed = setCompleted(ana, (String) created.get("id"),
-                ((Number) created.get("version")).longValue(), true).getBody();
+        Map completed = setState(ana, (String) created.get("id"),
+                ((Number) created.get("version")).longValue(), "COMPLETED").getBody();
         assertThat(completed.get("pointsEarned")).isEqualTo(1000);
 
-        Map reopened = setCompleted(ana, (String) created.get("id"),
-                ((Number) completed.get("version")).longValue(), false).getBody();
+        Map reopened = setState(ana, (String) created.get("id"),
+                ((Number) completed.get("version")).longValue(), "OPEN").getBody();
         assertThat(reopened.get("pointsEarned")).isNull();
         assertThat(reopened.get("completedBy")).isNull();
     }
@@ -220,8 +218,8 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
         Map created = addItem(ana, listId, """
                 {"description":"An hour","costValues":[{"fieldId":"%s","amount":1}]}
                 """.formatted(cost.get("id"))).getBody();
-        setCompleted(ana, (String) created.get("id"),
-                ((Number) created.get("version")).longValue(), true);
+        setState(ana, (String) created.get("id"),
+                ((Number) created.get("version")).longValue(), "COMPLETED");
 
         configure(ana, listId, """
                 [{"id":"%s","kind":"COST","label":"Time","costMode":"NUMERIC",
@@ -243,17 +241,17 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
         String itemId = (String) created.get("id");
         long bothSee = ((Number) created.get("version")).longValue();
 
-        assertThat(setCompleted(ben, itemId, bothSee, true).getStatusCode())
+        assertThat(setState(ben, itemId, bothSee, "COMPLETED").getStatusCode())
                 .isEqualTo(HttpStatus.OK);
 
-        ResponseEntity<Map> second = setCompleted(ana, itemId, bothSee, true);
+        ResponseEntity<Map> second = setState(ana, itemId, bothSee, "COMPLETED");
 
         assertThat(second.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(second.getBody().get("code")).isEqualTo("STALE_ITEM");
         assertThat((String) second.getBody().get("error")).contains("completed this first");
         // And the body carries the truth, so the client reconciles in one trip.
         Map<String, Object> item = (Map<String, Object>) second.getBody().get("item");
-        assertThat(item.get("completed")).isEqualTo(true);
+        assertThat(item.get("state")).isEqualTo("COMPLETED");
         assertThat(((Map<String, Object>) item.get("completedBy")).get("id"))
                 .isEqualTo(ben.id().toString());
     }
@@ -395,11 +393,11 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
         String listId = newList(ana);
         Map created = addItem(ana, listId, "{\"description\":\"Fix the tap\"}").getBody();
 
-        Map completed = setCompleted(ana, (String) created.get("id"),
-                ((Number) created.get("version")).longValue(), true,
+        Map completed = setState(ana, (String) created.get("id"),
+                ((Number) created.get("version")).longValue(), "COMPLETED",
                 "<ul><li>Washer was perished</li></ul>").getBody();
 
-        assertThat(completed.get("completed")).isEqualTo(true);
+        assertThat(completed.get("state")).isEqualTo("COMPLETED");
         assertThat(completed.get("completionNoteHtml"))
                 .isEqualTo("<ul><li>Washer was perished</li></ul>");
         assertThat((Map<String, Object>) completed.get("completedBy"))
@@ -416,8 +414,8 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
         String listId = newList(ana);
         Map created = addItem(ana, listId, "{\"description\":\"Risky\"}").getBody();
 
-        Map completed = setCompleted(ana, (String) created.get("id"),
-                ((Number) created.get("version")).longValue(), true,
+        Map completed = setState(ana, (String) created.get("id"),
+                ((Number) created.get("version")).longValue(), "COMPLETED",
                 "<p>Done<script>alert(1)</script></p><img src=\\\"https://evil.test/x.png\\\">")
                 .getBody();
 
@@ -432,11 +430,11 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
         Member ana = givenMember("note-on-reopen");
         String listId = newList(ana);
         Map created = addItem(ana, listId, "{\"description\":\"Mow the lawn\"}").getBody();
-        Map completed = setCompleted(ana, (String) created.get("id"),
-                ((Number) created.get("version")).longValue(), true, null).getBody();
+        Map completed = setState(ana, (String) created.get("id"),
+                ((Number) created.get("version")).longValue(), "COMPLETED", null).getBody();
 
-        ResponseEntity<Map> refused = setCompleted(ana, (String) created.get("id"),
-                ((Number) completed.get("version")).longValue(), false, "<p>Actually not</p>");
+        ResponseEntity<Map> refused = setState(ana, (String) created.get("id"),
+                ((Number) completed.get("version")).longValue(), "OPEN", "<p>Actually not</p>");
 
         assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
@@ -449,25 +447,165 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
         String listId = newList(ana);
         Map created = addItem(ana, listId, "{\"description\":\"Hoover\"}").getBody();
         String itemId = (String) created.get("id");
-        Map completed = setCompleted(ana, itemId,
-                ((Number) created.get("version")).longValue(), true, "<p>Upstairs too</p>")
+        Map completed = setState(ana, itemId,
+                ((Number) created.get("version")).longValue(), "COMPLETED", "<p>Upstairs too</p>")
                 .getBody();
 
-        Map reopened = setCompleted(ana, itemId,
-                ((Number) completed.get("version")).longValue(), false).getBody();
+        Map reopened = setState(ana, itemId,
+                ((Number) completed.get("version")).longValue(), "OPEN").getBody();
 
-        assertThat(reopened.get("completed")).isEqualTo(false);
+        assertThat(reopened.get("state")).isEqualTo("OPEN");
         assertThat(reopened.get("completedBy")).isNull();
         assertThat(reopened.get("completionNoteHtml")).isNull();
         assertThat(reopened.get("reopenedAt")).isNotNull();
 
         Map<String, Object> row = jdbc.queryForMap(
-                "SELECT completed_by, completed_at, completion_note_html, done "
+                "SELECT completed_by, completed_at, completion_note_html, closed "
                         + "FROM todo_item WHERE id = ?::uuid", itemId);
         assertThat(row.get("completed_by")).isNotNull();
         assertThat(row.get("completed_at")).isNotNull();
         assertThat(row.get("completion_note_html")).isEqualTo("<p>Upstairs too</p>");
-        assertThat(row.get("done")).isEqualTo(false);
+        assertThat(row.get("closed")).isEqualTo(false);
+    }
+
+    @Test
+    void lapsingIsTerminalInTheRowAndEarnsNothing() {
+        // 0015 R131, R133. The generated `closed` column is the assertion that
+        // matters: only a real database computes it, and adr/0033's lesson is
+        // that a generation expression Postgres accepts is not necessarily one
+        // that computes what was intended.
+        Member ana = givenMember("lapse-row");
+        String listId = newList(ana);
+        Map created = addItem(ana, listId, "{\"description\":\"Never got to it\"}").getBody();
+        String itemId = (String) created.get("id");
+
+        Map lapsed = setState(ana, itemId,
+                ((Number) created.get("version")).longValue(), "LAPSED").getBody();
+
+        assertThat(lapsed.get("state")).isEqualTo("LAPSED");
+        assertThat(lapsed.get("pointsEarned")).isNull();
+        assertThat(((Map<String, Object>) lapsed.get("lapsedBy")).get("id"))
+                .isEqualTo(ana.id().toString());
+        assertThat(lapsed.get("lapsedAt")).isNotNull();
+
+        Map<String, Object> row = jdbc.queryForMap(
+                "SELECT lapsed_by, lapsed_at, closed FROM todo_item WHERE id = ?::uuid", itemId);
+        assertThat(row.get("lapsed_by")).isNotNull();
+        assertThat(row.get("lapsed_at")).isNotNull();
+        assertThat(row.get("closed")).isEqualTo(true);
+    }
+
+    @Test
+    void reopeningALapsedItemMakesItWorkAgainAndKeepsTheLapseInTheRow() {
+        // 0015 R135. One reopen stamp undoes either terminal state.
+        Member ana = givenMember("lapse-reopen");
+        String listId = newList(ana);
+        Map created = addItem(ana, listId, "{\"description\":\"Back on the pile\"}").getBody();
+        String itemId = (String) created.get("id");
+        Map lapsed = setState(ana, itemId,
+                ((Number) created.get("version")).longValue(), "LAPSED").getBody();
+
+        Map reopened = setState(ana, itemId,
+                ((Number) lapsed.get("version")).longValue(), "OPEN").getBody();
+
+        assertThat(reopened.get("state")).isEqualTo("OPEN");
+        assertThat(reopened.get("lapsedBy")).isNull();
+        assertThat(reopened.get("lapsedAt")).isNull();
+
+        Map<String, Object> row = jdbc.queryForMap(
+                "SELECT lapsed_at, closed FROM todo_item WHERE id = ?::uuid", itemId);
+        assertThat(row.get("lapsed_at")).isNotNull();
+        assertThat(row.get("closed")).isEqualTo(false);
+    }
+
+    @Test
+    void anItemCompletedThenReopenedThenLapsedCreditsNobody() {
+        // The trap 0015 laid. `closed` is true here and completed_by is still
+        // set, so a leaderboard reading `closed = TRUE AND completedBy IS NOT
+        // NULL` would invent a zero-point row for Ana. pointsByMember spells
+        // out a standing completion instead - see adr/0048.
+        Member ana = givenMember("lapse-points");
+        String listId = newList(ana);
+        configure(ana, listId, """
+                [{"kind":"COST","label":"Time","costMode":"FIXED","choices":[
+                    {"label":"30 min","points":50}]}]
+                """);
+        Map<String, Object> cost = costField(ana, listId);
+        String choiceId = (String) ((List<Map<String, Object>>) cost.get("choices"))
+                .get(0).get("id");
+        Map created = addItem(ana, listId, """
+                {"description":"Given up on","costValues":[
+                    {"fieldId":"%s","choiceId":"%s"}]}
+                """.formatted(cost.get("id"), choiceId)).getBody();
+        String itemId = (String) created.get("id");
+
+        long version = ((Number) created.get("version")).longValue();
+        version = ((Number) setState(ana, itemId, version, "COMPLETED")
+                .getBody().get("version")).longValue();
+        version = ((Number) setState(ana, itemId, version, "OPEN")
+                .getBody().get("version")).longValue();
+
+        setState(ana, itemId, version, "LAPSED");
+
+        Map<String, Object> row = jdbc.queryForMap(
+                "SELECT completed_by, closed FROM todo_item WHERE id = ?::uuid", itemId);
+        assertThat(row.get("completed_by")).isNotNull();
+        assertThat(row.get("closed")).isEqualTo(true);
+        assertThat(points(ana, listId)).isEmpty();
+    }
+
+    @Test
+    void anActivityFeedCallsACompletionUndoneWhenALapseUndidIt() {
+        // The flag means "no longer standing", not "carries a reopen stamp" -
+        // and a lapse clears that stamp, which is what makes the item terminal
+        // again. Reading the column directly reported this completion as still
+        // standing, in the one feed whose job is to be honest about work that
+        // was undone.
+        Member ana = givenMember("lapse-activity");
+        String listId = newList(ana);
+        Map created = addItem(ana, listId, "{\"description\":\"Undone by a lapse\"}").getBody();
+        String itemId = (String) created.get("id");
+        long version = ((Number) created.get("version")).longValue();
+        version = ((Number) setState(ana, itemId, version, "COMPLETED")
+                .getBody().get("version")).longValue();
+        version = ((Number) setState(ana, itemId, version, "OPEN")
+                .getBody().get("version")).longValue();
+        setState(ana, itemId, version, "LAPSED");
+
+        List<Map<String, Object>> events =
+                (List<Map<String, Object>>) activity(ana, listId).get("events");
+
+        assertThat(events).hasSize(1);
+        assertThat(events.get(0))
+                .containsEntry("description", "Undone by a lapse")
+                .containsEntry("reopened", true);
+    }
+
+    @Test
+    void theDatabaseRefusesPointsOnALapsedItem() {
+        // A lapsed item is worth nothing, and ck_todo_item_completion says so
+        // rather than leaving it to whoever writes the next lapse path.
+        Member ana = givenMember("lapse-points-check");
+        String listId = newList(ana);
+        Map created = addItem(ana, listId, "{\"description\":\"Worthless\"}").getBody();
+        String itemId = (String) created.get("id");
+        setState(ana, itemId, ((Number) created.get("version")).longValue(), "LAPSED");
+
+        assertThatThrownBy(() -> jdbc.update(
+                "UPDATE todo_item SET points_earned = 50 WHERE id = ?::uuid", itemId))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void theDatabaseRefusesALapseStampWithoutWhoMadeIt() {
+        Member ana = givenMember("lapse-pair-check");
+        String listId = newList(ana);
+        String itemId = (String) addItem(ana, listId, "{\"description\":\"Half\"}")
+                .getBody().get("id");
+
+        assertThatThrownBy(() -> jdbc.update(
+                "UPDATE todo_item SET lapsed_at = now() WHERE id = ?::uuid", itemId))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
@@ -491,7 +629,7 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
         String listId = newList(ana);
         Map created = addItem(ana, listId, "{\"description\":\"Ordered\"}").getBody();
         String itemId = (String) created.get("id");
-        setCompleted(ana, itemId, ((Number) created.get("version")).longValue(), true);
+        setState(ana, itemId, ((Number) created.get("version")).longValue(), "COMPLETED");
 
         assertThatThrownBy(() -> jdbc.update(
                 "UPDATE todo_item SET reopened_at = completed_at - INTERVAL '1 hour', "
@@ -553,12 +691,12 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
         String listId = newList(ana);
         Map created = addItem(ana, listId, "{\"description\":\"Back again\"}").getBody();
         String itemId = (String) created.get("id");
-        Map completed = setCompleted(ana, itemId,
-                ((Number) created.get("version")).longValue(), true).getBody();
+        Map completed = setState(ana, itemId,
+                ((Number) created.get("version")).longValue(), "COMPLETED").getBody();
 
         assertThat(openDescriptions(ana, listId)).isEmpty();
 
-        setCompleted(ana, itemId, ((Number) completed.get("version")).longValue(), false);
+        setState(ana, itemId, ((Number) completed.get("version")).longValue(), "OPEN");
 
         assertThat(openDescriptions(ana, listId)).containsExactly("Back again");
     }
@@ -575,7 +713,7 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
         ResponseEntity<List> all = rest.exchange("/api/lists/" + listId + "/items",
                 HttpMethod.GET, new HttpEntity<>(headersFor(member.session())), List.class);
         return ((List<Map<String, Object>>) all.getBody()).stream()
-                .filter(item -> !Boolean.TRUE.equals(item.get("completed")))
+                .filter(item -> !"COMPLETED".equals(item.get("state")))
                 .map(item -> (String) item.get("description"))
                 .toList();
     }
@@ -597,12 +735,12 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
                 {"description":"Worth something","costValues":[{"fieldId":"%s","amount":1}]}
                 """.formatted(fieldId)).getBody();
 
-        Map completed = setCompleted(ana, (String) created.get("id"),
-                ((Number) created.get("version")).longValue(), true).getBody();
+        Map completed = setState(ana, (String) created.get("id"),
+                ((Number) created.get("version")).longValue(), "COMPLETED").getBody();
         assertThat(points(ana, listId)).extracting(row -> row.get("points")).containsExactly(50);
 
-        setCompleted(ana, (String) created.get("id"),
-                ((Number) completed.get("version")).longValue(), false);
+        setState(ana, (String) created.get("id"),
+                ((Number) completed.get("version")).longValue(), "OPEN");
 
         // Off the board entirely, and the endpoint still answers.
         assertThat(points(ana, listId)).isEmpty();
@@ -632,10 +770,10 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
         Map mine = addItem(ana, listId, "{\"description\":\"Ana's bit\"}").getBody();
         Map theirs = addItem(ana, listId, "{\"description\":\"Ben's bit\"}").getBody();
 
-        setCompleted(ana, (String) mine.get("id"),
-                ((Number) mine.get("version")).longValue(), true);
-        setCompleted(ben, (String) theirs.get("id"),
-                ((Number) theirs.get("version")).longValue(), true);
+        setState(ana, (String) mine.get("id"),
+                ((Number) mine.get("version")).longValue(), "COMPLETED");
+        setState(ben, (String) theirs.get("id"),
+                ((Number) theirs.get("version")).longValue(), "COMPLETED");
 
         Map<String, Object> activity = activity(ana, listId);
 
@@ -668,11 +806,11 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
         Map created = addItem(ana, listId, """
                 {"description":"Undone later","costValues":[{"fieldId":"%s","amount":1}]}
                 """.formatted(fieldId)).getBody();
-        Map completed = setCompleted(ana, (String) created.get("id"),
-                ((Number) created.get("version")).longValue(), true).getBody();
+        Map completed = setState(ana, (String) created.get("id"),
+                ((Number) created.get("version")).longValue(), "COMPLETED").getBody();
 
-        setCompleted(ana, (String) created.get("id"),
-                ((Number) completed.get("version")).longValue(), false);
+        setState(ana, (String) created.get("id"),
+                ((Number) completed.get("version")).longValue(), "OPEN");
 
         Map<String, Object> activity = activity(ana, listId);
         List<Map<String, Object>> events = (List<Map<String, Object>>) activity.get("events");
@@ -693,8 +831,8 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
         Member ana = givenMember("activity-window");
         String listId = newList(ana);
         Map created = addItem(ana, listId, "{\"description\":\"Just now\"}").getBody();
-        setCompleted(ana, (String) created.get("id"),
-                ((Number) created.get("version")).longValue(), true);
+        setState(ana, (String) created.get("id"),
+                ((Number) created.get("version")).longValue(), "COMPLETED");
 
         // A window that closed before the work happened reports nothing.
         ResponseEntity<Map> past = rest.exchange(
@@ -759,8 +897,8 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
         Map contended = addItem(ana, listId, "{\"description\":\"Contended\"}").getBody();
 
         // Ben gets there first, which moves the version Ana is holding.
-        setCompleted(ben, (String) contended.get("id"),
-                ((Number) contended.get("version")).longValue(), true);
+        setState(ben, (String) contended.get("id"),
+                ((Number) contended.get("version")).longValue(), "COMPLETED");
 
         ResponseEntity<Map> response = assign(ana, listId, """
                 {"assigneeId":"%s","items":[{"id":"%s","version":%d},{"id":"%s","version":%d}]}
@@ -780,7 +918,7 @@ class ItemApiIntegrationTest extends ApiIntegrationTest {
         // The server's version of it, so a second attempt retries exactly this
         // one with a version that will work.
         assertThat((Map<String, Object>) conflicts.get(0).get("item"))
-                .containsEntry("completed", true);
+                .containsEntry("state", "COMPLETED");
     }
 
     @Test

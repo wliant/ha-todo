@@ -51,10 +51,12 @@ function item(overrides: Partial<Item> = {}): Item {
     assignee: null,
     selfAssigned: false,
     dueAt: null,
-    completed: false,
+    state: 'OPEN',
     completedBy: null,
     completedAt: null,
     completionNoteHtml: null,
+    lapsedBy: null,
+    lapsedAt: null,
     reopenedAt: null,
     pointsEarned: null,
     costValues: [],
@@ -98,7 +100,7 @@ const conflict = {
     data: {
       code: 'STALE_ITEM',
       error: 'Ben completed this first.',
-      item: item({ completed: true, version: 4, pointsEarned: 50,
+      item: item({ state: 'COMPLETED', version: 4, pointsEarned: 50,
         completedBy: { id: 'id-ben', displayName: 'Ben', avatarImageId: null } }),
     },
   },
@@ -128,22 +130,22 @@ describe('ItemsSection', () => {
 
   it('ticks an item off, sending the version it was drawn from', async () => {
     vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([item()])
-    const complete = vi.spyOn(itemsApi, 'setItemCompleted').mockResolvedValue(item({ completed: true }))
+    const complete = vi.spyOn(itemsApi, 'setItemState').mockResolvedValue(item({ state: 'COMPLETED' }))
     renderItems()
 
     await userEvent.click(await screen.findByRole('button', { name: 'Complete Buy milk' }))
 
     await waitFor(() =>
-      expect(complete).toHaveBeenCalledWith('id-item', 3, true, undefined),
+      expect(complete).toHaveBeenCalledWith('id-item', 3, 'COMPLETED', undefined),
     )
   })
 
   it('moves the row at once rather than after the round trip', async () => {
     vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([item()])
     let settle = (): void => {}
-    vi.spyOn(itemsApi, 'setItemCompleted').mockReturnValue(
+    vi.spyOn(itemsApi, 'setItemState').mockReturnValue(
       new Promise((done) => {
-        settle = () => done(item({ completed: true }))
+        settle = () => done(item({ state: 'COMPLETED' }))
       }),
     )
     renderItems([description], BOTH)
@@ -162,7 +164,7 @@ describe('ItemsSection', () => {
     // cannot be the only feedback (adr/0039's rule, on a list).
     vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([item()])
     // Never settles, so the refetch cannot do this assertion's work for it.
-    vi.spyOn(itemsApi, 'setItemCompleted').mockReturnValue(new Promise(() => {}))
+    vi.spyOn(itemsApi, 'setItemState').mockReturnValue(new Promise(() => {}))
     renderItems()
 
     await userEvent.click(await screen.findByRole('button', { name: 'Complete Buy milk' }))
@@ -171,11 +173,72 @@ describe('ItemsSection', () => {
     expect(screen.queryByText('Buy milk')).not.toBeInTheDocument()
   })
 
+  it('lapses an item, sending the version it was drawn from', async () => {
+    // 0015 R131, R137. Same shape as completing and deliberately so: one
+    // endpoint, one state machine, the drawn version checked first.
+    vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([item()])
+    const lapse = vi
+      .spyOn(itemsApi, 'setItemState')
+      .mockResolvedValue(item({ state: 'LAPSED' }))
+    renderItems()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Lapse Buy milk' }))
+
+    await waitFor(() =>
+      expect(lapse).toHaveBeenCalledWith('id-item', 3, 'LAPSED', undefined),
+    )
+  })
+
+  it('says what happened when a lapse takes the row away', async () => {
+    // R119 again, in its own words: the default filter is To do, so a lapsed
+    // row leaves at once and the snackbar is the only thing that says why.
+    vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([item()])
+    // Never settles, so the refetch cannot do this assertion's work for it.
+    vi.spyOn(itemsApi, 'setItemState').mockReturnValue(new Promise(() => {}))
+    renderItems()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Lapse Buy milk' }))
+
+    expect(await screen.findByText('Lapsed “Buy milk”.')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Buy milk' })).not.toBeInTheDocument()
+  })
+
+  it('shows a lapsed item under its own status, and offers to reopen it', async () => {
+    // R135: lapsing is not a delete. The row keeps its disclosure and swaps
+    // Complete for Reopen, exactly as a completed one does.
+    vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([
+      item({
+        state: 'LAPSED',
+        lapsedAt: '2026-11-12T10:00:00Z',
+        lapsedBy: { id: 'id-ana', displayName: 'Ana', avatarImageId: null },
+      }),
+    ])
+    const reopen = vi.spyOn(itemsApi, 'setItemState').mockResolvedValue(item())
+    renderItems([description], '/lists/id-list?status=lapsed')
+
+    expect(await screen.findByText('Lapsed')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Complete Buy milk' })).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Reopen Buy milk' }))
+
+    await waitFor(() =>
+      expect(reopen).toHaveBeenCalledWith('id-item', 3, 'OPEN', undefined),
+    )
+  })
+
+  it('does not offer to lapse something already finished', async () => {
+    vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([item({ state: 'COMPLETED' })])
+    renderItems([description], BOTH)
+
+    expect(await screen.findByRole('button', { name: 'Reopen Buy milk' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Lapse Buy milk' })).not.toBeInTheDocument()
+  })
+
   it('tells the member who got there first, and shows what actually happened', async () => {
     // R30: the second writer is told, not silently overwritten - and the body
     // carries the truth so nothing has to be guessed or refetched to show it.
     const completedByBen = item({
-      completed: true,
+      state: 'COMPLETED',
       version: 4,
       pointsEarned: 50,
       completedBy: { id: 'id-ben', displayName: 'Ben', avatarImageId: null },
@@ -184,7 +247,7 @@ describe('ItemsSection', () => {
     vi.spyOn(itemsApi, 'fetchItems')
       .mockResolvedValueOnce([item()])
       .mockResolvedValue([completedByBen])
-    vi.spyOn(itemsApi, 'setItemCompleted').mockRejectedValue(conflict)
+    vi.spyOn(itemsApi, 'setItemState').mockRejectedValue(conflict)
     renderItems([description], BOTH)
 
     await userEvent.click(await screen.findByRole('button', { name: 'Complete Buy milk' }))
@@ -198,7 +261,7 @@ describe('ItemsSection', () => {
 
   it('puts the row back when the write simply failed', async () => {
     vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([item()])
-    vi.spyOn(itemsApi, 'setItemCompleted').mockRejectedValue(new Error('offline'))
+    vi.spyOn(itemsApi, 'setItemState').mockRejectedValue(new Error('offline'))
     renderItems()
 
     await userEvent.click(await screen.findByRole('button', { name: 'Complete Buy milk' }))
@@ -304,7 +367,7 @@ describe('ItemsSection', () => {
   it('shows the detail and the completion note only once a row is expanded', async () => {
     vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([
       item({
-        completed: true,
+        state: 'COMPLETED',
         detailHtml: '<p>Semi-skimmed</p>',
         completionNoteHtml: '<p>Only had whole</p>',
         completedBy: { id: 'id-ana', displayName: 'Ana', avatarImageId: null },
@@ -350,8 +413,8 @@ describe('ItemsSection', () => {
     // without a pointer gesture (WCAG 2.1 SC 2.5.1, adr/0027).
     vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([item()])
     const complete = vi
-      .spyOn(itemsApi, 'setItemCompleted')
-      .mockResolvedValue(item({ completed: true }))
+      .spyOn(itemsApi, 'setItemState')
+      .mockResolvedValue(item({ state: 'COMPLETED' }))
     renderItems()
 
     await userEvent.click(
@@ -445,8 +508,8 @@ describe('ItemsSection', () => {
   it('sends the note along with the completion, as one write', async () => {
     vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([item()])
     const complete = vi
-      .spyOn(itemsApi, 'setItemCompleted')
-      .mockResolvedValue(item({ completed: true }))
+      .spyOn(itemsApi, 'setItemState')
+      .mockResolvedValue(item({ state: 'COMPLETED' }))
     renderItems()
 
     await userEvent.click(
@@ -457,7 +520,7 @@ describe('ItemsSection', () => {
     // No note typed, so null rather than empty markup - "nothing" has one
     // representation, as the sanitizer insists.
     await waitFor(() =>
-      expect(complete).toHaveBeenCalledWith('id-item', 3, true, null),
+      expect(complete).toHaveBeenCalledWith('id-item', 3, 'COMPLETED', null),
     )
   })
 
@@ -504,7 +567,7 @@ describe('ItemsSection', () => {
     // made the one combination anybody wanted unreachable (adr/0046).
     vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([
       item({ id: 'id-a', description: 'Open one' }),
-      item({ id: 'id-b', description: 'Finished one', completed: true }),
+      item({ id: 'id-b', description: 'Finished one', state: 'COMPLETED' }),
     ])
     renderItems([description], BOTH)
 
@@ -516,7 +579,7 @@ describe('ItemsSection', () => {
     // R121: "2 selected" must always be two rows the member can see.
     vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([
       item({ id: 'id-a', description: 'Open one' }),
-      item({ id: 'id-b', description: 'Finished one', completed: true }),
+      item({ id: 'id-b', description: 'Finished one', state: 'COMPLETED' }),
     ])
     renderItems([description], BOTH)
 
@@ -535,18 +598,18 @@ describe('ItemsSection', () => {
   it('reopens a completed item, which takes its points back', async () => {
     vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([
       item({
-        completed: true,
+        state: 'COMPLETED',
         pointsEarned: 50,
         completedBy: { id: 'id-ana', displayName: 'Ana', avatarImageId: null },
       }),
     ])
-    const reopen = vi.spyOn(itemsApi, 'setItemCompleted').mockResolvedValue(item())
+    const reopen = vi.spyOn(itemsApi, 'setItemState').mockResolvedValue(item())
     renderItems([description], BOTH)
 
     await userEvent.click(await screen.findByRole('button', { name: 'Reopen Buy milk' }))
 
     await waitFor(() =>
-      expect(reopen).toHaveBeenCalledWith('id-item', 3, false, undefined),
+      expect(reopen).toHaveBeenCalledWith('id-item', 3, 'OPEN', undefined),
     )
   })
 })

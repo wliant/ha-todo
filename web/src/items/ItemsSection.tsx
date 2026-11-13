@@ -13,7 +13,7 @@ import Typography from '@mui/material/Typography'
 import AddRounded from '@mui/icons-material/AddRounded'
 import HowToRegRounded from '@mui/icons-material/HowToRegRounded'
 import { errorMessage, isConflict } from '../api/http'
-import type { Item, SaveItem } from '../api/items'
+import type { Item, ItemState, SaveItem } from '../api/items'
 import type { ListDetail, ListField } from '../api/lists'
 import { useCurrentUser } from '../auth/useCurrentUser'
 import { useHouseholdZone } from '../app/useHouseholdZone'
@@ -36,7 +36,7 @@ import {
   useCreateItem,
   useDeleteItem,
   useItems,
-  useToggleCompletion,
+  useSetItemState,
   useUpdateItem,
 } from './queries'
 
@@ -103,28 +103,34 @@ export function ItemsSection({ list, fields }: { list: ListDetail; fields: ListF
   const create = useCreateItem(list.id)
   const update = useUpdateItem(list.id)
   const remove = useDeleteItem(list.id)
-  const toggle = useToggleCompletion(list.id, setNotice)
+  const toggle = useSetItemState(list.id, setNotice)
   const assign = useAssignItems(list.id)
 
   /**
-   * Completing something that the filter will then hide (R119).
+   * Moving an item to a state the filter will then hide (R119, 0015 R137).
    *
-   * <p>The optimistic write flips `completed`, so with the default To do filter
-   * the row goes at once. The row vanishing cannot be the only feedback - the
-   * same rule the agenda follows (0010 R87, adr/0039).
+   * <p>The optimistic write sets `state`, so with the default To do filter the
+   * row goes at once - for a lapse exactly as for a completion. The row
+   * vanishing cannot be the only feedback, which is the same rule the agenda
+   * follows (0010 R87, adr/0039).
+   *
+   * <p>One function for both verbs rather than two that drift: the only thing
+   * that differs is the word in the snackbar.
    */
-  function complete(item: Item, noteHtml?: string | null) {
-    const surviving = matchesFilter(
-      { ...item, completed: true },
-      filter,
-      fields,
-      zone,
-      now(zone),
-    )
-    toggle.mutate({ item, completed: true, noteHtml })
+  function move(item: Item, state: ItemState, noteHtml?: string | null) {
+    const surviving = matchesFilter({ ...item, state }, filter, fields, zone, now(zone))
+    toggle.mutate({ item, state, noteHtml })
     if (!surviving) {
-      setNotice(`Finished “${item.description}”.`)
+      setNotice(
+        state === 'LAPSED'
+          ? `Lapsed “${item.description}”.`
+          : `Finished “${item.description}”.`,
+      )
     }
+  }
+
+  function complete(item: Item, noteHtml?: string | null) {
+    move(item, 'COMPLETED', noteHtml)
   }
   const saving = create.isPending || update.isPending
   const saveError = create.error ?? update.error
@@ -272,7 +278,8 @@ export function ItemsSection({ list, fields }: { list: ListDetail; fields: ListF
             onSelect={(isSelected) => select(item.id, isSelected)}
             onComplete={() => complete(item)}
             onWriteNote={() => setNoting(item)}
-            onReopen={() => toggle.mutate({ item, completed: false })}
+            onLapse={() => move(item, 'LAPSED')}
+            onReopen={() => toggle.mutate({ item, state: 'OPEN' })}
             onEdit={() => {
               setShowAllFields(true)
               setEditing(fromItem(item))

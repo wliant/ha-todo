@@ -31,7 +31,7 @@ import { useOverdue } from './queries'
  * furniture on every view forever.
  */
 export function OverduePanel({ scope, lists }: { scope: DashboardScope; lists: string[] }) {
-  const { zone, open, complete, writeNote } = useDashboardView()
+  const { zone, open, complete, writeNote, lapse } = useDashboardView()
   const { data } = useOverdue(scope)
   const [expanded, setExpanded] = useState(false)
 
@@ -77,6 +77,7 @@ export function OverduePanel({ scope, lists }: { scope: DashboardScope; lists: s
                 onOpen={open}
                 onComplete={() => complete(item)}
                 onWriteNote={() => writeNote(item)}
+                onLapse={() => lapse(item)}
               />
             ))}
             {capped && (

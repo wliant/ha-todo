@@ -24,7 +24,8 @@ import { useScheduled } from './queries'
  * and an appointment at seven is why nobody can take the seven o'clock chore.
  */
 export function MyDayView() {
-  const { scope, lists, zone, anchor, open, openEvent, complete, writeNote } = useDashboardView()
+  const { scope, lists, zone, anchor, open, openEvent, complete, writeNote, lapse } =
+    useDashboardView()
   // The day on screen, which is today unless the member stepped away from it
   // (R74). See WeekView for why ranges are not computed during render.
   const window = useMemo(() => windowOf(dayRange(anchor), zone), [anchor, zone])
@@ -65,6 +66,7 @@ export function MyDayView() {
             onOpen={open}
             onComplete={() => complete(entry.item)}
             onWriteNote={() => writeNote(entry.item)}
+            onLapse={() => lapse(entry.item)}
           />
         ) : (
           <EventRow key={entry.key} entry={entry} zone={zone} onOpen={openEvent} />

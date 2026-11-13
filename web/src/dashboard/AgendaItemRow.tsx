@@ -7,6 +7,9 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import type { DashboardItem } from '../api/dashboard'
 import { MemberAvatar } from '../app/MemberAvatar'
+import IconButton from '@mui/material/IconButton'
+import Tooltip from '@mui/material/Tooltip'
+import EventBusyRounded from '@mui/icons-material/EventBusyRounded'
 import { CompleteControl } from '../items/CompleteControl'
 import { ListIcon } from '../lists/listIcons'
 
@@ -29,6 +32,7 @@ export function AgendaItemRow({
   onOpen,
   onComplete,
   onWriteNote,
+  onLapse,
 }: {
   item: DashboardItem
   /** The second line, under the description. Already includes the list's name. */
@@ -36,6 +40,7 @@ export function AgendaItemRow({
   onOpen: (id: string) => void
   onComplete: () => void
   onWriteNote: () => void
+  onLapse: () => void
 }) {
   return (
     <Paper variant="outlined" sx={{ p: 1.5 }}>
@@ -101,6 +106,18 @@ export function AgendaItemRow({
             onComplete={onComplete}
             onWriteNote={onWriteNote}
           />
+          {/* A sibling of the complete group rather than a third button in it,
+              as on a list: the group is one gesture with one accelerator, and
+              a give-up verb inside it is a mis-tap away from the primary one. */}
+          <Tooltip title="We did not get to this">
+            <IconButton
+              size="small"
+              aria-label={`Lapse ${item.description}`}
+              onClick={onLapse}
+            >
+              <EventBusyRounded fontSize="small" />
+            </IconButton>
+          </Tooltip>
         </Stack>
       </Stack>
     </Paper>

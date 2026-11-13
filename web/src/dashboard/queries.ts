@@ -9,7 +9,7 @@ import {
   type Scheduled,
   type Undated,
 } from '../api/dashboard'
-import { conflictingItem, setItemCompleted } from '../api/items'
+import { conflictingItem, setItemState, type ItemState } from '../api/items'
 import { errorMessage, isConflict } from '../api/http'
 import { listKeys } from '../lists/queries'
 
@@ -61,29 +61,38 @@ export function useOverdue(scope: DashboardScope) {
 }
 
 /**
- * Ticking a chore off without leaving the agenda (0010 R83-R87).
+ * Finishing a chore, or giving up on one, without leaving the agenda
+ * (0010 R83-R87, 0015 R138).
  *
  * <p>The item's own endpoint, which checks the caller's grant and the version
  * it was drawn from; the agenda adds no authorization of its own and could not
  * be trusted with any (adr/0039).
  *
- * <p>Optimistic in one direction only: the agenda shows outstanding work, so a
- * completed row simply leaves (R86) and there is no second state to guess. A
- * failure puts the snapshot back - including the conflict, where the server's
- * item has nowhere to be written to here, so the refetch is what reconciles and
- * the 409's prose is what the member reads.
+ * <p>Optimistic in one direction only, and that is what lets one mutation
+ * serve both verbs: the agenda shows **outstanding** work, so a row that
+ * reaches either terminal state simply leaves (R86, R136) and there is no
+ * second state to guess. The three payload edits below are therefore identical
+ * for a completion and for a lapse. A failure puts the snapshot back -
+ * including the conflict, where the server's item has nowhere to be written to
+ * here, so the refetch is what reconciles and the 409's prose is what the
+ * member reads.
+ *
+ * <p>Reopening is deliberately absent: a chore in a terminal state is not on
+ * the agenda to be reopened, and that record lives on the list.
  */
-export function useCompleteFromAgenda(onProblem: (message: string) => void) {
+export function useSetStateFromAgenda(onProblem: (message: string) => void) {
   const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: ({
       item,
+      state,
       noteHtml,
     }: {
       item: DashboardItem
+      state: Extract<ItemState, 'COMPLETED' | 'LAPSED'>
       noteHtml?: string | null
-    }) => setItemCompleted(item.id, item.version, true, noteHtml),
+    }) => setItemState(item.id, item.version, state, noteHtml),
 
     onMutate: async ({ item }) => {
       await queryClient.cancelQueries({ queryKey: dashboardKeys.all })
@@ -124,7 +133,7 @@ export function useCompleteFromAgenda(onProblem: (message: string) => void) {
           ),
         )
       } else {
-        onProblem(errorMessage(error, 'Could not complete that.'))
+        onProblem(errorMessage(error, 'Could not update that.'))
       }
     },
 

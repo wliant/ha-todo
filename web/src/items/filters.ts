@@ -33,10 +33,28 @@ import {
  */
 export const UNASSIGNED = 'none'
 
-export type StatusValue = 'open' | 'done'
+export type StatusValue = 'open' | 'done' | 'lapsed'
 
-/** Canonical order, so a serialised filter round-trips to itself. */
-const STATUS_ORDER: StatusValue[] = ['open', 'done']
+/**
+ * Canonical order, so a serialised filter round-trips to itself - and, since
+ * 0015, the order the Status sort key uses: open work first, then what was
+ * finished, then what was given up on.
+ */
+export const STATUS_ORDER: StatusValue[] = ['open', 'done', 'lapsed']
+
+/**
+ * The filter token for an item's state.
+ *
+ * <p>One place where the wire's three values and the address's three tokens
+ * meet, rather than a ternary at each of the four call sites that used to ask
+ * `item.completed`.
+ */
+export function statusOf(item: Item): StatusValue {
+  if (item.state === 'COMPLETED') {
+    return 'done'
+  }
+  return item.state === 'LAPSED' ? 'lapsed' : 'open'
+}
 
 export type DuePreset = 'overdue' | 'today' | 'week' | 'none'
 
@@ -154,7 +172,7 @@ function sameStatus(left: StatusValue[], right: StatusValue[]): boolean {
 /**
  * Turning a status chip on or off.
  *
- * <p>Deselecting the last one yields both rather than none: an empty status
+ * <p>Deselecting the last one yields all of them rather than none: an empty status
  * filter would show an empty list for a reason the member cannot see, and
  * "everything" is what they meant (adr/0046).
  */
@@ -369,9 +387,13 @@ export function matchesFilter(
   zone: Zone,
   today: Civil,
 ): boolean {
+  // Membership, not a comparison against one value. With two statuses
+  // "fewer than all" meant "exactly one" and reading `status[0]` worked; with
+  // three it silently stops - `open,done` is two of three and would have been
+  // tested against `open` alone. An empty set is still an absent filter
+  // (adr/0046), which the length check keeps true.
   if (filter.status.length > 0 && filter.status.length < STATUS_ORDER.length) {
-    const wanted = filter.status[0] === 'done'
-    if (item.completed !== wanted) {
+    if (!filter.status.includes(statusOf(item))) {
       return false
     }
   }
@@ -518,7 +540,7 @@ function sortValue(
     return item.description
   }
   if (key === 'status') {
-    return item.completed ? 1 : 0
+    return STATUS_ORDER.indexOf(statusOf(item))
   }
   if (key === 'assignee') {
     return item.assignee?.displayName ?? null

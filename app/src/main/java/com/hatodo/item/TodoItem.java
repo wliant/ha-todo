@@ -83,15 +83,34 @@ public class TodoItem {
 
     /**
      * Set when the item is reopened; the completion columns are left alone
-     * (R49). This is why "finished" is no longer one column - see {@link #done}.
+     * (R49). This is why "finished" is no longer one column - see
+     * {@link #closed}.
      */
     @Column(name = "reopened_at")
     private Instant reopenedAt;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "lapsed_by")
+    private AppUser lapsedBy;
+
     /**
-     * Computed by the database as {@code completed_at IS NOT NULL AND
-     * reopened_at IS NULL}, because a completion that survives a reopen means
-     * "has a completion time" no longer means "finished" (adr/0024).
+     * Set when the item is lapsed: planned, and nobody got to it (0015 R131).
+     * Terminal and worth nothing - {@link #lapseBy} nulls the points - but
+     * reopenable exactly as a completion is.
+     */
+    @Column(name = "lapsed_at")
+    private Instant lapsedAt;
+
+    /**
+     * Computed by the database as {@code (completed_at IS NOT NULL OR lapsed_at
+     * IS NOT NULL) AND reopened_at IS NULL}: whether this item is still work.
+     *
+     * <p>Named {@code closed} rather than {@code done} since 0015, because
+     * there are now two ways to stop being work and only one of them is
+     * "done" - see adr/0048. Everything that asks "should this appear on the
+     * agenda, the undated panel or the overdue strip" asks this; everything
+     * that asks "was this finished" must test the completion columns instead,
+     * which is what {@link #isCompleted()} does.
      *
      * <p><strong>Use this only in query predicates and index definitions.</strong>
      * Hibernate does not re-select a generated column after a write, so reading
@@ -100,8 +119,8 @@ public class TodoItem {
      * very response that completed it. {@link #isCompleted()} is computed
      * instead, and deliberately so.
      */
-    @Column(name = "done", insertable = false, updatable = false)
-    private boolean done;
+    @Column(name = "closed", insertable = false, updatable = false)
+    private boolean closed;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by")
@@ -254,12 +273,42 @@ public class TodoItem {
         return pointsEarned;
     }
 
+    public Instant getLapsedAt() {
+        return lapsedAt;
+    }
+
+    public AppUser getLapsedBy() {
+        return lapsedBy;
+    }
+
     /**
-     * Computed rather than read from {@link #done}, which is stale in memory
-     * immediately after a write. Same expression, in Java.
+     * Computed rather than read from {@link #closed}, which is stale in memory
+     * immediately after a write - and which is a broader question anyway.
+     *
+     * <p>The {@code lapsedAt} test is the one that is easy to leave out. An
+     * item can hold a completion record and a lapse stamp at once (complete,
+     * reopen, lapse), because adr/0024 keeps the completion so the activity
+     * feed does not lose it. Such an item is lapsed, not completed.
      */
     public boolean isCompleted() {
-        return completedAt != null && reopenedAt == null;
+        return completedAt != null && reopenedAt == null && lapsedAt == null;
+    }
+
+    /** Terminal, and not an achievement. The mirror of {@link #isCompleted()}. */
+    public boolean isLapsed() {
+        return lapsedAt != null && reopenedAt == null;
+    }
+
+    /**
+     * The three states as one value, for anything that has to render or
+     * serialise "what is this item". Order matters: a lapse is the later
+     * statement whenever both stamps are present.
+     */
+    public ItemState getState() {
+        if (isLapsed()) {
+            return ItemState.LAPSED;
+        }
+        return isCompleted() ? ItemState.COMPLETED : ItemState.OPEN;
     }
 
     /**
@@ -276,12 +325,39 @@ public class TodoItem {
         // still read as reopened and the generated column would stay false.
         this.reopenedAt = null;
         this.reopenedBy = null;
+        // And it clears any lapse. Asymmetric with lapseBy, which leaves the
+        // completion record alone, and deliberately: a completion is history
+        // somebody reads (the activity feed, R43), a lapse is only ever the
+        // current state and nothing looks back at one the item has moved on
+        // from.
+        this.lapsedAt = null;
+        this.lapsedBy = null;
+    }
+
+    /**
+     * Lapsing: planned, and nobody got to it (0015 R131, R133).
+     *
+     * <p>The points go, because a lapsed item is worth nothing - the database
+     * insists on it - and the completion record stays, for the reason
+     * {@link #reopen} keeps it. Clearing the reopen stamp is what makes the
+     * item terminal again; without it the generated column would stay false and
+     * the chore would sit on the agenda looking open.
+     */
+    public void lapseBy(AppUser member) {
+        this.lapsedBy = member;
+        this.lapsedAt = Instant.now();
+        this.pointsEarned = null;
+        this.reopenedAt = null;
+        this.reopenedBy = null;
     }
 
     /**
      * Reopening stamps rather than erases (R49): who completed it, when, and
      * the note are all kept and simply stop being shown. Only the points come
      * back, which is the one thing the requirement does take away.
+     *
+     * <p>One stamp undoes either terminal state (0015 R135) - a lapse record is
+     * kept for the same reason, and both are simply no longer standing.
      */
     public void reopen(AppUser member) {
         this.reopenedBy = member;

@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status
 
 **Everything specified so far is built, as of 2026-11-11.** Build, local stack, deploy scripts and all
-three test harnesses are real and passing: 249 backend unit tests, 241 integration tests, 302 frontend
-tests, 95 end-to-end (13 skip without `E2E_ADMIN_PASSWORD`).
+three test harnesses are real and passing: 255 backend unit tests, 249 integration tests, 338 frontend
+tests, 98 end-to-end (13 skip without `E2E_ADMIN_PASSWORD`).
 
 Implemented: **accounts and administration (R8-R12)** — username identity, optional per-user passwords, a
 pick-a-user sign-in screen, and a single admin who adds and deletes users. **The PWA (R13, R14)** —
@@ -61,10 +61,12 @@ often they are opened (`docs/adr/0041`). `list_user_state.list_id` is still an F
 one. The share picker still offers collections by name and cannot preselect one — it falls back to a
 collection only when the member has no lists at all.
 
-**Two things in there are easy to break.** "Finished" is no longer one column: a reopened item keeps its
-completion record, so the question is answered by a *generated* column (`docs/adr/0024`), and a new reader
-written against `completed_at` will compile, pass, and be wrong. And the recurrence job is the only thing
-in the product that acts without being asked — see the scheduler paragraph below.
+**Two things in there are easy to break.** "Finished" and "no longer work" are **two different
+questions** since 0015. The second is answered by a *generated* column — now called `closed`, not `done`
+(`docs/adr/0024`, widened by `docs/adr/0048`) — and the first by `TodoItem.isCompleted()`, which must
+exclude a lapse as well as a reopen. A new reader written against `completed_at`, or one that reaches for
+`closed` when it meant "was this finished", will compile, pass, and be wrong. And the recurrence job is
+the only thing in the product that acts without being asked — see the scheduler paragraph below.
 
 The open questions left in `docs/requirements/0004` are now two, not three: whether earned points can be
 revoked **by a list's owner** (0005 R49 settles only the reopen path), and whether a list should show who
@@ -157,12 +159,12 @@ chores and none of the appointments; the notice names the half the product knows
 empty February that means "nobody looked" must never read as "nothing is on".
 
 **R83-R87 are implemented.** `docs/requirements/0010` and `docs/design/0010` make the agenda
-**writable in exactly one way**: a chore can be completed from it — from the Day view's rows and from the
+**writable in exactly one way** — two ways since 0015 R138, which added lapsing: a chore can be completed from it — from the Day view's rows and from the
 popup the week view, the month view and the undated panel open — with the hold-for-a-note accelerator the
 list has. **Frontend only** (`docs/adr/0039`): `PUT /api/items/{id}/completion` is per-item, checks the
 caller's grant and compares the version first, and `DashboardItemResponse` already carried `version`.
 
-**The scheduled query keeps `done = FALSE`**, so a completed chore *leaves* the agenda rather than
+**The scheduled query keeps `closed = FALSE`** (`done` until 0015), so a completed chore *leaves* the agenda rather than
 staying struck through as it does on a list — the agenda answers "what is left", and a month grid of
 one-line chips filled with finished work answers something else. (Since 0013 a list leaves it struck
 through only when the status filter is showing Done; under the default To do filter the row goes there
@@ -339,6 +341,41 @@ refetch, since the optimistic write flips `completed` and the default filter is 
 assert on the row's own disclosure button instead. `conftest.show_status` is how a test changes which
 statuses a list shows.
 
+**R131-R140 are implemented.** `docs/requirements/0015` and `docs/design/0015` give an item a **second
+terminal state**: *lapsed* — planned, and nobody got to it. It earns nothing, it leaves the agenda and
+the overdue strip, it is recorded with who and when, and it reopens exactly as a completion does.
+`docs/adr/0048` records the decisions. The point is that the two states a member had were both wrong for
+this: leaving the chore open makes the overdue strip a permanent reproach, and ticking it complete
+credits points and lands in the activity feed for work nobody did.
+
+**The generated column was widened *and renamed*** — `done` → `closed`,
+`(completed_at IS NOT NULL OR lapsed_at IS NOT NULL) AND reopened_at IS NULL`. Widening is what makes
+the five agenda predicates right without being touched; a second column beside `done` would have left
+them reading the wrong one with nothing to make them fail. Renaming is the load-bearing half: a name that
+answers a different question than its definition is `adr/0024`'s "seventh reader" with a head start.
+
+**Four things in there are easy to break.** There is deliberately **no mutual-exclusion constraint**
+between `completed_at` and `lapsed_at` — complete, reopen, lapse is legal and keeps the completion, for
+the reason `adr/0024` keeps it — so **`pointsByMember` must spell out a standing completion**
+(`completedAt IS NOT NULL AND reopenedAt IS NULL AND lapsedAt IS NULL`) rather than reading `closed`,
+which would credit a zero-point row to somebody who earned nothing. `completeBy` clears a lapse but
+`lapseBy` does **not** clear a completion, and that asymmetry is deliberate: a completion is history
+somebody reads (R43), a lapse is only ever current state. Every transition clears the **reopen stamp**,
+without which `closed` stays false and the chore sits on the agenda looking open. And R133 — a lapse is
+worth nothing — is a **CHECK**, not a convention, so a lapse path that forgets to null the points fails
+loudly.
+
+**The agenda now has two verbs**, which widens `adr/0039`'s "writable in exactly one way". One mutation
+serves both, because a row reaching *either* terminal state simply leaves — so the three hand-written
+optimistic payload shapes needed no new case, and the `['dashboard']` **and** `['lists']` invalidation
+still has to survive every refactor of it. Reopening is still deliberately absent from the agenda.
+
+**The client's boolean became a three-valued `state`**, and replacing it rather than adding beside it is
+what found four binary assumptions — above all `matchesFilter`, whose "fewer than all selected means
+exactly one, so read `status[0]`" was correct for two statuses and silently wrong for three. The wire
+renamed with it: `PUT /api/items/{id}/completion` is now `/state`, and `CompletionRequest` is
+`ItemStateRequest`.
+
 **R123-R130 are implemented.** `docs/requirements/0014` and `docs/design/0014` put a **list filter on
 the agenda**, with `docs/adr/0047` recording the decisions. A **Lists** chip beside the Everything /
 Mine toggle opens a checkbox menu of every list the member can see; picking some narrows the Day, Week
@@ -478,7 +515,7 @@ migrations after every versioned one and re-runs them when their content changes
 edited freely and can never sit in front of a schema change. The old versioned seed at `V900` is why the
 schema series resumes at **V901** — a lower version would be out of order on any database that applied it,
 and why local/dev set `flyway.ignore-migration-patterns: "*:missing"`. Prod never applied it and keeps
-strict validation. The highest applied migration is **V918**; new ones continue from V919.
+strict validation. The highest applied migration is **V919**; new ones continue from V920.
 
 **Authorization is per-list access, not household-scoped.** Every read and write is checked against the
 caller's grant on that list, enforced in the service layer — not only in the controller and not only in

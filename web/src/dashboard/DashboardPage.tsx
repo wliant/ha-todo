@@ -20,7 +20,7 @@ import { ViewContext, useDashboardView } from './dashboardView'
 import { known, parseLists, writeLists } from './listFilter'
 import { UndatedPanel } from './UndatedPanel'
 import { CompletionNoteDialog } from '../items/CompletionNoteDialog'
-import { useCompleteFromAgenda, useOverdue, useScheduled, useUndated } from './queries'
+import { useSetStateFromAgenda, useOverdue, useScheduled, useUndated } from './queries'
 import { useHouseholdZone } from '../app/useHouseholdZone'
 import { useLists } from '../lists/queries'
 import { useState } from 'react'
@@ -85,10 +85,10 @@ export function DashboardPage() {
     [tab, anchor],
   )
   const activeWindow = useMemo(() => windowOf(visible, zone), [visible, zone])
-  // The agenda's one write (adr/0039). Its message goes to the same snackbar a
-  // successful completion uses: both are things that happened to a row the
-  // member can no longer see.
-  const completion = useCompleteFromAgenda(setSaid)
+  // The agenda's two writes (adr/0039, widened by adr/0048). Their messages go
+  // to the same snackbar: both are things that happened to a row the member
+  // can no longer see.
+  const completion = useSetStateFromAgenda(setSaid)
 
   /** Today drops the param rather than writing it, as scope=all does. */
   function moveTo(day: Civil) {
@@ -112,18 +112,33 @@ export function DashboardPage() {
   }
 
   /**
-   * Ticking a chore off from the agenda (R83).
+   * Finishing a chore from the agenda (R83), or giving up on one (0015 R138).
    *
    * <p>Closes the popup first: its subject is about to stop existing, and a
    * dialog describing a chore that is no longer in any payload would sit there
    * until the refetch landed and `OpenItem` found nothing to draw.
    */
-  function complete(item: DashboardItem, noteHtml?: string | null) {
+  function move(
+    item: DashboardItem,
+    state: 'COMPLETED' | 'LAPSED',
+    noteHtml?: string | null,
+  ) {
     close()
     completion.mutate(
-      { item, noteHtml },
-      { onSuccess: () => setSaid(`${item.description} is done.`) },
+      { item, state, noteHtml },
+      {
+        onSuccess: () =>
+          setSaid(
+            state === 'LAPSED'
+              ? `${item.description} has lapsed.`
+              : `${item.description} is done.`,
+          ),
+      },
     )
+  }
+
+  function complete(item: DashboardItem, noteHtml?: string | null) {
+    move(item, 'COMPLETED', noteHtml)
   }
 
   /** One popup at a time, as on a list (0005 R38). */
@@ -168,7 +183,17 @@ export function DashboardPage() {
   }
 
   return (
-    <ViewContext.Provider value={{ scope, lists: picked, zone, anchor, open, openEvent, complete, writeNote: setNoting }}>
+    <ViewContext.Provider value={{
+        scope,
+        lists: picked,
+        zone,
+        anchor,
+        open,
+        openEvent,
+        complete,
+        writeNote: setNoting,
+        lapse: (item) => move(item, 'LAPSED'),
+      }}>
       <Stack spacing={2.5}>
         <Stack
           direction={{ xs: 'column', sm: 'row' }}
@@ -296,7 +321,7 @@ function OpenItem({
   // The *anchor's* month, not the clock's: an item opened from November while
   // looking at February has to be found in the payload February asked for.
   const month = useMemo(() => windowOf(monthRange(anchor), zone), [anchor, zone])
-  const { complete, writeNote } = useDashboardView()
+  const { complete, writeNote, lapse } = useDashboardView()
   const { data: scheduled } = useScheduled(month.from, month.to, scope)
   const { data: undated } = useUndated(scope)
   // The third place an item can be drawn from (0011 R90). A popup opened from
@@ -322,6 +347,7 @@ function OpenItem({
       // undated panel, and all three are inside the provider.
       onComplete={() => complete(item)}
       onWriteNote={() => writeNote(item)}
+      onLapse={() => lapse(item)}
     />
   )
 }

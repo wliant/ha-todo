@@ -166,7 +166,7 @@ public class TodoItemService {
     }
 
     /**
-     * Completing or reopening an item (R30).
+     * Moving an item between its three states (R30, 0015 R131).
      *
      * <p>The points are computed here, from the configuration as it stands at
      * this moment, and written onto the item. They go to whoever completed it -
@@ -174,26 +174,36 @@ public class TodoItemService {
      *
      * <p>Reopening keeps what the completion recorded and takes only the points
      * back (R49, adr/0024), so the note stays in the database and stops being
-     * returned.
+     * returned. Lapsing is the same shape with nothing to credit: planned, and
+     * nobody got to it (R131).
+     *
+     * <p>No extra authorization for lapsing. Anybody holding a grant on the
+     * list may complete any of its items (R30), and giving up on one is not a
+     * larger claim than finishing it - a household where only the assignee may
+     * say "we did not get to this" is a household where nobody says it.
      */
     @Transactional
-    public ItemResponse setCompleted(UUID itemId, CompletionRequest request) {
+    public ItemResponse setState(UUID itemId, ItemStateRequest request) {
         TodoItem item = readable(itemId);
         requireFreshView(item, request.version());
         AppUser me = requireCurrentUser();
 
-        if (request.completed()) {
-            item.completeBy(me, pointsFor(item), sanitizer.sanitize(request.noteHtml()));
-            // The note's pictures need handing to the item too, or every member
-            // but the uploader sees a broken image (adr/0023).
-            claimImages(item, me.getId());
-        } else {
-            if (request.noteHtml() != null) {
-                // Refused rather than dropped: the CHECK would make this a 500,
-                // and a silently discarded field hides a client bug.
-                throw new InvalidCompletionException("A note belongs on a completed item.");
+        if (request.state() != ItemState.COMPLETED && request.noteHtml() != null) {
+            // Refused rather than dropped: the CHECK would make this a 500, and
+            // a silently discarded field hides a client bug. There is no note
+            // on a lapse (R134) and none on a reopen.
+            throw new InvalidCompletionException("A note belongs on a completed item.");
+        }
+
+        switch (request.state()) {
+            case COMPLETED -> {
+                item.completeBy(me, pointsFor(item), sanitizer.sanitize(request.noteHtml()));
+                // The note's pictures need handing to the item too, or every
+                // member but the uploader sees a broken image (adr/0023).
+                claimImages(item, me.getId());
             }
-            item.reopen(me);
+            case LAPSED -> item.lapseBy(me);
+            case OPEN -> item.reopen(me);
         }
 
         lists.recordInteraction(item.getList(), me);
@@ -261,6 +271,9 @@ public class TodoItemService {
     private static String describeStale(TodoItem item) {
         if (item.isCompleted() && item.getCompletedBy() != null) {
             return "%s completed this first.".formatted(item.getCompletedBy().getDisplayName());
+        }
+        if (item.isLapsed() && item.getLapsedBy() != null) {
+            return "%s lapsed this first.".formatted(item.getLapsedBy().getDisplayName());
         }
         if (item.getAssignee() != null) {
             return "Somebody gave this to %s first.".formatted(item.getAssignee().getDisplayName());

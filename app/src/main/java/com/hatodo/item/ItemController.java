@@ -91,10 +91,18 @@ public class ItemController {
         return todoItems.update(id, request);
     }
 
-    @PutMapping("/items/{id}/completion")
-    public ItemResponse setCompleted(@PathVariable UUID id,
-                                     @Valid @RequestBody CompletionRequest request) {
-        return todoItems.setCompleted(id, request);
+    /**
+     * Completing, lapsing or reopening - one endpoint, because they are one
+     * state machine and a caller must not be able to ask for two at once.
+     *
+     * <p>Was {@code PUT /items/{id}/completion} before 0015. Renamed with the
+     * record it takes, so no client could keep sending the old boolean body and
+     * have it quietly mean something narrower than it used to.
+     */
+    @PutMapping("/items/{id}/state")
+    public ItemResponse setState(@PathVariable UUID id,
+                                 @Valid @RequestBody ItemStateRequest request) {
+        return todoItems.setState(id, request);
     }
 
     @DeleteMapping("/items/{id}")

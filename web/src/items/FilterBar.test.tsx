@@ -109,6 +109,20 @@ describe('FilterBar', () => {
     )
   })
 
+  it('offers lapsed as a status of its own', async () => {
+    // 0015 R137. Three independently selectable chips, so "what did we give up
+    // on" is one tap and is never mixed into Done.
+    const onChange = renderBar([description])
+
+    await userEvent.click(screen.getByRole('button', { name: 'Status: To do' }))
+    expect(screen.getByRole('menuitem', { name: 'Lapsed' })).toBeVisible()
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Lapsed' }))
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ status: ['open', 'lapsed'] }),
+    )
+  })
+
   it('offers unassigned beside the members', async () => {
     // R109: work nobody has taken is the case this filter exists for, and it
     // is not a member - so it is offered rather than inferred.
