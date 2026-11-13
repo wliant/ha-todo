@@ -13,6 +13,15 @@ export interface ItemCostValue {
   amount: number | null
 }
 
+/**
+ * What an item currently is (0015 R131).
+ *
+ * <p>Replaced `completed: boolean` rather than joining it, so every reader had
+ * to be revisited: a lapsed item is not completed and is not open either, and
+ * a boolean has nowhere to put the third answer. See adr/0048.
+ */
+export type ItemState = 'OPEN' | 'COMPLETED' | 'LAPSED'
+
 export interface Item {
   id: string
   listId: string
@@ -22,12 +31,15 @@ export interface Item {
   /** The assignee put themselves there, so everyone sees it as claimed. */
   selfAssigned: boolean
   dueAt: string | null
-  completed: boolean
+  state: ItemState
   completedBy: ItemMember | null
   completedAt: string | null
   /** How the work went. Only returned while the completion stands. */
   completionNoteHtml: string | null
-  /** Set once an item has been reopened; the completion record is kept. */
+  /** Who gave up on it. Only returned while the lapse stands. */
+  lapsedBy: ItemMember | null
+  lapsedAt: string | null
+  /** Set once an item has been reopened; both records are kept. */
   reopenedAt: string | null
   /** Null while open; snapshotted at completion. */
   pointsEarned: number | null
@@ -79,20 +91,24 @@ export async function deleteItem(id: string, version: number): Promise<void> {
 }
 
 /**
- * Completing or reopening. The note rides the completion rather than taking a
- * write of its own, so one gesture is one request; sending a note while
- * reopening is a 400, not a silent drop.
+ * Completing, lapsing or reopening - one endpoint, because they are one state
+ * machine (0015 R131).
+ *
+ * <p>The note rides the completion rather than taking a write of its own, so
+ * one gesture is one request; sending a note with any other state is a 400,
+ * not a silent drop, which is why it is dropped here rather than sent and
+ * refused.
  */
-export async function setItemCompleted(
+export async function setItemState(
   id: string,
   version: number,
-  completed: boolean,
+  state: ItemState,
   noteHtml?: string | null,
 ): Promise<Item> {
-  const { data } = await api.put<Item>(`/items/${id}/completion`, {
+  const { data } = await api.put<Item>(`/items/${id}/state`, {
     version,
-    completed,
-    noteHtml: completed ? (noteHtml ?? null) : null,
+    state,
+    noteHtml: state === 'COMPLETED' ? (noteHtml ?? null) : null,
   })
   return data
 }

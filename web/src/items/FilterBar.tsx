@@ -16,6 +16,7 @@ import { MenuChip } from '../app/MenuChip'
 import type { ListField, ListMember } from '../api/lists'
 import {
   DEFAULT_FILTER,
+  STATUS_ORDER,
   UNASSIGNED,
   countActive,
   emptyCostFilter,
@@ -28,7 +29,19 @@ import {
   type CostFilter,
   type DueFilter,
   type ItemFilter,
+  type StatusValue,
 } from './filters'
+
+/**
+ * What each status is called on screen. Beside the order rather than inside
+ * `filters.ts`, which is the module the tests and the codec share and has no
+ * business holding display strings.
+ */
+const STATUS_LABELS: Record<StatusValue, string> = {
+  open: 'To do',
+  done: 'Done',
+  lapsed: 'Lapsed',
+}
 
 /**
  * How a list is narrowed and ordered (0013 R107-R122).
@@ -76,13 +89,13 @@ export function FilterBar({
       <MenuChip label={`Status: ${statusLabel(filter)}`} active={isStatusActive(filter)}>
         {(close) => (
           <>
-            {(['open', 'done'] as const).map((value) => (
+            {STATUS_ORDER.map((value) => (
               <MenuItem
                 key={value}
                 onClick={() => onChange({ ...filter, status: toggleStatus(filter.status, value) })}
               >
                 <Checkbox checked={filter.status.includes(value)} size="small" />
-                <ListItemText primary={value === 'open' ? 'To do' : 'Done'} />
+                <ListItemText primary={STATUS_LABELS[value]} />
               </MenuItem>
             ))}
             <Divider />
@@ -335,11 +348,19 @@ function asNumber(raw: string): number | null {
   return Number.isFinite(value) ? value : null
 }
 
+/**
+ * The chip's own label.
+ *
+ * <p>Names the selection when it is short enough to read and counts it
+ * otherwise. The old version said "To do & done" for anything that was not
+ * exactly one value, which with three statuses would have been a label that
+ * is simply wrong about what is on screen.
+ */
 function statusLabel(filter: ItemFilter): string {
-  if (filter.status.length !== 1) {
-    return 'To do & done'
+  if (filter.status.length === 0 || filter.status.length === STATUS_ORDER.length) {
+    return 'Any'
   }
-  return filter.status[0] === 'done' ? 'Done' : 'To do'
+  return filter.status.map((value) => STATUS_LABELS[value]).join(' & ')
 }
 
 function assigneeLabel(filter: ItemFilter, members: ListMember[]): string {

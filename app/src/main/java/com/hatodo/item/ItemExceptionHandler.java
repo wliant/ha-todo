@@ -74,8 +74,11 @@ class ItemExceptionHandler {
 
     /** Names the other member, because "a conflict occurred" helps nobody. */
     private static String describe(ItemResponse item) {
-        if (item.completed() && item.completedBy() != null) {
+        if (item.state() == ItemState.COMPLETED && item.completedBy() != null) {
             return "%s completed this first.".formatted(item.completedBy().displayName());
+        }
+        if (item.state() == ItemState.LAPSED && item.lapsedBy() != null) {
+            return "%s lapsed this first.".formatted(item.lapsedBy().displayName());
         }
         return "Somebody else changed this item while you were looking at it.";
     }

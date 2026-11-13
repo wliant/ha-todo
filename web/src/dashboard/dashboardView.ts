@@ -40,6 +40,13 @@ export interface DashboardView {
   /** The same completion, with a line about how it went first (0010 R84). */
   writeNote: (item: DashboardItem) => void
   /**
+   * Give up on a chore from the agenda (0015 R138), which is where the
+   * decision is actually made: the member is looking at a day with too much
+   * on it. It leaves the agenda exactly as a completion does, and carries no
+   * note (R134).
+   */
+  lapse: (item: DashboardItem) => void
+  /**
    * The event itself rather than an id: a collapsed event has no single row
    * behind it, and the payload is already in hand - so there is nothing to look
    * up and nothing to fetch.

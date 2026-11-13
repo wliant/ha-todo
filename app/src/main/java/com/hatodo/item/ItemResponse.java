@@ -14,8 +14,9 @@ import java.util.UUID;
  */
 public record ItemResponse(UUID id, UUID listId, String description, String detailHtml,
                            ItemMemberResponse assignee, boolean selfAssigned, Instant dueAt,
-                           boolean completed, ItemMemberResponse completedBy,
+                           ItemState state, ItemMemberResponse completedBy,
                            Instant completedAt, String completionNoteHtml,
+                           ItemMemberResponse lapsedBy, Instant lapsedAt,
                            Instant reopenedAt, Integer pointsEarned,
                            List<ItemCostValueResponse> costValues, long version) {
 
@@ -23,15 +24,21 @@ public record ItemResponse(UUID id, UUID listId, String description, String deta
         // The completion record survives a reopen in the database and stops
         // being shown (R49) - so all three parts of it are reported only while
         // the completion stands. Reporting a completedBy on an item whose
-        // `completed` is false would contradict itself, and the row would draw
-        // a "done by" chip on an open item.
+        // `state` is not COMPLETED would contradict itself, and the row would
+        // draw a "done by" chip on an open item.
         boolean standing = item.isCompleted();
+        // The lapse record is reported on the same terms, and for the same
+        // reason: a "lapsed by" line on an item somebody has since reopened
+        // would contradict the state beside it.
+        boolean lapsed = item.isLapsed();
         return new ItemResponse(item.getId(), item.getListId(), item.getDescription(),
                 item.getDetailHtml(), ItemMemberResponse.of(item.getAssignee()),
-                item.isSelfAssigned(), item.getDueAt(), standing,
+                item.isSelfAssigned(), item.getDueAt(), item.getState(),
                 standing ? ItemMemberResponse.of(item.getCompletedBy()) : null,
                 standing ? item.getCompletedAt() : null,
                 standing ? item.getCompletionNoteHtml() : null,
+                lapsed ? ItemMemberResponse.of(item.getLapsedBy()) : null,
+                lapsed ? item.getLapsedAt() : null,
                 item.getReopenedAt(), item.getPointsEarned(),
                 item.getCostValues().stream().map(ItemCostValueResponse::of).toList(),
                 item.getVersion());

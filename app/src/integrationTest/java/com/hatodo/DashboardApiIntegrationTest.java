@@ -189,8 +189,8 @@ class DashboardApiIntegrationTest extends ApiIntegrationTest {
         Map created = addItem(ana, listId,
                 "{\"description\":\"Already finished\",\"dueAt\":\"%s\"}".formatted(soon()));
 
-        rest.exchange("/api/items/" + created.get("id") + "/completion", HttpMethod.PUT,
-                new HttpEntity<>("{\"version\":%d,\"completed\":true}"
+        rest.exchange("/api/items/" + created.get("id") + "/state", HttpMethod.PUT,
+                new HttpEntity<>("{\"version\":%d,\"state\":\"COMPLETED\"}"
                         .formatted(((Number) created.get("version")).longValue()),
                         headersFor(ana.session())), Map.class);
 
@@ -199,19 +199,19 @@ class DashboardApiIntegrationTest extends ApiIntegrationTest {
 
     @Test
     void aReopenedItemIsSomethingLeftToDoAgain() {
-        // The generated `done` column, read from the far side of the product:
+        // The generated `closed` column, read from the far side of the product:
         // a reopened item keeps its completion record and is still outstanding.
         Member ana = givenMember("dash-reopened");
         String listId = newList(ana);
         Map created = addItem(ana, listId,
                 "{\"description\":\"Back on the pile\",\"dueAt\":\"%s\"}".formatted(soon()));
-        Map completed = rest.exchange("/api/items/" + created.get("id") + "/completion",
-                HttpMethod.PUT, new HttpEntity<>("{\"version\":%d,\"completed\":true}"
+        Map completed = rest.exchange("/api/items/" + created.get("id") + "/state",
+                HttpMethod.PUT, new HttpEntity<>("{\"version\":%d,\"state\":\"COMPLETED\"}"
                         .formatted(((Number) created.get("version")).longValue()),
                         headersFor(ana.session())), Map.class).getBody();
 
-        rest.exchange("/api/items/" + created.get("id") + "/completion", HttpMethod.PUT,
-                new HttpEntity<>("{\"version\":%d,\"completed\":false}"
+        rest.exchange("/api/items/" + created.get("id") + "/state", HttpMethod.PUT,
+                new HttpEntity<>("{\"version\":%d,\"state\":\"OPEN\"}"
                         .formatted(((Number) completed.get("version")).longValue()),
                         headersFor(ana.session())), Map.class);
 
@@ -342,12 +342,61 @@ class DashboardApiIntegrationTest extends ApiIntegrationTest {
         Map created = addItem(ana, listId,
                 "{\"description\":\"Late but finished\",\"dueAt\":\"%s\"}".formatted(late()));
 
-        rest.exchange("/api/items/" + created.get("id") + "/completion", HttpMethod.PUT,
-                new HttpEntity<>("{\"version\":%d,\"completed\":true}"
+        rest.exchange("/api/items/" + created.get("id") + "/state", HttpMethod.PUT,
+                new HttpEntity<>("{\"version\":%d,\"state\":\"COMPLETED\"}"
                         .formatted(((Number) created.get("version")).longValue()),
                         headersFor(ana.session())), Map.class);
 
         assertThat(descriptionsLate(ana.session(), null)).doesNotContain("Late but finished");
+    }
+
+    @Test
+    void aLapsedItemLeavesEveryPartOfTheAgenda() {
+        // 0015 R136. The whole reason `closed` was widened rather than joined
+        // by a second column: the three queries below say nothing about
+        // lapsing, and all three are right anyway.
+        Member ana = givenMember("dash-lapsed");
+        String listId = newList(ana);
+        Map due = addItem(ana, listId,
+                "{\"description\":\"Lapsed and due\",\"dueAt\":\"%s\"}".formatted(soon()));
+        Map overdue = addItem(ana, listId,
+                "{\"description\":\"Lapsed and late\",\"dueAt\":\"%s\"}".formatted(late()));
+        Map undated = addItem(ana, listId, "{\"description\":\"Lapsed and undated\"}");
+
+        for (Map item : List.of(due, overdue, undated)) {
+            lapse(ana, item);
+        }
+
+        assertThat(descriptionsDue(ana.session(), null)).doesNotContain("Lapsed and due");
+        assertThat(descriptionsLate(ana.session(), null)).doesNotContain("Lapsed and late");
+        assertThat((List<Map<String, Object>>) undated(ana.session(), null).get("items"))
+                .extracting(row -> row.get("description"))
+                .doesNotContain("Lapsed and undated");
+        assertThat(((Number) undated(ana.session(), null).get("total")).intValue()).isZero();
+    }
+
+    @Test
+    void reopeningALapsedItemPutsItBackOnTheAgenda() {
+        // The other half of R136: lapsing is not a delete.
+        Member ana = givenMember("dash-lapse-reopen");
+        String listId = newList(ana);
+        Map created = addItem(ana, listId,
+                "{\"description\":\"Back on the agenda\",\"dueAt\":\"%s\"}".formatted(soon()));
+        Map lapsed = lapse(ana, created);
+
+        rest.exchange("/api/items/" + created.get("id") + "/state", HttpMethod.PUT,
+                new HttpEntity<>("{\"version\":%d,\"state\":\"OPEN\"}"
+                        .formatted(((Number) lapsed.get("version")).longValue()),
+                        headersFor(ana.session())), Map.class);
+
+        assertThat(descriptionsDue(ana.session(), null)).contains("Back on the agenda");
+    }
+
+    private Map<String, Object> lapse(Member member, Map created) {
+        return rest.exchange("/api/items/" + created.get("id") + "/state", HttpMethod.PUT,
+                new HttpEntity<>("{\"version\":%d,\"state\":\"LAPSED\"}"
+                        .formatted(((Number) created.get("version")).longValue()),
+                        headersFor(member.session())), Map.class).getBody();
     }
 
     @Test

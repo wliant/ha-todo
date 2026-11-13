@@ -6,10 +6,11 @@ import {
   deleteItem,
   fetchItems,
   fetchPoints,
-  setItemCompleted,
+  setItemState,
   updateItem,
   type AssignmentResult,
   type Item,
+  type ItemState,
   type SaveItem,
 } from '../api/items'
 import { conflictingItem } from '../api/items'
@@ -105,14 +106,15 @@ export function useDeleteItem(listId: string) {
 }
 
 /**
- * Ticking an item off.
+ * Moving one item between its three states: completing it, lapsing it, or
+ * putting it back (0015 R131).
  *
- * <p>Optimistic, because a checkbox has to move under the finger. When the
+ * <p>Optimistic, because a control has to move under the finger. When the
  * server says somebody got there first, the caches take the server's version
  * of the item - not the snapshot - because that is the truth the member needs
  * to see, and `onConflict` is how the screen tells them whose it was.
  */
-export function useToggleCompletion(
+export function useSetItemState(
   listId: string,
   onConflict: (message: string) => void,
 ) {
@@ -122,20 +124,20 @@ export function useToggleCompletion(
   return useMutation({
     mutationFn: ({
       item,
-      completed,
+      state,
       noteHtml,
     }: {
       item: Item
-      completed: boolean
+      state: ItemState
       noteHtml?: string | null
-    }) => setItemCompleted(item.id, item.version, completed, noteHtml),
+    }) => setItemState(item.id, item.version, state, noteHtml),
 
-    onMutate: async ({ item, completed }) => {
+    onMutate: async ({ item, state }) => {
       await queryClient.cancelQueries({ queryKey: itemKeys.all(listId) })
       const previous = queryClient.getQueriesData({ queryKey: itemKeys.all(listId) })
       queryClient.setQueriesData<Item[]>({ queryKey: itemKeys.all(listId) }, (items) =>
         items?.map((candidate) =>
-          candidate.id === item.id ? { ...candidate, completed } : candidate,
+          candidate.id === item.id ? { ...candidate, state } : candidate,
         ),
       )
       return previous

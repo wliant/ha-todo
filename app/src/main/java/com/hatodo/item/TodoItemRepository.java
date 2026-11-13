@@ -21,7 +21,7 @@ public interface TodoItemRepository extends JpaRepository<TodoItem, UUID> {
      * a predicate implemented on both sides of the wire is how two notions of
      * "done" start to disagree.
      *
-     * <p>The generated `done` column still has one reader, in
+     * <p>The generated `closed` column still has one reader, in
      * {@link #findScheduledFor} and its neighbours: the dashboard reads across
      * every list a member can see and cannot fetch them all.
      */
@@ -38,17 +38,26 @@ public interface TodoItemRepository extends JpaRepository<TodoItem, UUID> {
      * disagrees with the items the first time a delete path forgets to
      * decrement it.
      *
-     * <p>{@code done = TRUE}, not {@code completedBy IS NOT NULL}: a reopened
-     * item keeps who completed it (R49) while its points are taken back, so the
-     * older predicate matched a group whose whole sum was null - which is a 500
-     * on this endpoint, not merely a wrong number. The COALESCE is the belt to
-     * that braces. Standing credit is what this answers; the activity feed asks
-     * a different question and keys on completedAt instead.
+     * <p>Not {@code completedBy IS NOT NULL} on its own: a reopened item keeps
+     * who completed it (R49) while its points are taken back, so that predicate
+     * matched a group whose whole sum was null - which is a 500 on this
+     * endpoint, not merely a wrong number. The COALESCE is the belt to that
+     * braces. Standing credit is what this answers; the activity feed asks a
+     * different question and keys on completedAt instead.
+     *
+     * <p>And not {@code closed = TRUE} either, which is the trap 0015 laid.
+     * {@code closed} now means "no longer work", which a lapsed item also is -
+     * so an item completed, reopened and then lapsed would be matched here,
+     * contributing a nonsense zero-point row for a member who earned nothing.
+     * The test has to be for a <em>standing completion</em>, spelled out:
+     * completed, not since reopened, and not since lapsed. That is
+     * {@code TodoItem.isCompleted()}, in JPQL. See adr/0048.
      */
     @Query("""
             SELECT i.completedBy.id, i.completedBy.displayName, COALESCE(SUM(i.pointsEarned), 0)
             FROM TodoItem i
-            WHERE i.list.id = :listId AND i.done = TRUE AND i.completedBy IS NOT NULL
+            WHERE i.list.id = :listId AND i.completedBy IS NOT NULL
+              AND i.completedAt IS NOT NULL AND i.reopenedAt IS NULL AND i.lapsedAt IS NULL
             GROUP BY i.completedBy.id, i.completedBy.displayName
             ORDER BY COALESCE(SUM(i.pointsEarned), 0) DESC, i.completedBy.displayName ASC
             """)
@@ -57,7 +66,7 @@ public interface TodoItemRepository extends JpaRepository<TodoItem, UUID> {
     /**
      * Who completed how much on one list inside a window (R43).
      *
-     * <p>Keyed on {@code completedAt}, deliberately not on {@code done}: a
+     * <p>Keyed on {@code completedAt}, deliberately not on {@code closed}: a
      * completion that was later reopened still happened, and R49 kept the
      * record precisely so it could be seen. The points are COALESCEd because
      * exactly those rows have had theirs taken back.
@@ -100,7 +109,7 @@ public interface TodoItemRepository extends JpaRepository<TodoItem, UUID> {
      */
     @Query("""
             SELECT i FROM TodoItem i
-            WHERE i.done = FALSE
+            WHERE i.closed = FALSE
               AND i.dueAt >= :from AND i.dueAt < :to
               AND (:mineOnly = FALSE OR i.assignee.id = :userId)
               AND EXISTS (
@@ -121,7 +130,7 @@ public interface TodoItemRepository extends JpaRepository<TodoItem, UUID> {
      */
     @Query("""
             SELECT i FROM TodoItem i
-            WHERE i.done = FALSE AND i.dueAt IS NULL
+            WHERE i.closed = FALSE AND i.dueAt IS NULL
               AND (:mineOnly = FALSE OR i.assignee.id = :userId)
               AND EXISTS (
                   SELECT 1 FROM ListAccess a WHERE a.list = i.list AND a.user.id = :userId
@@ -140,7 +149,7 @@ public interface TodoItemRepository extends JpaRepository<TodoItem, UUID> {
      */
     @Query("""
             SELECT COUNT(i) FROM TodoItem i
-            WHERE i.done = FALSE AND i.dueAt IS NULL
+            WHERE i.closed = FALSE AND i.dueAt IS NULL
               AND (:mineOnly = FALSE OR i.assignee.id = :userId)
               AND EXISTS (
                   SELECT 1 FROM ListAccess a WHERE a.list = i.list AND a.user.id = :userId
@@ -168,7 +177,7 @@ public interface TodoItemRepository extends JpaRepository<TodoItem, UUID> {
      */
     @Query("""
             SELECT i FROM TodoItem i
-            WHERE i.done = FALSE
+            WHERE i.closed = FALSE
               AND i.dueAt IS NOT NULL AND i.dueAt < :before
               AND (:mineOnly = FALSE OR i.assignee.id = :userId)
               AND EXISTS (
@@ -189,7 +198,7 @@ public interface TodoItemRepository extends JpaRepository<TodoItem, UUID> {
      */
     @Query("""
             SELECT COUNT(i) FROM TodoItem i
-            WHERE i.done = FALSE
+            WHERE i.closed = FALSE
               AND i.dueAt IS NOT NULL AND i.dueAt < :before
               AND (:mineOnly = FALSE OR i.assignee.id = :userId)
               AND EXISTS (

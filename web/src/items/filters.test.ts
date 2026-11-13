@@ -70,10 +70,12 @@ function item(overrides: Partial<Item> = {}): Item {
     assignee: null,
     selfAssigned: false,
     dueAt: null,
-    completed: false,
+    state: 'OPEN',
     completedBy: null,
     completedAt: null,
     completionNoteHtml: null,
+    lapsedBy: null,
+    lapsedAt: null,
     reopenedAt: null,
     pointsEarned: null,
     costValues: [],
@@ -174,21 +176,34 @@ describe('the address', () => {
   it('never leaves the status filter empty', () => {
     // An empty status set would be an empty list for a reason the member
     // cannot see; unticking the last chip means everything (adr/0046).
-    expect(toggleStatus(['open'], 'open')).toEqual(['open', 'done'])
+    expect(toggleStatus(['open'], 'open')).toEqual(['open', 'done', 'lapsed'])
     expect(toggleStatus(['open'], 'done')).toEqual(['open', 'done'])
+    expect(toggleStatus(['open'], 'lapsed')).toEqual(['open', 'lapsed'])
     expect(toggleStatus(['open', 'done'], 'open')).toEqual(['done'])
   })
 })
 
 describe('matching', () => {
-  it('shows one status, or both, or - from a hand-edited address - everything', () => {
+  it('shows one status, or some, or - from a hand-edited address - everything', () => {
     const open = item({ description: 'Open' })
-    const done = item({ description: 'Done', completed: true })
+    const done = item({ description: 'Done', state: 'COMPLETED' })
+    const lapsed = item({ description: 'Lapsed', state: 'LAPSED' })
+    const all = [open, done, lapsed]
 
-    expect(shown([open, done])).toEqual(['Open'])
-    expect(shown([open, done], { status: ['done'] })).toEqual(['Done'])
-    expect(shown([open, done], { status: ['open', 'done'] })).toEqual(['Open', 'Done'])
-    expect(shown([open, done], { status: [] })).toEqual(['Open', 'Done'])
+    expect(shown(all)).toEqual(['Open'])
+    expect(shown(all, { status: ['done'] })).toEqual(['Done'])
+    expect(shown(all, { status: ['lapsed'] })).toEqual(['Lapsed'])
+    // Two of three. The old predicate read `status[0]` whenever fewer than all
+    // were selected, which was right for two values and silently wrong here:
+    // it would have shown only the open row.
+    expect(shown(all, { status: ['open', 'done'] })).toEqual(['Open', 'Done'])
+    expect(shown(all, { status: ['done', 'lapsed'] })).toEqual(['Done', 'Lapsed'])
+    expect(shown(all, { status: ['open', 'done', 'lapsed'] })).toEqual([
+      'Open',
+      'Done',
+      'Lapsed',
+    ])
+    expect(shown(all, { status: [] })).toEqual(['Open', 'Done', 'Lapsed'])
   })
 
   it('filters by assignee, and by nobody', () => {

@@ -484,7 +484,7 @@ describe('DashboardPage', () => {
     it('ticks a chore off from the day’s row', async () => {
       thenEmpty()
       const complete = vi
-        .spyOn(itemsApi, 'setItemCompleted')
+        .spyOn(itemsApi, 'setItemState')
         .mockResolvedValue({} as unknown as itemsApi.Item)
       renderAt('/dashboard/day')
 
@@ -494,7 +494,7 @@ describe('DashboardPage', () => {
 
       // The version the row was drawn from, so a stale tap is a 409 rather
       // than an overwrite.
-      expect(complete).toHaveBeenCalledWith('id-item', 7, true, undefined)
+      expect(complete).toHaveBeenCalledWith('id-item', 7, 'COMPLETED', undefined)
       // The agenda shows outstanding work, so the row leaves (R86).
       await waitFor(() =>
         expect(screen.queryByText('Take the bins out')).not.toBeInTheDocument(),
@@ -505,7 +505,7 @@ describe('DashboardPage', () => {
     it('carries the note on the same request', async () => {
       thenEmpty()
       const complete = vi
-        .spyOn(itemsApi, 'setItemCompleted')
+        .spyOn(itemsApi, 'setItemState')
         .mockResolvedValue({} as unknown as itemsApi.Item)
       renderAt('/dashboard/day')
 
@@ -518,7 +518,7 @@ describe('DashboardPage', () => {
 
       // One gesture, one request - never a completion followed by a note.
       await waitFor(() => expect(complete).toHaveBeenCalledOnce())
-      expect(complete).toHaveBeenCalledWith('id-item', 7, true, null)
+      expect(complete).toHaveBeenCalledWith('id-item', 7, 'COMPLETED', null)
     })
 
     it('completes from the popup, and closes it', async () => {
@@ -530,7 +530,7 @@ describe('DashboardPage', () => {
         payload({ items: [item({ version: 7 })] }),
       )
       const complete = vi
-        .spyOn(itemsApi, 'setItemCompleted')
+        .spyOn(itemsApi, 'setItemState')
         .mockResolvedValue({} as unknown as itemsApi.Item)
       renderAt('/dashboard/week?item=id-item')
 
@@ -539,10 +539,29 @@ describe('DashboardPage', () => {
         within(dialog).getByRole('button', { name: 'Complete Take the bins out' }),
       )
 
-      expect(complete).toHaveBeenCalledWith('id-item', 7, true, undefined)
+      expect(complete).toHaveBeenCalledWith('id-item', 7, 'COMPLETED', undefined)
       // Its subject has stopped existing; a dialog describing nothing must not
       // be left on screen.
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    })
+
+    it('lapses a chore from the day’s row and says so', async () => {
+      // 0015 R138: the agenda is where "we are not getting to this" is
+      // actually decided, and the row leaving cannot be the only feedback.
+      thenEmpty()
+      const lapse = vi
+        .spyOn(itemsApi, 'setItemState')
+        .mockResolvedValue({} as unknown as itemsApi.Item)
+      renderAt('/dashboard/day')
+
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Lapse Take the bins out' }),
+      )
+
+      await waitFor(() =>
+        expect(lapse).toHaveBeenCalledWith('id-item', 7, 'LAPSED', undefined),
+      )
+      expect(await screen.findByText('Take the bins out has lapsed.')).toBeVisible()
     })
 
     it('says who got there first, and puts the row back', async () => {
@@ -550,7 +569,7 @@ describe('DashboardPage', () => {
       vi.spyOn(dashboardApi, 'fetchScheduled').mockResolvedValue(
         payload({ items: [item({ version: 7 })] }),
       )
-      vi.spyOn(itemsApi, 'setItemCompleted').mockRejectedValue({
+      vi.spyOn(itemsApi, 'setItemState').mockRejectedValue({
         isAxiosError: true,
         response: {
           status: 409,
@@ -696,7 +715,7 @@ describe('DashboardPage', () => {
         .mockResolvedValueOnce({ items: [late(2, { version: 9 })], total: 1 })
         .mockResolvedValue({ items: [], total: 0 })
       const completed = vi
-        .spyOn(itemsApi, 'setItemCompleted')
+        .spyOn(itemsApi, 'setItemState')
         .mockResolvedValue({} as never)
       renderAt('/dashboard/day')
 
@@ -705,7 +724,7 @@ describe('DashboardPage', () => {
         await screen.findByRole('button', { name: 'Complete Missed by 2' }),
       )
 
-      expect(completed).toHaveBeenCalledWith('id-late-2', 9, true, undefined)
+      expect(completed).toHaveBeenCalledWith('id-late-2', 9, 'COMPLETED', undefined)
       // Optimistic in one direction only: the row leaves, and the strip with
       // it, because the total it was counting went too.
       await waitFor(() => expect(screen.queryByText('Missed by 2')).not.toBeInTheDocument())
@@ -722,7 +741,7 @@ describe('DashboardPage', () => {
         items: [late(2, { version: 9 })],
         total: 1,
       })
-      vi.spyOn(itemsApi, 'setItemCompleted').mockReturnValue(new Promise(() => {}))
+      vi.spyOn(itemsApi, 'setItemState').mockReturnValue(new Promise(() => {}))
       renderAt('/dashboard/day')
 
       await userEvent.click(await screen.findByRole('button', { name: 'Show' }))
@@ -732,6 +751,31 @@ describe('DashboardPage', () => {
 
       await waitFor(() => expect(screen.queryByText('Missed by 2')).not.toBeInTheDocument())
       // And the strip goes with it: the total it was counting lost a chore.
+      expect(screen.queryByText(/overdue/)).not.toBeInTheDocument()
+    })
+
+    it('lapses a late chore, taking the row out before the server answers', async () => {
+      // 0015 R138, and the assertion that the generalised mutation's own
+      // `onMutate` still knows about all three payloads. Written against a
+      // write that never resolves, because a test that lets the refetch land
+      // passes whether or not the optimistic update exists - exactly the
+      // invisible defect adr/0040 warns about.
+      vi.spyOn(dashboardApi, 'fetchOverdue').mockResolvedValue({
+        items: [late(2, { version: 9 })],
+        total: 1,
+      })
+      const lapsed = vi
+        .spyOn(itemsApi, 'setItemState')
+        .mockReturnValue(new Promise(() => {}))
+      renderAt('/dashboard/day')
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Show' }))
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Lapse Missed by 2' }),
+      )
+
+      expect(lapsed).toHaveBeenCalledWith('id-late-2', 9, 'LAPSED', undefined)
+      await waitFor(() => expect(screen.queryByText('Missed by 2')).not.toBeInTheDocument())
       expect(screen.queryByText(/overdue/)).not.toBeInTheDocument()
     })
 

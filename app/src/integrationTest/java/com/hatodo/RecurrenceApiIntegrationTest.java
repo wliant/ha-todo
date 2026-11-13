@@ -206,7 +206,7 @@ class RecurrenceApiIntegrationTest extends ApiIntegrationTest {
         Map<String, Object> item = itemsOn(ana, listId).get(0);
         assertThat(item).containsEntry("description", "Bins out")
                 .containsEntry("detailHtml", "<p>Blue bin</p>")
-                .containsEntry("completed", false)
+                .containsEntry("state", "OPEN")
                 // Never inherited: points are computed at completion and this
                 // item has not been completed (adr/0012).
                 .containsEntry("pointsEarned", null)

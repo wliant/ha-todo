@@ -13,6 +13,7 @@ import ExpandLessRounded from '@mui/icons-material/ExpandLessRounded'
 import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded'
 import HowToRegRounded from '@mui/icons-material/HowToRegRounded'
 import UndoRounded from '@mui/icons-material/UndoRounded'
+import EventBusyRounded from '@mui/icons-material/EventBusyRounded'
 import type { Item } from '../api/items'
 import type { ListField } from '../api/lists'
 import { MemberAvatar } from '../app/MemberAvatar'
@@ -38,6 +39,7 @@ export function ItemRow({
   onSelect,
   onComplete,
   onWriteNote,
+  onLapse,
   onReopen,
   onEdit,
 }: {
@@ -49,11 +51,15 @@ export function ItemRow({
   onSelect: (selected: boolean) => void
   onComplete: () => void
   onWriteNote: () => void
+  onLapse: () => void
   onReopen: () => void
   onEdit: () => void
 }) {
   const bodyId = `item-${item.id}-detail`
   const hasBody = Boolean(item.detailHtml) || Boolean(item.completionNoteHtml)
+  // Both terminal states read as "no longer work", so both strike the
+  // description through. What separates them is the chip and the caption.
+  const closed = item.state !== 'OPEN'
 
   return (
     <Paper variant="outlined" sx={{ p: 1.5 }}>
@@ -89,8 +95,8 @@ export function ItemRow({
               sx={{
                 flex: 1,
                 overflowWrap: 'anywhere',
-                textDecoration: item.completed ? 'line-through' : 'none',
-                color: item.completed ? 'text.secondary' : 'text.primary',
+                textDecoration: closed ? 'line-through' : 'none',
+                color: closed ? 'text.secondary' : 'text.primary',
               }}
             >
               {item.description}
@@ -149,7 +155,7 @@ export function ItemRow({
                 <Chip key={value.fieldId} size="small" variant="outlined" label={label} />
               ) : null
             })}
-            {item.completed && item.completedBy && (
+            {item.state === 'COMPLETED' && item.completedBy && (
               <Chip
                 size="small"
                 color="primary"
@@ -160,17 +166,29 @@ export function ItemRow({
                 }
               />
             )}
+            {/* Not `color="primary"`: a lapse is terminal without being an
+                achievement, and a chip that looks like the completion chip
+                would read as one at a glance. */}
+            {item.state === 'LAPSED' && (
+              <Chip size="small" variant="outlined" color="default" label="Lapsed" />
+            )}
           </Stack>
 
           <Collapse id={bodyId} in={expanded} unmountOnExit>
             <Box sx={{ mt: 1 }}>
               {item.detailHtml && <RichText html={item.detailHtml} />}
-              {item.completed && item.completedAt && (
+              {item.state === 'COMPLETED' && item.completedAt && (
                 <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 1 }}>
                   {/* R36: the product stored both of these all along and showed
                       neither. */}
                   Finished {formatWhen(item.completedAt)}
                   {item.completedBy ? ` by ${item.completedBy.displayName}` : ''}
+                </Typography>
+              )}
+              {item.state === 'LAPSED' && item.lapsedAt && (
+                <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 1 }}>
+                  Lapsed {formatWhen(item.lapsedAt)}
+                  {item.lapsedBy ? ` by ${item.lapsedBy.displayName}` : ''}
                 </Typography>
               )}
               {item.completionNoteHtml && (
@@ -186,8 +204,17 @@ export function ItemRow({
         </Box>
 
         <Stack spacing={0.5} sx={{ alignItems: 'flex-end' }}>
-          {item.completed ? (
-            <Tooltip title="Reopen this, and take its points back">
+          {/* Three states, so three answers. A lapsed item offers the same
+              Reopen as a completed one (R135) with its own wording: there are
+              no points to give back. */}
+          {closed ? (
+            <Tooltip
+              title={
+                item.state === 'LAPSED'
+                  ? 'Put this back on the list'
+                  : 'Reopen this, and take its points back'
+              }
+            >
               <IconButton
                 size="small"
                 aria-label={`Reopen ${item.description}`}
@@ -197,11 +224,25 @@ export function ItemRow({
               </IconButton>
             </Tooltip>
           ) : (
-            <CompleteControl
-              description={item.description}
-              onComplete={onComplete}
-              onWriteNote={onWriteNote}
-            />
+            <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+              <CompleteControl
+                description={item.description}
+                onComplete={onComplete}
+                onWriteNote={onWriteNote}
+              />
+              {/* A sibling of the complete group, not a member of it: the
+                  group is one gesture with one accelerator, and a destructive
+                  verb inside it is a mis-tap away from the primary one. */}
+              <Tooltip title="We did not get to this">
+                <IconButton
+                  size="small"
+                  aria-label={`Lapse ${item.description}`}
+                  onClick={onLapse}
+                >
+                  <EventBusyRounded fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Stack>
           )}
           <IconButton
             size="small"
