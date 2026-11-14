@@ -8,6 +8,8 @@ the escape hatch a member reaches for when something did not appear.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -142,8 +144,11 @@ def test_a_member_writes_their_own_standing_instruction_and_not_the_owners(
         second_member_page.get_by_text(f"by {passwordless_member.display_name}")
     ).to_have_count(0)
 
+    # A member's rule runs like any other. Deliberately not asserting how many
+    # it made: RECURRENCE_CATCH_UP_DAYS differs between local and dev, which is
+    # what makes the two count assertions elsewhere in this file conditional.
     second_member_page.get_by_role("button", name="Run now").click()
-    expect(second_member_page.get_by_text("Added 2.")).to_be_visible()
+    expect(second_member_page.get_by_text(re.compile(r"^Added \d+\.$"))).to_be_visible()
 
     # Ana sees whose instruction it is, and keeps authority over it (R142, R143).
     page.reload()
