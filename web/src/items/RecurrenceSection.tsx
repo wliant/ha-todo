@@ -14,6 +14,7 @@ import Typography from '@mui/material/Typography'
 import AddRounded from '@mui/icons-material/AddRounded'
 import EditRounded from '@mui/icons-material/EditRounded'
 import PlayArrowRounded from '@mui/icons-material/PlayArrowRounded'
+import { useCurrentUser } from '../auth/useCurrentUser'
 import { errorMessage } from '../api/http'
 import type { ListDetail, ListField } from '../api/lists'
 import { WEEKDAYS, type RecurrenceRule, type SaveRecurrenceRule } from '../api/recurrence'
@@ -67,9 +68,10 @@ function fromRule(rule: RecurrenceRule): SaveRecurrenceRule & { id: string } {
 /**
  * What this list makes on its own (R41, R42).
  *
- * <p>Only the owner writes these - a standing instruction is as much the shape
- * of the list as its fields are - but anyone who can see the list can run them,
- * because a member who has just written one wants to watch it work.
+ * <p>Anyone who can see the list writes these (0016 R141) - a rule only adds
+ * items, and adding items is what a grant has always meant - but editing one
+ * is for whoever wrote it, or the list's owner (R143). That is the server's
+ * `editable` per rule, never recomputed here.
  */
 export function RecurrenceSection({
   list,
@@ -80,6 +82,10 @@ export function RecurrenceSection({
 }) {
   const [editing, setEditing] = useState<(SaveRecurrenceRule & { id?: string }) | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+
+  // Only to decide whose name is worth printing: a member who sees "by Ana" on
+  // four of their own rules has learnt nothing. Never to decide who may write.
+  const { data: me } = useCurrentUser()
 
   const { data: rules, isPending } = useRules(list.id)
   const create = useCreateRule(list.id)
@@ -130,15 +136,13 @@ export function RecurrenceSection({
           >
             Run now
           </Button>
-          {list.owned && (
-            <Button
-              variant="contained"
-              startIcon={<AddRounded />}
-              onClick={() => setEditing(blank())}
-            >
-              Add a recurring item
-            </Button>
-          )}
+          <Button
+            variant="contained"
+            startIcon={<AddRounded />}
+            onClick={() => setEditing(blank())}
+          >
+            Add a recurring item
+          </Button>
         </Stack>
       </Stack>
 
@@ -151,9 +155,7 @@ export function RecurrenceSection({
 
       {rules && rules.length === 0 && (
         <Typography role="status" color="text.secondary">
-          {list.owned
-            ? 'Nothing recurs on this list yet.'
-            : 'Nothing recurs on this list yet. Its owner sets these up.'}
+          Nothing recurs on this list yet.
         </Typography>
       )}
 
@@ -176,6 +178,13 @@ export function RecurrenceSection({
                     <Chip size="small" variant="outlined" label={rule.assignee.displayName} />
                   )}
                   {rule.paused && <Chip size="small" color="warning" label="Paused" />}
+                  {rule.createdBy && rule.createdBy.id !== me?.id && (
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      label={`by ${rule.createdBy.displayName}`}
+                    />
+                  )}
                 </Stack>
                 {rule.lastError && (
                   // A job nobody watches has to be able to explain itself.
@@ -184,7 +193,7 @@ export function RecurrenceSection({
                   </Alert>
                 )}
               </Stack>
-              {list.owned && (
+              {rule.editable && (
                 <IconButton
                   size="small"
                   aria-label={`Edit ${rule.description}`}

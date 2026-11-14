@@ -5,6 +5,7 @@ import { ThemeProvider } from '@mui/material/styles'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { RecurrenceSection } from './RecurrenceSection'
 import * as recurrenceApi from '../api/recurrence'
+import * as authApi from '../api/auth'
 import type { RecurrenceRule } from '../api/recurrence'
 import type { ListDetail, ListField } from '../api/lists'
 import { theme } from '../theme/theme'
@@ -53,6 +54,8 @@ function rule(overrides: Partial<RecurrenceRule> = {}): RecurrenceRule {
     lastRunAt: null,
     lastError: null,
     costValues: [],
+    createdBy: { id: 'id-ana', displayName: 'Ana', avatarImageId: null },
+    editable: true,
     version: 2,
     ...overrides,
   }
@@ -74,6 +77,15 @@ function renderSection(owned = true, fields: ListField[] = [description]) {
 describe('RecurrenceSection', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+    // Only so the author chip knows whose name not to print (0016 R142).
+    vi.spyOn(authApi, 'fetchCurrentUser').mockResolvedValue({
+      id: 'id-ana',
+      username: 'ana',
+      displayName: 'Ana',
+      role: 'MEMBER',
+      timezone: 'Asia/Singapore',
+      avatarImageId: null,
+    })
   })
 
   it('describes a rule in words a household would use', async () => {
@@ -194,17 +206,51 @@ describe('RecurrenceSection', () => {
     ).toBeVisible()
   })
 
-  it('lets a member who does not own the list look and run, but not write', async () => {
-    // R20's reading: a standing instruction is the shape of the list, which is
-    // the owner's. Running one is not.
+  it('lets a member write a standing instruction on a list they do not own', async () => {
+    // 0016 R141: a rule only adds items, and adding items is what a grant has
+    // always meant. The old rule was the opposite and was asserted here.
     vi.spyOn(recurrenceApi, 'fetchRules').mockResolvedValue([rule()])
     renderSection(false)
 
     expect(await screen.findByText('Bins out')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Run now' })).toBeEnabled()
-    expect(
-      screen.queryByRole('button', { name: 'Add a recurring item' }),
-    ).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Edit Bins out' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add a recurring item' })).toBeEnabled()
+  })
+
+  it('draws the edit control per rule, from the server’s answer', async () => {
+    // R143/R144, and deliberately not recomputed from `owned` plus the
+    // signed-in member: that would be a second copy of the predicate
+    // (adr/0049). `owned` is true here and the unwritable rule still has no
+    // control, which is what makes this test about `editable` and nothing else.
+    vi.spyOn(recurrenceApi, 'fetchRules').mockResolvedValue([
+      rule({ id: 'id-mine', description: 'Mine', editable: true }),
+      rule({
+        id: 'id-theirs',
+        description: 'Theirs',
+        editable: false,
+        createdBy: { id: 'id-ben', displayName: 'Ben', avatarImageId: null },
+      }),
+    ])
+    renderSection()
+
+    expect(await screen.findByRole('button', { name: 'Edit Mine' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Edit Theirs' })).not.toBeInTheDocument()
+  })
+
+  it('names the member who set a rule up, but not when it is the caller', async () => {
+    // A list of anonymous instructions reads as though the list made them
+    // itself; "by Ana" on four of Ana's own rules teaches nothing (R142).
+    vi.spyOn(recurrenceApi, 'fetchRules').mockResolvedValue([
+      rule({ id: 'id-mine', description: 'Mine' }),
+      rule({
+        id: 'id-theirs',
+        description: 'Theirs',
+        createdBy: { id: 'id-ben', displayName: 'Ben', avatarImageId: null },
+      }),
+    ])
+    renderSection()
+
+    expect(await screen.findByText('by Ben')).toBeVisible()
+    expect(screen.queryByText('by Ana')).not.toBeInTheDocument()
   })
 })

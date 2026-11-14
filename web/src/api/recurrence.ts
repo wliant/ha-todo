@@ -45,6 +45,15 @@ export interface RecurrenceRule {
   /** Why the last run produced nothing, so a broken rule can say so. */
   lastError: string | null
   costValues: ItemCostValue[]
+  /** Whoever wrote it, null once their account is gone (0016 R142). */
+  createdBy: ItemMember | null
+  /**
+   * Whether this caller may edit or delete it (R143). The server's answer, not
+   * ours: the predicate is `RecurrenceRule.isWritableBy`, and a second copy of
+   * it here - assembled from `list.owned` and the signed-in member - is a third
+   * definition of who may write a rule (adr/0049).
+   */
+  editable: boolean
   version: number
 }
 

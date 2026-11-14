@@ -2,7 +2,6 @@ package com.hatodo.recurrence;
 
 import com.hatodo.item.AssigneeWithoutAccessException;
 import com.hatodo.list.ListNotFoundException;
-import com.hatodo.list.ListNotManagedException;
 import com.hatodo.web.ValidationErrors;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
@@ -25,11 +24,16 @@ class RecurrenceExceptionHandler {
                 .body(Map.of("error", "That recurring item is no longer here."));
     }
 
-    /** Readable but not owned: a standing instruction is the owner's to write. */
-    @ExceptionHandler(ListNotManagedException.class)
-    ResponseEntity<Map<String, Object>> notManaged(RuntimeException ex) {
-        return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(Map.of("error", "Only the list's owner can change what recurs on it."));
+    /**
+     * Readable, but written by somebody else on a list the caller does not own
+     * (0016 R143). Replaces the ownership refusal: nothing in these paths calls
+     * {@code requireManaged} any more, so "only the owner can change what
+     * recurs" is a sentence nobody can get the product to print (adr/0049).
+     */
+    @ExceptionHandler(RecurrenceRuleNotWritableException.class)
+    ResponseEntity<Map<String, Object>> notWritable(RuntimeException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error",
+                "Only whoever set this up, or the list's owner, can change it."));
     }
 
     @ExceptionHandler({StaleRecurrenceRuleException.class,
