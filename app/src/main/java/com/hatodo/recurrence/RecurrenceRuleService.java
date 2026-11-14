@@ -33,11 +33,19 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * The standing instructions on a list (R41).
  *
- * <p>Writing one needs ownership, on R20's reading: the shape of a list is the
- * owner's business, and a rule is as much the shape of the list as its fields
- * are. Reading one, and running one by hand, needs only a grant - a member who
- * has just seen a rule wants to watch it work, and the result is an item they
- * could have typed themselves.
+ * <p>Writing one needs only a grant (0016 R141): a rule adds items, and adding
+ * items is what a grant has always meant. R20's reading - that a rule is as
+ * much the shape of a list as its fields are - was wrong in a specific way. A
+ * field constrains every item anybody adds; a rule constrains nobody.
+ *
+ * <p>Editing or deleting one needs to be its author, or to own the list (R143).
+ * Rewriting somebody else's standing arrangement is a different act from
+ * writing your own - see {@link RecurrenceRule#isWritableBy}, which is the one
+ * place that rule is written down.
+ *
+ * <p>Reading one, and running one by hand, still needs only a grant - a member
+ * who has just seen a rule wants to watch it work, and the result is an item
+ * they could have typed themselves.
  */
 @Service
 public class RecurrenceRuleService {
@@ -75,14 +83,17 @@ public class RecurrenceRuleService {
     @Transactional(readOnly = true)
     public List<RecurrenceRuleResponse> list(UUID listId) {
         lists.requireReadable(listId);
-        return rules.findForList(listId).stream().map(RecurrenceRuleResponse::of).toList();
+        UUID me = currentUser.requireUserId();
+        return rules.findForList(listId).stream()
+                .map(rule -> RecurrenceRuleResponse.of(rule, me))
+                .toList();
     }
 
     @Transactional
     public RecurrenceRuleResponse create(UUID listId, SaveRecurrenceRuleRequest request) {
-        // Managed, not merely readable: a standing instruction is the shape of
-        // the list rather than its contents (R20).
-        TodoList list = lists.requireManaged(listId);
+        // Readable, not managed: a rule only adds items, and any member with a
+        // grant can already add one by hand (0016 R141, adr/0049).
+        TodoList list = lists.requireReadable(listId);
         AppUser me = requireCurrentUser();
 
         RecurrenceRule rule = new RecurrenceRule(list, request.description().trim(), me,
@@ -90,24 +101,24 @@ public class RecurrenceRuleService {
         apply(rule, list, request, me);
         RecurrenceRule saved = rules.save(rule);
         claimImages(saved, me.getId());
-        return RecurrenceRuleResponse.of(saved);
+        return RecurrenceRuleResponse.of(saved, me.getId());
     }
 
     @Transactional
     public RecurrenceRuleResponse update(UUID ruleId, SaveRecurrenceRuleRequest request) {
-        RecurrenceRule rule = managed(ruleId);
+        RecurrenceRule rule = writable(ruleId);
         requireFreshView(rule, request.version());
         AppUser me = requireCurrentUser();
 
         rule.setDescription(request.description().trim());
         apply(rule, rule.getList(), request, me);
         claimImages(rule, me.getId());
-        return RecurrenceRuleResponse.of(rule);
+        return RecurrenceRuleResponse.of(rule, me.getId());
     }
 
     @Transactional
     public void delete(UUID ruleId, Long version) {
-        RecurrenceRule rule = managed(ruleId);
+        RecurrenceRule rule = writable(ruleId);
         requireFreshView(rule, version);
         // Its pictures go too. The cascade would drop their rows and leave the
         // bytes, after which nothing knows the bytes are there.
@@ -314,19 +325,26 @@ public class RecurrenceRuleService {
         }
     }
 
-    private RecurrenceRule managed(UUID ruleId) {
+    /**
+     * The rule, if this caller may write it (R143).
+     *
+     * <p>Readability is asked <em>first</em>, because the two refusals are not
+     * interchangeable: a rule on a list the caller holds no grant on must be as
+     * invisible as the list (R19), while one they can see but did not write is
+     * a 403. The previous shape called the throwing ownership check and caught
+     * it to decide which - that cannot express this rule, since ownership is no
+     * longer the question being asked. {@code isReadable} rather than
+     * {@code requireReadable} because catching the throwing one leaves the
+     * transaction marked rollback-only, which is why it exists.
+     */
+    private RecurrenceRule writable(UUID ruleId) {
         RecurrenceRule rule = rules.findById(ruleId)
                 .orElseThrow(() -> new RecurrenceRuleNotFoundException(ruleId));
-        try {
-            lists.requireManaged(rule.getListId());
-        } catch (RuntimeException ex) {
-            // A rule on a list the caller cannot see must be as invisible as
-            // the list - and one they can see but do not own is a 403 from
-            // requireManaged, which this deliberately does not swallow.
-            if (!lists.isReadable(rule.getListId())) {
-                throw new RecurrenceRuleNotFoundException(ruleId);
-            }
-            throw ex;
+        if (!lists.isReadable(rule.getListId())) {
+            throw new RecurrenceRuleNotFoundException(ruleId);
+        }
+        if (!rule.isWritableBy(currentUser.requireUserId())) {
+            throw new RecurrenceRuleNotWritableException(ruleId);
         }
         return rule;
     }

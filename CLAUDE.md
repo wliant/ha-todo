@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status
 
 **Everything specified so far is built, as of 2026-11-11.** Build, local stack, deploy scripts and all
-three test harnesses are real and passing: 255 backend unit tests, 249 integration tests, 338 frontend
+three test harnesses are real and passing: 255 backend unit tests, 253 integration tests, 340 frontend
 tests, 98 end-to-end (13 skip without `E2E_ADMIN_PASSWORD`).
 
 Implemented: **accounts and administration (R8-R12)** — username identity, optional per-user passwords, a
@@ -406,6 +406,34 @@ while the chip showed no filter at all.
 agenda's chip. The menu's options come from `useLists({})`, **never** `useSidebar()`, whose `lists`
 array is capped at `sidebar_list_count` and partitioned against the pinned section.
 
+**R141-R147 are implemented.** `docs/requirements/0016` and `docs/design/0016` move **one** permission,
+with `docs/adr/0049` recording the decisions: **any member with access to a list can add a standing
+instruction to it**, and editing or deleting one needs to be its **author or the list's owner**. 0005 R41
+needed ownership on 0004 R20's reading - a rule is as much the shape of a list as its fields - and that
+reading was wrong in a specific way: a field constrains every item anybody adds, a rule constrains
+nobody and only adds items, which is the one thing a grant has always meant. So the product allowed the
+larger act and refused the smaller one. No migration: `recurrence_rule.created_by` has existed since
+`V910` and was simply never read.
+
+**Three things in there are easy to break.** The two-clause predicate is written **once**, as
+`RecurrenceRule.isWritableBy(userId)`, because two callers need the same answer - the service's write
+path, which refuses, and `RecurrenceRuleResponse`, which publishes it as `editable` for *this* caller.
+A second copy is how a member gets an edit button that 403s, or - worse, because nothing fails anywhere -
+no button on a rule they are entitled to edit. The client therefore renders the flag and **never**
+recomputes it from `list.owned` plus `useCurrentUser()`; `useCurrentUser` is read in `RecurrenceSection`
+only to decide whose name is worth printing. And the private helper `managed(ruleId)` became
+`writable(ruleId)` and asks **`isReadable` first**: the two refusals are not interchangeable, since a
+rule on a list the caller holds no grant on must stay a 404 (R19) while one they can see but did not
+write is a 403. The old shape called the throwing ownership check and caught it to decide which, which
+cannot express this rule at all - ownership is no longer the question. `ListNotManagedException`'s
+handler in `RecurrenceExceptionHandler` was **replaced** rather than left beside the new one: nothing in
+these paths calls `requireManaged` any more, so "Only the list's owner can change what recurs on it" is
+a sentence nobody could get the product to print.
+
+Everything else about a list stays the owner's (R147): its fields, its costs, its grants, its name, its
+deletion. The author is on screen for the first time (R142) as a `by <name>` chip, omitted when the
+author is the signed-in member - "by Ana" on four of Ana's own rules teaches nothing.
+
 Keep this file true: when a decision here turns out wrong, update it in the same change.
 
 ## What this product is
@@ -525,6 +553,11 @@ owns the list or holds a `list_access` row) and `managed` (the caller owns it). 
 list they were not granted. No access answers **404**, because an ungranted list must not be discoverable;
 access without ownership answers **403**. Filter list queries in SQL by joining `list_access`, never by
 fetching and filtering in Java. See `docs/adr/0010-per-list-access-instead-of-household-scoping.md`.
+
+**Recurrence rules are the one thing on a list that is neither of those two predicates.** Since 0016
+they are written at the `readable` level and rewritten by their author or the list's owner, which is a
+third rule and lives in exactly one place: `RecurrenceRule.isWritableBy` (`adr/0049`). Do not reach for
+`requireManaged` there.
 
 **Item completion and assignment are the contended writes, and this is how they work.** Both `TodoList`
 and `TodoItem` carry `@Version`, and every mutating request carries the version its view was drawn from,

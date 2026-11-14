@@ -300,16 +300,123 @@ class RecurrenceApiIntegrationTest extends ApiIntegrationTest {
     }
 
     @Test
-    void onlyTheOwnerWritesAListsStandingInstructions() {
-        // R20's reading: a rule is as much the shape of the list as its fields.
+    void anyMemberWithAccessWritesAStandingInstruction() {
+        // 0016 R141, replacing the opposite assertion: a rule only adds items,
+        // and adding items is what a grant has always meant. R20's reading -
+        // that a rule is as much the shape of a list as its fields - was wrong
+        // in a specific way, since a field constrains every item anybody adds
+        // and a rule constrains nobody (adr/0049).
         Member ana = givenMember("rule-owner");
         Member ben = givenMember("rule-peer");
         String listId = newList(ana, ben.id().toString());
 
-        ResponseEntity<Map> refused = addRule(ben, listId,
-                "{\"description\":\"Not yours\",\"frequency\":\"DAILY\"}");
+        ResponseEntity<Map> created = addRule(ben, listId,
+                "{\"description\":\"Ben's instruction\",\"frequency\":\"DAILY\"}");
 
-        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        // R142: the author is published, because a list can now hold rules by
+        // four different members and "who decided this" is a real question.
+        assertThat(created.getBody()).extracting("createdBy")
+                .extracting("id").isEqualTo(ben.id().toString());
+        // And it works: a rule written by a member is a rule like any other.
+        assertThat(runFor(ana, listId)).containsEntry("generated", 1);
+    }
+
+    @Test
+    void aMemberEditsAndDeletesTheirOwnRuleOnSomebodyElsesList() {
+        // R143's first half. The author is recorded, has been since V910, and
+        // is now what decides this.
+        Member ana = givenMember("rule-mine");
+        Member ben = givenMember("rule-author");
+        String listId = newList(ana, ben.id().toString());
+        String ruleId = (String) addRule(ben, listId,
+                "{\"description\":\"Ben's own\",\"frequency\":\"DAILY\"}").getBody().get("id");
+
+        ResponseEntity<Map> edited = rest.exchange("/api/recurrence/" + ruleId, HttpMethod.PATCH,
+                new HttpEntity<>("{\"description\":\"Ben's own, renamed\","
+                        + "\"frequency\":\"DAILY\",\"version\":0}",
+                        headersFor(ben.session())), Map.class);
+        ResponseEntity<String> deleted = rest.exchange(
+                "/api/recurrence/" + ruleId + "?version=1", HttpMethod.DELETE,
+                new HttpEntity<>(headersFor(ben.session())), String.class);
+
+        assertThat(edited.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(edited.getBody()).containsEntry("description", "Ben's own, renamed");
+        assertThat(edited.getBody()).containsEntry("editable", true);
+        assertThat(deleted.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+    }
+
+    @Test
+    void aMemberCannotRewriteSomebodyElsesRuleOnAListTheyDoNotOwn() {
+        // R143's point: writing your own standing arrangement and rewriting
+        // somebody else's are different acts. Readable, so 403 and not 404.
+        Member ana = givenMember("rule-theirs-owner");
+        Member ben = givenMember("rule-theirs-peer");
+        String listId = newList(ana, ben.id().toString());
+        String ruleId = (String) addRule(ana, listId,
+                "{\"description\":\"Ana's own\",\"frequency\":\"DAILY\"}").getBody().get("id");
+
+        ResponseEntity<Map> edit = rest.exchange("/api/recurrence/" + ruleId, HttpMethod.PATCH,
+                new HttpEntity<>("{\"description\":\"Hijacked\",\"frequency\":\"DAILY\","
+                        + "\"version\":0}", headersFor(ben.session())), Map.class);
+        ResponseEntity<Map> delete = rest.exchange("/api/recurrence/" + ruleId + "?version=0",
+                HttpMethod.DELETE, new HttpEntity<>(headersFor(ben.session())), Map.class);
+
+        assertThat(edit.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(delete.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        // And the listing says so, which is what the client's control follows.
+        assertThat(rulesOn(ben, listId)).singleElement()
+                .extracting("editable").isEqualTo(false);
+        assertThat(rulesOn(ana, listId)).singleElement()
+                .extracting("editable").isEqualTo(true);
+    }
+
+    @Test
+    void theOwnerRewritesAndRemovesAMembersRule() {
+        // R143's other half, and the half easy to leave out: the owner keeps
+        // final authority over everything on their list, including the rules of
+        // a member whose access has since gone.
+        Member ana = givenMember("rule-owner-wins");
+        Member ben = givenMember("rule-guest");
+        String listId = newList(ana, ben.id().toString());
+        String ruleId = (String) addRule(ben, listId,
+                "{\"description\":\"Ben's\",\"frequency\":\"DAILY\"}").getBody().get("id");
+
+        ResponseEntity<Map> edited = rest.exchange("/api/recurrence/" + ruleId, HttpMethod.PATCH,
+                new HttpEntity<>("{\"description\":\"Owner's wording\","
+                        + "\"frequency\":\"DAILY\",\"version\":0}",
+                        headersFor(ana.session())), Map.class);
+        ResponseEntity<String> deleted = rest.exchange(
+                "/api/recurrence/" + ruleId + "?version=1", HttpMethod.DELETE,
+                new HttpEntity<>(headersFor(ana.session())), String.class);
+
+        assertThat(edited.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(edited.getBody()).containsEntry("editable", true);
+        assertThat(deleted.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+    }
+
+    @Test
+    void aStrangerGetsTheSame404ForARuleTheyCannotSeeAsForOneThatIsGone() {
+        // The ordering inside `writable`: readability is asked first, so a list
+        // the caller holds no grant on stays undiscoverable through the rules
+        // hanging off it (R19). A 403 here would be a yes/no oracle on
+        // somebody else's private list.
+        Member ana = givenMember("rule-hidden");
+        Member stranger = givenMember("rule-outsider");
+        String listId = newList(ana);
+        String ruleId = (String) addRule(ana, listId,
+                "{\"description\":\"Private\",\"frequency\":\"DAILY\"}").getBody().get("id");
+
+        ResponseEntity<Map> edit = rest.exchange("/api/recurrence/" + ruleId, HttpMethod.PATCH,
+                new HttpEntity<>("{\"description\":\"Nope\",\"frequency\":\"DAILY\","
+                        + "\"version\":0}", headersFor(stranger.session())), Map.class);
+        ResponseEntity<Map> gone = rest.exchange("/api/recurrence/" + UUID.randomUUID(),
+                HttpMethod.PATCH,
+                new HttpEntity<>("{\"description\":\"Nope\",\"frequency\":\"DAILY\","
+                        + "\"version\":0}", headersFor(stranger.session())), Map.class);
+
+        assertThat(edit.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(gone.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
 
     @Test

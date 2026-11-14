@@ -281,6 +281,24 @@ public class RecurrenceRule {
         return createdBy;
     }
 
+    /**
+     * Whoever wrote it, or whoever owns the list it is on (0016 R143).
+     *
+     * <p>Here rather than in the service because two callers need the same
+     * answer and must not each spell it out: the write path, which refuses, and
+     * {@link RecurrenceRuleResponse}, which tells the client whether to draw
+     * the edit control. Two copies of this is how a member gets a button that
+     * 403s - or, worse because nothing fails, no button on a rule they are
+     * entitled to edit (adr/0049).
+     *
+     * <p>The null branch is real rather than defensive: {@code created_by} is
+     * {@code ON DELETE SET NULL}, so an authorless rule is the owner's alone.
+     */
+    public boolean isWritableBy(UUID userId) {
+        return list.isOwnedBy(userId)
+                || (createdBy != null && createdBy.getId().equals(userId));
+    }
+
     public short getPosition() {
         return position;
     }

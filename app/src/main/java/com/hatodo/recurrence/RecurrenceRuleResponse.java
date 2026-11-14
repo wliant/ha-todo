@@ -13,6 +13,12 @@ import java.util.UUID;
  * @param lastError why the last run produced nothing, so the tab can say so
  *                  rather than leaving a rule silently broken - which is the
  *                  whole risk of something that runs unattended (adr/0025)
+ * @param createdBy whoever wrote it, null once their account is gone. On screen
+ *                  since 0016 R142: a list can now hold rules by four different
+ *                  members, and "who decided this" is a real question
+ * @param editable  whether <em>this</em> caller may write it (R144), so the
+ *                  client renders a flag rather than keeping a second copy of
+ *                  {@link RecurrenceRule#isWritableBy} in another language
  */
 public record RecurrenceRuleResponse(
         UUID id, UUID listId, String description, String detailHtml,
@@ -21,9 +27,14 @@ public record RecurrenceRuleResponse(
         Integer dayOfMonth, LocalTime dueTime, int leadDays,
         LocalDate startsOn, LocalDate endsOn, boolean paused,
         LocalDate lastMaterialisedOn, Instant lastRunAt, String lastError,
-        List<ItemCostValueResponse> costValues, long version) {
+        List<ItemCostValueResponse> costValues, ItemMemberResponse createdBy,
+        boolean editable, long version) {
 
-    public static RecurrenceRuleResponse of(RecurrenceRule rule) {
+    /**
+     * @param callerId whose view this is. Required rather than defaulted, so
+     *                 every call site had to be revisited when it was added.
+     */
+    public static RecurrenceRuleResponse of(RecurrenceRule rule, UUID callerId) {
         return new RecurrenceRuleResponse(rule.getId(), rule.getListId(),
                 rule.getDescription(), rule.getDetailHtml(),
                 ItemMemberResponse.of(rule.getAssignee()), isSelfAssigned(rule),
@@ -39,6 +50,8 @@ public record RecurrenceRuleResponse(
                         value.getField().getId(),
                         value.getChoice() == null ? null : value.getChoice().getId(),
                         value.getAmount())).toList(),
+                ItemMemberResponse.of(rule.getCreatedBy()),
+                rule.isWritableBy(callerId),
                 rule.getVersion());
     }
 
