@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status
 
 **Everything specified so far is built, as of 2026-11-11.** Build, local stack, deploy scripts and all
-three test harnesses are real and passing: 255 backend unit tests, 253 integration tests, 340 frontend
+three test harnesses are real and passing: 255 backend unit tests, 253 integration tests, 350 frontend
 tests, 98 end-to-end (13 skip without `E2E_ADMIN_PASSWORD`).
 
 Implemented: **accounts and administration (R8-R12)** — username identity, optional per-user passwords, a
@@ -433,6 +433,34 @@ a sentence nobody could get the product to print.
 Everything else about a list stays the owner's (R147): its fields, its costs, its grants, its name, its
 deletion. The author is on screen for the first time (R142) as a `by <name>` chip, omitted when the
 author is the signed-in member - "by Ana" on four of Ana's own rules teaches nothing.
+
+**R148-R152 are implemented.** `docs/requirements/0017` and `docs/design/0017` narrow 0005 R39, with
+`docs/adr/0050` recording the decisions. **The collapsed add form now shows the assignee and the due
+date whenever the list declares them**, required or not. R39's reasoning stands - a form asking six
+questions for "milk" is why somebody reaches for paper - but **`required` was a proxy for the wrong
+property**. What is worth hiding is a field *expensive to answer*; these two cost a tap (0012 R94 made
+the date one), and **every planning surface in the product reads them**, so the form's most ordinary
+path was producing items the agenda, the overdue strip, the Mine toggle and the week and month grids
+cannot see. Frontend only: `SaveItem` already carried both.
+
+Collapsed, the due date is **the chips alone** - `DueAtField` takes a `compact` prop and returns after
+the chip row; the picker, the time box and the steppers are what the disclosure is for. The assignee is
+**a row of chips in both modes** (`items/AssigneeField`), one per member plus **Nobody** when the field
+is optional, carrying `aria-pressed` because a row of toggles whose state lives only in a fill colour is
+unreadable to anything not looking at it. `MemberAvatar` rides along as decoration and stays
+`aria-hidden`: a member with no picture has their initials drawn *inside* the chip, so Ana's
+`textContent` reads "AAna" while her accessible name stays "Ana" - assert on roles and names, never on a
+chip's text.
+
+**Two things in there are easy to break.** `ItemForm`'s `hidden` count decides whether "More fields"
+appears, and it used to equal "declared and not required" - which **stopped being the same question**.
+The assignee must *not* count (a toggle that reveals nothing) and the due date must count **whenever it
+is declared, required or not** (its picker is behind the toggle either way, and R40 means every list
+declares it). Both failures are silent. And `compact` is a **render decision about one control**, not a
+second control: the emit path, `instantOf` and the 23:59 default are shared, so a date set from the
+collapsed chips is the same household-zone instant as one set from the picker (`adr/0036`). The
+recurrence form's assignee is deliberately left a dropdown - a standing instruction is written once and
+read for months.
 
 Keep this file true: when a decision here turns out wrong, update it in the same change.
 

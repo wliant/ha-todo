@@ -61,8 +61,9 @@ def add_item(page: Page, description: str) -> None:
 def open_add_form(page: Page) -> None:
     """Opens the add form with every field the list declares showing.
 
-    The form starts collapsed and shows only what the list insists on (R39), so
-    anything optional - a detail, an assignee, a cost - is behind this toggle.
+    The form starts collapsed. Since 0017 R148 that means what the list insists
+    on *plus* the assignee chips and the date's Today/Tomorrow chips; anything
+    else - a detail, a cost, the date picker itself - is behind this toggle.
     """
     page.get_by_role("button", name="Add item").click()
     more = page.get_by_role("button", name="More fields")
@@ -157,8 +158,10 @@ def test_points_go_to_whoever_completed_it_not_the_assignee(
     # Assigned to Ben...
     open_add_form(page)
     page.get_by_role("textbox", name="Description").fill("Sweep up")
-    page.get_by_role("combobox", name="Assignee").click()
-    page.get_by_role("option", name=passwordless_member.display_name).click()
+    # One tap on a chip since 0017 R150, where this was a dropdown.
+    page.get_by_role(
+        "button", name=passwordless_member.display_name, exact=True
+    ).click()
     page.get_by_role("combobox", name="Time").click()
     page.get_by_role("option", name="30 min", exact=False).click()
     page.get_by_role("button", name="Save").click()

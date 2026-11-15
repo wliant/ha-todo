@@ -37,10 +37,19 @@ export function DueAtField({
   value,
   required,
   onChange,
+  compact = false,
 }: {
   value: string | null | undefined
   required: boolean
   onChange: (value: string | null) => void
+  /**
+   * The chips and nothing else (0017 R149), which is what the add form shows
+   * while collapsed. A render decision about this control rather than a second
+   * control: the emit path, `instantOf` and `DEFAULT_TIME` are shared, so a
+   * date set compactly is the same end-of-day instant in the household's zone
+   * as one set from the picker (adr/0050).
+   */
+  compact?: boolean
 }) {
   const zone = useHouseholdZone()
 
@@ -108,6 +117,13 @@ export function DueAtField({
           variant={date === tomorrow ? 'filled' : 'outlined'}
           onClick={() => shortcut(1)}
         />
+        {/* Compact mode must never hold a date it does not show. No path
+            reaches this today - the add form cannot be collapsed once it has
+            been expanded - so it is one readout chip rather than a mechanism,
+            and carries no onClick because a tap here has nothing to do. */}
+        {compact && date && date !== today && date !== tomorrow && (
+          <Chip label={date} size="small" color="primary" variant="filled" />
+        )}
         {/* R97. Absent when the list insists on a date, rather than present and
             producing an unsubmittable form. */}
         {!required && date && (
@@ -115,52 +131,57 @@ export function DueAtField({
         )}
       </Stack>
 
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-        {/* Disabled with no date set: a stepper with nothing to step would have
-            to invent a starting point, and nobody would guess which. */}
-        <IconButton
-          aria-label="A day earlier"
-          size="small"
-          disabled={!date}
-          onClick={() => step(-1)}
-        >
-          <RemoveRounded fontSize="small" />
-        </IconButton>
+      {/* The picker, the steppers and the time box are what "More fields" is
+          for (R149). Not rendered rather than hidden: a control the member
+          cannot see must not be one they can tab into. */}
+      {!compact && (
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+          {/* Disabled with no date set: a stepper with nothing to step would have
+              to invent a starting point, and nobody would guess which. */}
+          <IconButton
+            aria-label="A day earlier"
+            size="small"
+            disabled={!date}
+            onClick={() => step(-1)}
+          >
+            <RemoveRounded fontSize="small" />
+          </IconButton>
 
-        <TextField
-          label="Date"
-          type="date"
-          size="small"
-          required={required}
-          value={date}
-          onChange={(event) => emit(event.target.value, time)}
-          slotProps={{ inputLabel: { shrink: true } }}
-          sx={{ flex: 1, minWidth: '8.5rem' }}
-        />
+          <TextField
+            label="Date"
+            type="date"
+            size="small"
+            required={required}
+            value={date}
+            onChange={(event) => emit(event.target.value, time)}
+            slotProps={{ inputLabel: { shrink: true } }}
+            sx={{ flex: 1, minWidth: '8.5rem' }}
+          />
 
-        <IconButton aria-label="A day later" size="small" disabled={!date} onClick={() => step(1)}>
-          <AddRounded fontSize="small" />
-        </IconButton>
+          <IconButton aria-label="A day later" size="small" disabled={!date} onClick={() => step(1)}>
+            <AddRounded fontSize="small" />
+          </IconButton>
 
-        <TextField
-          label="Time"
-          type="time"
-          size="small"
-          value={time}
-          onChange={(event) => {
-            const next = event.target.value
-            if (!next) {
-              return
-            }
-            setPendingTime(next)
-            if (date) {
-              emit(date, next)
-            }
-          }}
-          slotProps={{ inputLabel: { shrink: true } }}
-          sx={{ width: '7.5rem' }}
-        />
-      </Stack>
+          <TextField
+            label="Time"
+            type="time"
+            size="small"
+            value={time}
+            onChange={(event) => {
+              const next = event.target.value
+              if (!next) {
+                return
+              }
+              setPendingTime(next)
+              if (date) {
+                emit(date, next)
+              }
+            }}
+            slotProps={{ inputLabel: { shrink: true } }}
+            sx={{ width: '7.5rem' }}
+          />
+        </Stack>
+      )}
     </Box>
   )
 }

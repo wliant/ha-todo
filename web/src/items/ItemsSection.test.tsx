@@ -277,38 +277,54 @@ describe('ItemsSection', () => {
     renderItems([description, field({ id: 'id-assignee', kind: 'ASSIGNEE', required: false })])
 
     await userEvent.click(await screen.findByRole('button', { name: 'Add item' }))
-    await userEvent.click(screen.getByRole('button', { name: 'More fields' }))
 
     expect(screen.getByRole('textbox', { name: 'Description' })).toBeVisible()
-    expect(screen.getByRole('combobox', { name: 'Assignee' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Ana' })).toBeVisible()
     // Never declared, so never rendered - not merely hidden behind the toggle.
-    // Keyed off the due control's own date input rather than the "Due" legend:
-    // a legend labels no form control, so a label query against it reports
+    // Keyed off the due control's own chips rather than the "Due" legend: a
+    // legend labels no form control, so a label query against it reports
     // nothing whether or not the control is there.
+    expect(screen.queryByRole('button', { name: 'Today' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/^Date/)).not.toBeInTheDocument()
   })
 
-  it('starts the add form with only what the list insists on', async () => {
-    // R39: most items are a line of text, and a form asking six questions for
-    // "milk" is why somebody reaches for paper instead.
+  it('asks up front for the two answers that cost a tap', async () => {
+    // 0017 R148, R149, replacing "starts the add form with only what the list
+    // insists on". R39's reasoning stands for the rest - a form asking six
+    // questions for "milk" is why somebody reaches for paper - but `required`
+    // was a proxy for the wrong property: these two cost a tap, and an item
+    // without them is invisible to every planning surface (adr/0050).
     vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([])
     renderItems([
       description,
       field({ id: 'id-assignee', kind: 'ASSIGNEE', required: false }),
-      field({ id: 'id-due', kind: 'DUE_AT', required: true }),
+      field({ id: 'id-due', kind: 'DUE_AT', required: false }),
+      field({
+        id: 'id-cost',
+        kind: 'COST',
+        label: 'Effort',
+        required: false,
+        costMode: 'FIXED',
+        choices: [{ id: 'id-light', label: 'Light', points: 1 }],
+      }),
     ])
 
     await userEvent.click(await screen.findByRole('button', { name: 'Add item' }))
 
     expect(screen.getByRole('textbox', { name: 'Description' })).toBeVisible()
-    // Required, so it is asked for straight away.
-    expect(screen.getByLabelText(/^Date/)).toBeVisible()
-    // Optional, so it waits behind the toggle.
-    expect(screen.queryByRole('combobox', { name: 'Assignee' })).not.toBeInTheDocument()
+    // Both optional, both on screen anyway.
+    expect(screen.getByRole('button', { name: 'Ben' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Tomorrow' })).toBeVisible()
+    // The date's own controls are not: collapsed, it is the chips and nothing
+    // else, which is what the disclosure still has to reveal (R151).
+    expect(screen.queryByLabelText(/^Date/)).not.toBeInTheDocument()
+    // A cost is a judgement rather than a tap, so it still waits.
+    expect(screen.queryByRole('combobox', { name: /Effort/ })).not.toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'More fields' }))
 
-    expect(screen.getByRole('combobox', { name: 'Assignee' })).toBeVisible()
+    expect(screen.getByLabelText(/^Date/)).toBeVisible()
+    expect(screen.getByRole('combobox', { name: /Effort/ })).toBeVisible()
   })
 
   it('opens the whole form when editing, because the values are already there', async () => {
@@ -317,7 +333,7 @@ describe('ItemsSection', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Edit Buy milk' }))
 
-    expect(screen.getByRole('combobox', { name: 'Assignee' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Ana' })).toBeVisible()
     expect(screen.queryByRole('button', { name: 'More fields' })).not.toBeInTheDocument()
   })
 
@@ -327,11 +343,32 @@ describe('ItemsSection', () => {
     renderItems([description, field({ id: 'id-assignee', kind: 'ASSIGNEE', required: false })])
 
     await userEvent.click(await screen.findByRole('button', { name: 'Add item' }))
-    await userEvent.click(screen.getByRole('button', { name: 'More fields' }))
-    await userEvent.click(screen.getByRole('combobox', { name: 'Assignee' }))
 
-    expect(await screen.findByRole('option', { name: 'Ana' })).toBeVisible()
-    expect(screen.getByRole('option', { name: 'Ben' })).toBeVisible()
+    // One tap, no popup to open first (R150).
+    expect(await screen.findByRole('button', { name: 'Ana' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Ben' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Nobody' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  })
+
+  it('assigns in one tap, from the collapsed form', async () => {
+    const create = vi.spyOn(itemsApi, 'createItem').mockResolvedValue(item())
+    vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([])
+    renderItems([description, field({ id: 'id-assignee', kind: 'ASSIGNEE', required: false })])
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Add item' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Description' }), 'Bins out')
+    await userEvent.click(screen.getByRole('button', { name: 'Ben' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith(
+        'id-list',
+        expect.objectContaining({ description: 'Bins out', assigneeId: 'id-ben' }),
+      ),
+    )
   })
 
   it('adds an item', async () => {

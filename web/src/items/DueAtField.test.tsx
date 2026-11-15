@@ -15,12 +15,17 @@ import { theme } from '../theme/theme'
  */
 const HOUSEHOLD = 'Asia/Singapore'
 
-function renderField(value: string | null, required = false) {
+function renderField(value: string | null, required = false, compact = false) {
   const onChange = vi.fn()
   render(
     <QueryClientProvider client={new QueryClient()}>
       <ThemeProvider theme={theme} defaultMode="light">
-        <DueAtField value={value} required={required} onChange={onChange} />
+        <DueAtField
+          value={value}
+          required={required}
+          onChange={onChange}
+          compact={compact}
+        />
       </ThemeProvider>
     </QueryClientProvider>,
   )
@@ -128,5 +133,37 @@ describe('DueAtField', () => {
     renderField('2026-11-10T01:00:00.000Z', true)
 
     expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument()
+  })
+
+  it('is the chips and nothing else when compact', () => {
+    // 0017 R149: the picker, the steppers and the time box are what "More
+    // fields" is for. Not rendered rather than hidden, so nothing the member
+    // cannot see can be tabbed into.
+    renderField(null, false, true)
+
+    expect(screen.getByRole('button', { name: 'Today' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Tomorrow' })).toBeVisible()
+    expect(screen.queryByLabelText(/^Date/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/^Time/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'A day later' })).not.toBeInTheDocument()
+  })
+
+  it('emits the same end-of-day instant when compact', async () => {
+    // Not a second implementation: the same emit path, so the household's zone
+    // and the 23:59 default are shared rather than restated (adr/0050).
+    const onChange = renderField(null, false, true)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Today' }))
+
+    expect(onChange).toHaveBeenCalledWith('2026-11-10T15:59:00.000Z')
+  })
+
+  it('shows a compact date that is neither today nor tomorrow', () => {
+    // The collapsed form must never hold a value it does not show. With no
+    // picker on screen, an unselected pair of chips would be the only thing a
+    // member saw of next Thursday.
+    renderField('2026-11-19T15:59:00.000Z', false, true)
+
+    expect(screen.getByText('2026-11-19')).toBeVisible()
   })
 })
