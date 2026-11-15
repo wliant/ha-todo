@@ -8,6 +8,7 @@ import type { ListField, ListMember } from '../api/lists'
 import { Suspense, lazy } from 'react'
 import Skeleton from '@mui/material/Skeleton'
 import type { ItemCostValue, SaveItem } from '../api/items'
+import { AssigneeField } from './AssigneeField'
 import { DueAtField } from './DueAtField'
 
 /**
@@ -29,11 +30,18 @@ const DetailEditor = lazy(() =>
  * the list never declared is not merely hidden - it is never rendered, and the
  * server drops it if sent anyway.
  *
- * <p>Collapsed, it shows only the fields the list marks required (R39): most
- * items on most lists are a line of text, and a form asking six questions for
- * "milk" is why somebody reaches for paper instead. Keyed off `required`
- * rather than a fixed list of kinds, because that is what stops the form
- * becoming unsubmittable with a hidden required field left empty.
+ * <p>Collapsed, it shows what the list marks required (R39) **plus the
+ * assignee and the due date whenever the list declares them** (0017 R148).
+ * R39's reasoning stands - a form asking six questions for "milk" is why
+ * somebody reaches for paper - but `required` was a proxy for the wrong
+ * property. What is worth hiding is a field expensive to answer: a detail
+ * editor, a cost to think about. These two cost a tap, and every planning
+ * surface in the product reads them, so an item added without them is
+ * invisible to the agenda (adr/0050).
+ *
+ * <p>Still keyed off `required` for everything else, because that is what
+ * stops the form becoming unsubmittable with a hidden required field left
+ * empty.
  */
 export function ItemForm({
   fields,
@@ -58,9 +66,23 @@ export function ItemForm({
   /** Shown while collapsed only if the list insists on an answer. */
   const asked = (field: ListField | undefined) =>
     Boolean(field) && (expanded || field!.required)
-  const hidden = fields.filter(
-    (field) => field.kind !== 'DESCRIPTION' && !field.required,
-  ).length
+
+  /**
+   * Whether the disclosure has anything left to reveal (R151).
+   *
+   * <p>This used to be "declared and not required", which happened to be the
+   * same question. It is not any more, and the failure is silent in both
+   * directions: the assignee is shown collapsed, so counting it offers a
+   * toggle that reveals nothing, while the due date is shown as *chips* only,
+   * so its picker, time box and steppers are behind the toggle even when the
+   * list insists on a date.
+   */
+  const hidden =
+    fields.filter(
+      (field) =>
+        field.kind !== 'DESCRIPTION' && field.kind !== 'ASSIGNEE' &&
+        field.kind !== 'DUE_AT' && !field.required,
+    ).length + (dueAt ? 1 : 0)
 
   function setCost(fieldId: string, next: Partial<ItemCostValue>) {
     const others = value.costValues.filter((cost) => cost.fieldId !== fieldId)
@@ -99,30 +121,24 @@ export function ItemForm({
         </Suspense>
       )}
 
-      {asked(assignee) && assignee && (
-        <TextField
-          select
-          label="Assignee"
+      {/* Declared is enough, required or not (R148): both of these cost one
+          tap, and both are what the agenda, the overdue strip and the Mine
+          toggle read. */}
+      {assignee && (
+        <AssigneeField
+          members={members}
           required={assignee.required}
-          value={value.assigneeId ?? ''}
-          onChange={(event) => onChange({ ...value, assigneeId: event.target.value || null })}
-        >
-          {/* Only the people who can see this list (R24). The server checks
-              it too - this is the convenience, not the control. */}
-          {!assignee.required && <MenuItem value="">Nobody</MenuItem>}
-          {members.map((member) => (
-            <MenuItem key={member.id} value={member.id}>
-              {member.displayName}
-            </MenuItem>
-          ))}
-        </TextField>
+          value={value.assigneeId}
+          onChange={(assigneeId) => onChange({ ...value, assigneeId })}
+        />
       )}
 
-      {asked(dueAt) && dueAt && (
+      {dueAt && (
         <DueAtField
           value={value.dueAt}
           required={dueAt.required}
           onChange={(dueAt) => onChange({ ...value, dueAt })}
+          compact={!expanded}
         />
       )}
 

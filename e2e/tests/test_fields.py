@@ -158,6 +158,54 @@ def test_a_brand_new_list_already_offers_a_due_date(
     expect(due_date).to_be_disabled()
 
 @pytest.mark.fields
+def test_the_add_form_asks_up_front_for_the_two_answers_that_cost_a_tap(
+    page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
+) -> None:
+    """
+    0017 R148-R151. Both fields are optional here, so R39 alone would have put
+    both behind "More fields" - and an item with neither is invisible to the
+    agenda, the overdue strip and the Mine toggle.
+    """
+    name = test_data.name("UpFront")
+    cleanup_lists(name)
+    ui_sign_in(page, base_url, demo_member)
+    list_id = create_list(page, name)
+
+    page.goto(f"{base_url}/lists/{list_id}/settings")
+    page.get_by_role("switch", name="Assignee").click()
+    page.get_by_role("button", name="Save changes").click()
+    expect(page.get_by_role("heading", name=name)).to_be_visible()
+
+    # Collapsed, deliberately: no "More fields" click anywhere in this test.
+    page.get_by_role("button", name="Add item").click()
+    page.get_by_role("textbox", name="Description").fill("Bins out")
+
+    # R150: chips, not a dropdown. Unassigned is a visible selection.
+    nobody = page.get_by_role("button", name="Nobody", exact=True)
+    expect(nobody).to_have_attribute("aria-pressed", "true")
+    # R149: the date is the chips alone - its picker is still behind the
+    # disclosure, which is why the disclosure is still offered (R151).
+    expect(page.get_by_label(re.compile(r"^Date"))).to_have_count(0)
+    expect(page.get_by_role("button", name="More fields")).to_be_visible()
+
+    page.get_by_role("button", name="Today", exact=True).click()
+    assignee = page.get_by_role("button", name=demo_member.display_name, exact=True)
+    assignee.click()
+    expect(assignee).to_have_attribute("aria-pressed", "true")
+    expect(nobody).to_have_attribute("aria-pressed", "false")
+
+    page.get_by_role("button", name="Save").click()
+
+    # Both answers landed on the item, from a form nobody expanded.
+    expect(page.get_by_text("Bins out")).to_be_visible()
+    expect(page.get_by_text(re.compile(r"^Due\b.*(11:59|23:59)"))).to_be_visible()
+    # Assigning yourself is claiming, which is the label the row carries (R47).
+    expect(
+        page.get_by_label(f"{demo_member.display_name} claimed this")
+    ).to_be_visible()
+
+
+@pytest.mark.fields
 def test_a_due_date_is_two_taps_and_defaults_to_the_end_of_the_day(
     page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
 ) -> None:
