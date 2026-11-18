@@ -13,6 +13,7 @@ import Typography from '@mui/material/Typography'
 import AddRounded from '@mui/icons-material/AddRounded'
 import ChecklistRounded from '@mui/icons-material/ChecklistRounded'
 import CollectionsBookmarkRounded from '@mui/icons-material/CollectionsBookmarkRounded'
+import InsightsRounded from '@mui/icons-material/InsightsRounded'
 import ExpandLessRounded from '@mui/icons-material/ExpandLessRounded'
 import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded'
 import TodayRounded from '@mui/icons-material/TodayRounded'
@@ -24,9 +25,11 @@ import { NavLink, useLocation } from 'react-router-dom'
 import type { CurrentUser } from '../api/auth'
 import type { ListIcon as ListIconToken, ListSummary } from '../api/lists'
 import type { CollectionSummary } from '../api/dataLists'
+import type { TrackerSummary } from '../api/trackers'
 import { ListIcon } from '../lists/listIcons'
 import { useSidebar } from '../lists/queries'
 import { useCollectionSidebar } from '../data/queries'
+import { useTrackerSidebar } from '../trackers/queries'
 import { MemberAvatar } from './MemberAvatar'
 
 /**
@@ -63,15 +66,17 @@ export function SideNav({
   const { pathname } = useLocation()
   const listsQuery = useSidebar()
   const collectionsQuery = useCollectionSidebar()
+  const trackersQuery = useTrackerSidebar()
   const sidebar = listsQuery.data
   const collections = collectionsQuery.data
+  const trackers = trackersQuery.data
 
   // Both open by default: these groups replace the Pinned and Recent sections
   // wholesale, so a sidebar that starts collapsed offers strictly less than the
   // one it replaced. Not persisted - SideNav mounts once inside AppShell and
   // the mobile drawer is keepMounted, so a collapse survives every navigation
   // within the session, which is the whole span anybody would notice.
-  const [open, setOpen] = useState({ lists: true, collections: true })
+  const [open, setOpen] = useState({ lists: true, collections: true, trackers: true })
 
   // Both kinds in one section, merged by name. Deliberately not interleaved by
   // when each was pinned: the two halves arrive from two requests (adr/0042)
@@ -81,6 +86,7 @@ export function SideNav({
   const pinnedEntries: NavEntry[] = [
     ...(sidebar?.pinned ?? []).map(asListEntry),
     ...(collections?.pinned ?? []).map(asCollectionEntry),
+    ...(trackers?.pinned ?? []).map(asTrackerEntry),
   ].sort((left, right) => left.name.localeCompare(right.name))
 
   return (
@@ -99,7 +105,9 @@ export function SideNav({
           // Either half is enough. If one request fails the other's pins are
           // still worth drawing, and the group below reports its own failure -
           // requiring both was the same conflation NavGroup had.
-          ready={listsQuery.isSuccess || collectionsQuery.isSuccess}
+          ready={
+            listsQuery.isSuccess || collectionsQuery.isSuccess || trackersQuery.isSuccess
+          }
           pathname={pathname}
           onNavigate={onNavigate}
         />
@@ -159,6 +167,27 @@ export function SideNav({
             selected={pathname.startsWith('/collections')}
             onNavigate={onNavigate}
             entries={(collections?.collections ?? []).map(asCollectionEntry)}
+            pathname={pathname}
+          />
+
+          {/* Trackers (0019 R170). Below collections, in the order the three
+              kinds were added and in the order they are reached for: work,
+              then what you look up, then what you measure. */}
+          <NavGroup
+            label="Trackers"
+            to="/trackers"
+            icon={<InsightsRounded />}
+            open={open.trackers}
+            onToggle={() =>
+              setOpen((current) => ({ ...current, trackers: !current.trackers }))
+            }
+            createTo="/trackers/new"
+            createLabel="Create a tracker"
+            emptyLabel="No trackers yet"
+            status={statusOf(trackersQuery)}
+            selected={pathname.startsWith('/trackers')}
+            onNavigate={onNavigate}
+            entries={(trackers?.trackers ?? []).map(asTrackerEntry)}
             pathname={pathname}
           />
 
@@ -243,6 +272,15 @@ function asCollectionEntry(collection: CollectionSummary): NavEntry {
     name: collection.name,
     icon: collection.icon,
     to: `/collections/${collection.id}`,
+  }
+}
+
+function asTrackerEntry(tracker: TrackerSummary): NavEntry {
+  return {
+    id: tracker.id,
+    name: tracker.name,
+    icon: tracker.icon,
+    to: `/trackers/${tracker.id}`,
   }
 }
 

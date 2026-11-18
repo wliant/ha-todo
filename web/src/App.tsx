@@ -8,6 +8,10 @@ import { CollectionDetailPage } from './pages/CollectionDetailPage'
 import { CollectionSettingsPage } from './pages/CollectionSettingsPage'
 import { CollectionsPage } from './pages/CollectionsPage'
 import { CreateCollectionPage } from './pages/CreateCollectionPage'
+import { CreateTrackerPage } from './pages/CreateTrackerPage'
+import { TrackerDetailPage } from './pages/TrackerDetailPage'
+import { TrackerSettingsPage } from './pages/TrackerSettingsPage'
+import { TrackersPage } from './pages/TrackersPage'
 import { CreateListPage } from './pages/CreateListPage'
 import { ActivityTab, ItemsTab, ListDetailPage, RecurringTab } from './pages/ListDetailPage'
 import { DashboardPage } from './dashboard/DashboardPage'
@@ -59,6 +63,14 @@ export function App() {
         <Route path="/collections/new" element={<CreateCollectionPage />} />
         <Route path="/collections/:listId" element={<CollectionDetailPage />} />
         <Route path="/collections/:listId/settings" element={<CollectionSettingsPage />} />
+        {/* Trackers (0019): the third kind, and its own place in the menu for
+            the reason collections have one. A number a household keeps is
+            neither work nor reference, so it is neither a list nor a
+            collection - see adr/0051. */}
+        <Route path="/trackers" element={<TrackersPage />} />
+        <Route path="/trackers/new" element={<CreateTrackerPage />} />
+        <Route path="/trackers/:trackerId" element={<TrackerDetailPage />} />
+        <Route path="/trackers/:trackerId/settings" element={<TrackerSettingsPage />} />
         {/* A share arriving while signed out comes back here afterwards,
             because ProtectedRoute remembers where it was going. */}
         <Route path="/share" element={<SharePage />} />
