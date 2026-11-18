@@ -8,6 +8,7 @@ import {
 } from '../api/profile'
 import { listKeys } from '../lists/queries'
 import { collectionKeys } from '../data/queries'
+import { trackerKeys } from '../trackers/queries'
 
 export const preferencesKey = ['me', 'preferences'] as const
 
@@ -83,7 +84,7 @@ export function fromMuiMode(mode: string | undefined): ThemePreference {
 
 
 /**
- * How many lists and collections each sidebar group shows (0012 R102).
+ * How many rows each sidebar group shows (0012 R102).
  *
  * <p>Its own hook beside the theme rather than a second return value on it:
  * they share a cache entry and an endpoint, and nothing else. The theme is
@@ -105,10 +106,13 @@ export function useSidebarListCount() {
     onSuccess: (preferences) => {
       queryClient.setQueryData(preferencesKey, preferences)
       // The server applies the cap, so the groups have to be refetched rather
-      // than re-sliced on the client. Both keys, by their own definitions: the
-      // two sidebar trees are siblings and neither prefix reaches the other.
+      // than re-sliced on the client. All three keys, by their own
+      // definitions: the sidebar trees are siblings and no prefix reaches
+      // another, so a kind missing from this list keeps its old cap until the
+      // page is reloaded.
       void queryClient.invalidateQueries({ queryKey: listKeys.sidebar })
       void queryClient.invalidateQueries({ queryKey: collectionKeys.sidebar })
+      void queryClient.invalidateQueries({ queryKey: trackerKeys.sidebar })
     },
   })
 

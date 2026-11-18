@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status
 
 **Everything specified so far is built, as of 2026-11-11.** Build, local stack, deploy scripts and all
-three test harnesses are real and passing: 255 backend unit tests, 253 integration tests, 354 frontend
-tests, 102 end-to-end (13 skip without `E2E_ADMIN_PASSWORD`).
+three test harnesses are real and passing: 296 backend unit tests, 276 integration tests, 407 frontend
+tests, 109 end-to-end (13 skip without `E2E_ADMIN_PASSWORD`).
 
 Implemented: **accounts and administration (R8-R12)** — username identity, optional per-user passwords, a
 pick-a-user sign-in screen, and a single admin who adds and deletes users. **The PWA (R13, R14)** —
@@ -487,6 +487,62 @@ picker, and the form is the **list's** form, fetched through `useList`/`useListF
 own cache keys. Duplicate is deliberately **not** on `AgendaItemRow`: that row has two write controls
 already and a third icon is a mis-tap, while the popup is one tap from every view.
 
+**R159-R172 are implemented.** `docs/requirements/0019` and `docs/design/0019` add **Trackers**, a
+**third kind** beside lists and collections: a number a household records over and over - what somebody
+weighs, what the groceries cost, how long a child read. `docs/adr/0051`-`0053` record the decisions. A
+tracker declares a **unit** (a label, never a conversion), a **period** (day/week/month), a **scope**
+(`PER_MEMBER`, a series each overlaid on one chart, or `SHARED`, one series the household writes) and a
+**rollup** (SUM/AVERAGE/LATEST). A reading is one number in one bucket with a plain-text note.
+
+**It is its own aggregate** (`adr/0051`, applying `adr/0029` a third time): `tracker` / `tracker_access`
+/ `tracker_reading` / `tracker_user_state` / `tracker_interaction_day`, package `com.hatodo.tracker`,
+V920-V922. Not a `kind` on `todo_list` (a cost hangs on an item that carries an assignee, a due date and
+a completion, and `TodoListService.create` writes field rows) and not a `kind` on `data_list` (whose
+generated `search_vector` and tags exist to find text a tracker does not have). **"Everything the member
+can see" now has three answers**, and anything new that reads across a member's things has to say which.
+**A fourth kind should re-examine the trade rather than copy it a fourth time** - the same is true of
+`web/src/app/repin.ts`, which now names three arrays by hand.
+
+**Six things in there are easy to break.** **`member_id` is nullable and NULL *is* "the household's"**
+(`adr/0052`) - no companion boolean, for the reason `password_hash` has none; `recorded_by` is a separate
+column because authorship and series membership are different questions, which is also what makes R172
+work (member deleted → their own series cascades, shared numbers stay unattributed). **Two invariants are
+service-enforced because SQL cannot state them**: `member_id IS NULL` iff the tracker is SHARED, and
+`period_start` is always the canonical bucket start - both fail **silently**, so both are pinned by
+integration tests that write through the API and read the column back. **There is deliberately no unique
+index on `(tracker_id, member_id, period_start)`**: several readings per bucket is R163, and the rollup
+is what resolves them - adding that index is a product change, not a tidy-up. **`TrackerPeriod.startOf`
+is the one implementation of where a bucket starts** (weeks on Monday, matching `calendar.ts`), and
+**nothing in this feature ever puts an instant on the wire** - `period_start` is a `DATE`, a `LocalDate`,
+then a `YYYY-MM-DD` string, so the `new Date(localString)` device-zone trap cannot occur. **One `Rollup`
+folds both within a bucket and across buckets** when a long range is drawn coarsely - two implementations
+is how the chart and the headline come to disagree. And `TrackerReading.isWritableBy` is the **one**
+predicate behind R165 (per-member: your own series; shared: anyone with access), published as `editable`
+and never recomputed on the client.
+
+**The chart is `@mui/x-charts`, pinned at `9.17.0`** (`adr/0053`) - aged, MIT, peers accept
+`@mui/material@9.5.0` and React 19, and it draws through our own theme, which `adr/0014` is what decides.
+**`web/src/trackers/TrackerChart.tsx` is the only module that may import it**, by deep path, reached only
+through `React.lazy`: it is the heaviest dependency in the app (~99KB gzipped in its own chunk) and a
+second import site drags d3 into the main chunk where **nothing fails**. `pnpm build` showing a separate
+`TrackerChart-*.js` is the check. **Tests must never assert on the chart's SVG** - x-charts rewrites its
+markup between minors, and its y-axis ticks will also happily match a `getByText` for the headline
+figure. Assert on `trackers/series.ts` and the chart's accessible label.
+
+**Three existing pieces had to change and all three fail silently**: `SideNav`'s `pinnedEntries` must
+concatenate the tracker pins, `PinnedSection`'s `ready` must be a disjunction over **all three**
+sidebar queries, and `app/repin.ts` must name `trackers` in both its envelope guard and its body.
+`useThemePreference` invalidates the third sidebar key too, and sign-out clears the third touched set.
+`lists/AudiencePicker` was **extracted** from `ListForm` so all three kinds ask "who can see it" once.
+
+**A tracker reaches a planning surface in exactly one place** (R171): a quiet strip on the agenda naming
+**daily** trackers with nothing recorded **today**, fed by `GET /api/trackers/pending` - under
+`/api/trackers`, not `/api/dashboard/*`, so no dashboard code learns trackers exist. It is deliberately
+the one surface that does **not** distinguish its three load states: a nudge is not somebody's data, and
+"could not check whether you weighed yourself" is noise on the landing page. A tracker write must **not**
+invalidate `['lists']` or `['dashboard']` - `useCreateItemFromAgenda` trains the opposite reflex, and a
+reading is not work.
+
 Keep this file true: when a decision here turns out wrong, update it in the same change.
 
 ## What this product is
@@ -508,8 +564,13 @@ to what the household owes today.
 A household also keeps things it **looks up** rather than finishes, so there is a second kind of list:
 a **data list** (a *collection* in the UI) holds recipes, restaurants, quotes, vocabulary. Same grant
 model, entirely separate tables and package, and nothing that treats an entry as work — see
-`docs/adr/0029`. When adding anything that reads across "all the user's lists", decide deliberately
-which of the two kinds it means.
+`docs/adr/0029`. A household also keeps **numbers**: what somebody weighs, what the groceries cost, how long a child
+read. Those are neither work nor reference - they are a value against a bucket, and the point of them is
+the shape they make over months - so there is a third kind, a **tracker** (`docs/adr/0051`). Same grant
+model again, entirely separate tables and package, and nothing that treats a reading as work.
+
+When adding anything that reads across "all the user's lists", decide deliberately
+which of the **three** kinds it means.
 
 ## Monorepo layout
 
@@ -596,7 +657,7 @@ migrations after every versioned one and re-runs them when their content changes
 edited freely and can never sit in front of a schema change. The old versioned seed at `V900` is why the
 schema series resumes at **V901** — a lower version would be out of order on any database that applied it,
 and why local/dev set `flyway.ignore-migration-patterns: "*:missing"`. Prod never applied it and keeps
-strict validation. The highest applied migration is **V919**; new ones continue from V920.
+strict validation. The highest applied migration is **V922**; new ones continue from V923.
 
 **Authorization is per-list access, not household-scoped.** Every read and write is checked against the
 caller's grant on that list, enforced in the service layer — not only in the controller and not only in

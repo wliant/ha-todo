@@ -7,9 +7,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { SideNav } from './SideNav'
 import * as listsApi from '../api/lists'
 import * as dataListsApi from '../api/dataLists'
+import * as trackersApi from '../api/trackers'
 import type { CurrentUser } from '../api/auth'
 import type { ListSummary } from '../api/lists'
 import type { CollectionSummary } from '../api/dataLists'
+import type { TrackerSummary } from '../api/trackers'
 import { theme } from '../theme/theme'
 
 const ana: CurrentUser = {
@@ -46,15 +48,44 @@ function collection(id: string, name: string, pinned = false): CollectionSummary
   }
 }
 
+function tracker(id: string, name: string, pinned = false): TrackerSummary {
+  return {
+    id,
+    name,
+    description: null,
+    icon: 'HEALTH',
+    unit: 'kg',
+    period: 'DAY',
+    scope: 'PER_MEMBER',
+    rollup: 'LATEST',
+    decimals: 1,
+    target: null,
+    targetDirection: null,
+    owned: true,
+    pinned,
+    memberCount: 1,
+    readingCount: 0,
+  }
+}
+
 function given(
   lists: ListSummary[],
   collections: CollectionSummary[] = [],
-  pinned: { lists?: ListSummary[]; collections?: CollectionSummary[] } = {},
+  pinned: {
+    lists?: ListSummary[]
+    collections?: CollectionSummary[]
+    trackers?: TrackerSummary[]
+  } = {},
+  trackers: TrackerSummary[] = [],
 ) {
   vi.spyOn(listsApi, 'fetchSidebar').mockResolvedValue({ pinned: pinned.lists ?? [], lists })
   vi.spyOn(dataListsApi, 'fetchCollectionSidebar').mockResolvedValue({
     pinned: pinned.collections ?? [],
     collections,
+  })
+  vi.spyOn(trackersApi, 'fetchTrackerSidebar').mockResolvedValue({
+    pinned: pinned.trackers ?? [],
+    trackers,
   })
 }
 
@@ -144,11 +175,15 @@ describe('SideNav', () => {
     // the assertion.
     vi.spyOn(listsApi, 'fetchSidebar').mockReturnValue(new Promise(() => {}))
     vi.spyOn(dataListsApi, 'fetchCollectionSidebar').mockReturnValue(new Promise(() => {}))
+    vi.spyOn(trackersApi, 'fetchTrackerSidebar').mockReturnValue(new Promise(() => {}))
     renderNav()
 
     expect(await screen.findByRole('link', { name: 'Lists' })).toBeVisible()
     expect(screen.queryByText('No lists yet')).not.toBeInTheDocument()
     expect(screen.queryByText('No collections yet')).not.toBeInTheDocument()
+    // The third group, added by 0019, and the one most likely to have been
+    // written as `data ?? []` because it was copied in last.
+    expect(screen.queryByText('No trackers yet')).not.toBeInTheDocument()
   })
 
   it('says so when a group cannot be loaded, rather than saying it is empty', async () => {
@@ -179,6 +214,63 @@ describe('SideNav', () => {
     expect(within(pinned).getByRole('link', { name: 'Groceries' })).toBeVisible()
   })
 
+  it('shows the member’s trackers under their own group', async () => {
+    // 0019 R170: the third kind gets the same group the other two have.
+    given([], [], {}, [tracker('id-w', 'Body Weight')])
+    renderNav()
+
+    // The entry, not the group label: the label is static markup and would
+    // resolve before the query had answered.
+    expect(await screen.findByRole('link', { name: 'Body Weight' })).toHaveAttribute(
+      'href',
+      '/trackers/id-w',
+    )
+    expect(screen.getByRole('link', { name: 'Trackers' })).toHaveAttribute('href', '/trackers')
+  })
+
+  it('draws a pinned tracker in the pinned section, beside the other kinds', async () => {
+    // The concatenation in `pinnedEntries` fails silently if a kind is left
+    // out: the pin simply never appears, with nothing to report.
+    given([], [], {
+      lists: [list('id-g', 'Groceries', true)],
+      trackers: [tracker('id-w', 'Body Weight', true)],
+    })
+    renderNav()
+
+    const pinned = await screen.findByRole('list', { name: 'Pinned' })
+    expect(within(pinned).getByRole('link', { name: 'Body Weight' })).toBeVisible()
+    expect(within(pinned).getByRole('link', { name: 'Groceries' })).toBeVisible()
+  })
+
+  it('still draws pinned trackers when both other requests fail', async () => {
+    // `ready` is a disjunction over all three: requiring every half would hide
+    // pins that loaded perfectly well, which is the conflation NavGroup and
+    // PinnedSection have each shipped with once already.
+    vi.spyOn(listsApi, 'fetchSidebar').mockRejectedValue(new Error('offline'))
+    vi.spyOn(dataListsApi, 'fetchCollectionSidebar').mockRejectedValue(new Error('offline'))
+    vi.spyOn(trackersApi, 'fetchTrackerSidebar').mockResolvedValue({
+      pinned: [tracker('id-w', 'Body Weight', true)],
+      trackers: [],
+    })
+    renderNav()
+
+    const pinned = await screen.findByRole('list', { name: 'Pinned' })
+    expect(within(pinned).getByRole('link', { name: 'Body Weight' })).toBeVisible()
+  })
+
+  it('says so when the trackers group cannot be loaded', async () => {
+    vi.spyOn(listsApi, 'fetchSidebar').mockResolvedValue({ pinned: [], lists: [] })
+    vi.spyOn(dataListsApi, 'fetchCollectionSidebar').mockResolvedValue({
+      pinned: [],
+      collections: [],
+    })
+    vi.spyOn(trackersApi, 'fetchTrackerSidebar').mockRejectedValue(new Error('offline'))
+    renderNav()
+
+    expect(await screen.findByText("Couldn't load your trackers.")).toBeVisible()
+    expect(screen.queryByText('No trackers yet')).not.toBeInTheDocument()
+  })
+
   it('says a group is empty rather than showing nothing', async () => {
     // R103. Nothing at all reads as a request that failed.
     given([], [])
@@ -186,6 +278,7 @@ describe('SideNav', () => {
 
     expect(await screen.findByText('No lists yet')).toBeVisible()
     expect(screen.getByText('No collections yet')).toBeVisible()
+    expect(screen.getByText('No trackers yet')).toBeVisible()
   })
 
   it('keeps both create buttons reachable with nothing at all', async () => {

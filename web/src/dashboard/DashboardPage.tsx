@@ -16,6 +16,7 @@ import { DuplicateItemDialog } from './DuplicateItemDialog'
 import { OutsideWindowNotice } from './OutsideWindowNotice'
 import { OverduePanel } from './OverduePanel'
 import { StaleFeedsNotice } from './StaleFeedsNotice'
+import { PendingTrackersNotice } from '../trackers/PendingTrackersNotice'
 import { ListFilterChip } from './ListFilterChip'
 import { ViewContext, useDashboardView } from './dashboardView'
 import { known, parseLists, writeLists } from './listFilter'
@@ -242,6 +243,12 @@ export function DashboardPage() {
         {/* The active tab's own window, so this shares the view's cache entry
             and costs no request of its own. */}
         <Notices window={activeWindow} scope={scope} visible={visible} />
+
+        {/* The only place a tracker touches a planning surface (0019 R171),
+            and it reads its own endpoint: no dashboard query learns that
+            trackers exist (adr/0051). A number is not work, so this is a
+            notice rather than a row. */}
+        <PendingTrackersNotice />
 
         {/* Above the tabs, and outside everything the period parameterises: it
             takes `scope` and nothing else, which is R89 at the call site. */}

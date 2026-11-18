@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { clearTouchedLists } from '../lists/queries'
 import { clearTouchedCollections } from '../data/queries'
+import { clearTouchedTrackers } from '../trackers/queries'
 import {
   fetchCurrentUser,
   fetchLoginUsers,
@@ -58,6 +59,7 @@ export function useLogout() {
       queryClient.clear()
       clearTouchedLists()
       clearTouchedCollections()
+      clearTouchedTrackers()
     },
   })
 }

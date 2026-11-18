@@ -212,6 +212,38 @@ def cleanup_collections(base_url: str, demo_member: DemoMember, test_data: TestD
     return remove
 
 
+@pytest.fixture
+def cleanup_trackers(base_url: str, demo_member: DemoMember, test_data: TestData):
+    """
+    Registers a tracker, by name, to be deleted at the end of the session
+    (requirements/0019).
+
+    The same shape as :func:`cleanup_lists` and :func:`cleanup_collections`,
+    and separate from both for the reason the backend keeps the three apart: a
+    tracker is neither, and deleting one through another's endpoint answers
+    404. Deleting a tracker takes its readings with it, so nothing else needs
+    registering.
+    """
+
+    def remove(name: str) -> None:
+        def delete() -> None:
+            with httpx.Client(
+                base_url=base_url, timeout=20.0, follow_redirects=True
+            ) as client:
+                api_sign_in(client, demo_member)
+                found = client.get("/api/trackers", params={"q": name})
+                found.raise_for_status()
+                for entry in found.json():
+                    response = client.delete(
+                        f"/api/trackers/{entry['id']}", headers=api_csrf_header(client)
+                    )
+                    response.raise_for_status()
+
+        test_data.defer_cleanup(delete)
+
+    return remove
+
+
 def pick_user(page, member: DemoMember) -> None:
     """Choose a person on the sign-in screen, the way a family member does."""
     page.get_by_role("button", name=member.display_name).click()
