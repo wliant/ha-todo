@@ -47,6 +47,14 @@ export interface DashboardView {
    */
   lapse: (item: DashboardItem) => void
   /**
+   * Add another chore like this one, on the list it came from (0018 R156).
+   *
+   * <p>The only create the agenda can offer: it crosses lists, so every other
+   * kind of add would have to ask which list first. The item rather than an id
+   * because the description and the detail being copied are already in hand.
+   */
+  duplicate: (item: DashboardItem) => void
+  /**
    * The event itself rather than an id: a collapsed event has no single row
    * behind it, and the payload is already in hand - so there is nothing to look
    * up and nothing to fetch.

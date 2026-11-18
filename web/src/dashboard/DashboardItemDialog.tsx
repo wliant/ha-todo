@@ -11,6 +11,7 @@ import Typography from '@mui/material/Typography'
 import { Link as RouterLink } from 'react-router-dom'
 import type { DashboardItem } from '../api/dashboard'
 import { MemberAvatar } from '../app/MemberAvatar'
+import ContentCopyRounded from '@mui/icons-material/ContentCopyRounded'
 import EventBusyRounded from '@mui/icons-material/EventBusyRounded'
 import { CompleteControl } from '../items/CompleteControl'
 import { ListIcon } from '../lists/listIcons'
@@ -20,6 +21,10 @@ import { ListIcon } from '../lists/listIcons'
  *
  * <p>Driven by `?item=<id>` rather than state, so it is deep-linkable and the
  * back button closes it.
+ *
+ * <p>It also adds another one like it (0018 R156) - the one create the agenda
+ * can offer, because the list is the one the chore came from and nobody has to
+ * be asked which.
  *
  * <p>It completes the chore (0010 R85), which is what makes ticking something
  * off reachable from the week view, the month view and the undated panel at
@@ -33,12 +38,14 @@ export function DashboardItemDialog({
   onComplete,
   onWriteNote,
   onLapse,
+  onDuplicate,
 }: {
   item: DashboardItem
   onClose: () => void
   onComplete: () => void
   onWriteNote: () => void
   onLapse: () => void
+  onDuplicate: () => void
 }) {
   return (
     <Dialog open fullWidth maxWidth="sm" onClose={onClose}>
@@ -135,6 +142,15 @@ export function DashboardItemDialog({
           color="inherit"
         >
           Lapse
+        </Button>
+        {/* Spelled out for the same reason Lapse is, and last: this one opens
+            a form rather than writing anything. */}
+        <Button
+          startIcon={<ContentCopyRounded fontSize="small" />}
+          onClick={onDuplicate}
+          color="inherit"
+        >
+          Duplicate
         </Button>
       </DialogActions>
     </Dialog>

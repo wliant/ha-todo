@@ -8,6 +8,7 @@ import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
+import ContentCopyRounded from '@mui/icons-material/ContentCopyRounded'
 import EditRounded from '@mui/icons-material/EditRounded'
 import ExpandLessRounded from '@mui/icons-material/ExpandLessRounded'
 import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded'
@@ -29,6 +30,9 @@ import { CompleteControl } from './CompleteControl'
  * coordinating with each other.
  *
  * <p>The checkbox selects (R46); completing is its own control (R48).
+ *
+ * <p>Duplicating sits beside editing (0018 R153) and is offered whatever state
+ * the item is in: a finished chore is the one somebody most often wants again.
  */
 export function ItemRow({
   item,
@@ -42,6 +46,7 @@ export function ItemRow({
   onLapse,
   onReopen,
   onEdit,
+  onDuplicate,
 }: {
   item: Item
   fields: ListField[]
@@ -54,6 +59,7 @@ export function ItemRow({
   onLapse: () => void
   onReopen: () => void
   onEdit: () => void
+  onDuplicate: () => void
 }) {
   const bodyId = `item-${item.id}-detail`
   const hasBody = Boolean(item.detailHtml) || Boolean(item.completionNoteHtml)
@@ -244,13 +250,27 @@ export function ItemRow({
               </Tooltip>
             </Stack>
           )}
-          <IconButton
-            size="small"
-            aria-label={`Edit ${item.description}`}
-            onClick={onEdit}
-          >
-            <EditRounded fontSize="small" />
-          </IconButton>
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+            <IconButton
+              size="small"
+              aria-label={`Edit ${item.description}`}
+              onClick={onEdit}
+            >
+              <EditRounded fontSize="small" />
+            </IconButton>
+            {/* Outside the complete group for the reason Lapse is: this one
+                opens a form rather than writing anything, so a mis-tap costs a
+                Cancel. */}
+            <Tooltip title="Add another like this">
+              <IconButton
+                size="small"
+                aria-label={`Duplicate ${item.description}`}
+                onClick={onDuplicate}
+              >
+                <ContentCopyRounded fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Stack>
         </Stack>
       </Stack>
     </Paper>

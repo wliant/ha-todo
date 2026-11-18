@@ -12,6 +12,7 @@ import type { DashboardItem, DashboardScope } from '../api/dashboard'
 import type { CalendarEvent } from '../api/calendars'
 import { DashboardEventDialog } from './DashboardEventDialog'
 import { DashboardItemDialog } from './DashboardItemDialog'
+import { DuplicateItemDialog } from './DuplicateItemDialog'
 import { OutsideWindowNotice } from './OutsideWindowNotice'
 import { OverduePanel } from './OverduePanel'
 import { StaleFeedsNotice } from './StaleFeedsNotice'
@@ -61,6 +62,10 @@ export function DashboardPage() {
   // The chore a member is writing a note about, on the way to completing it
   // (R84). One of these for the page, as there is one mutation.
   const [noting, setNoting] = useState<DashboardItem | null>(null)
+  // The chore being copied (0018 R156). State rather than the address, unlike
+  // `?item=`: a half-filled form is not something a link can restore, and
+  // reopening one from history would promise it could.
+  const [duplicating, setDuplicating] = useState<DashboardItem | null>(null)
   const [said, setSaid] = useState<string | null>(null)
   const scope: DashboardScope = params.get('scope') === 'mine' ? 'mine' : 'all'
   // The lists this member can see. The same query the chip draws its menu
@@ -141,6 +146,19 @@ export function DashboardPage() {
     move(item, 'COMPLETED', noteHtml)
   }
 
+  /**
+   * Copying a chore (0018 R156).
+   *
+   * <p>Closes the popup first, as completing does and for a weaker reason: the
+   * chore is still there, but two dialogs about the same item stacked on each
+   * other is one dialog too many (0005 R38).
+   */
+  function startDuplicating(item: DashboardItem) {
+    close()
+    setOpenedEvent(null)
+    setDuplicating(item)
+  }
+
   /** One popup at a time, as on a list (0005 R38). */
   function openEvent(event: CalendarEvent) {
     close()
@@ -193,6 +211,7 @@ export function DashboardPage() {
         complete,
         writeNote: setNoting,
         lapse: (item) => move(item, 'LAPSED'),
+        duplicate: startDuplicating,
       }}>
       <Stack spacing={2.5}>
         <Stack
@@ -268,6 +287,18 @@ export function DashboardPage() {
         />
       )}
 
+      {duplicating && (
+        <DuplicateItemDialog
+          // Keyed on the item for the reason the note dialog is: the form
+          // seeds its value once, and a reused instance would open holding the
+          // previous chore's description.
+          key={duplicating.id}
+          item={duplicating}
+          onClose={() => setDuplicating(null)}
+          onCreated={setSaid}
+        />
+      )}
+
       {noting && (
         <CompletionNoteDialog
           // Keyed on the item for the reason the list's is: DetailEditor takes
@@ -321,7 +352,7 @@ function OpenItem({
   // The *anchor's* month, not the clock's: an item opened from November while
   // looking at February has to be found in the payload February asked for.
   const month = useMemo(() => windowOf(monthRange(anchor), zone), [anchor, zone])
-  const { complete, writeNote, lapse } = useDashboardView()
+  const { complete, writeNote, lapse, duplicate } = useDashboardView()
   const { data: scheduled } = useScheduled(month.from, month.to, scope)
   const { data: undated } = useUndated(scope)
   // The third place an item can be drawn from (0011 R90). A popup opened from
@@ -348,6 +379,7 @@ function OpenItem({
       onComplete={() => complete(item)}
       onWriteNote={() => writeNote(item)}
       onLapse={() => lapse(item)}
+      onDuplicate={() => duplicate(item)}
     />
   )
 }

@@ -950,4 +950,102 @@ describe('DashboardPage', () => {
       expect(fetched.mock.calls.length).toBe(before)
     })
   })
+  describe('duplicating a chore', () => {
+    // 0018 R156, R157: the one create the agenda can offer, because the list
+    // is the one the chore came from and nobody has to be asked which.
+    const detail: listsApi.ListDetail = {
+      id: 'id-list',
+      name: 'Chores',
+      description: null,
+      icon: 'CHECKLIST',
+      owned: true,
+      pinned: false,
+      version: 1,
+      members: [{ id: 'id-ana', displayName: 'Ana', owner: true, avatarImageId: null }],
+      createdAt: '2026-11-05T00:00:00Z',
+    }
+
+    function listField(overrides: Partial<listsApi.ListField>): listsApi.ListField {
+      return {
+        id: 'id-field',
+        kind: 'DESCRIPTION',
+        label: null,
+        required: true,
+        costMode: null,
+        costUnitLabel: null,
+        pointsPerUnit: null,
+        choices: [],
+        ...overrides,
+      }
+    }
+
+    beforeEach(() => {
+      vi.spyOn(listsApi, 'fetchList').mockResolvedValue(detail)
+      vi.spyOn(listsApi, 'fetchListFields').mockResolvedValue([
+        listField({ id: 'id-desc' }),
+        listField({ id: 'id-due', kind: 'DUE_AT', required: false }),
+      ])
+    })
+
+    it('adds another one like it, on the same list', async () => {
+      vi.spyOn(dashboardApi, 'fetchScheduled').mockResolvedValue(
+        payload({
+          items: [
+            item({
+              dueAt: new Date().toISOString(),
+              detailHtml: '<p>Blue bin</p>',
+              assignee: { id: 'id-ana', displayName: 'Ana', avatarImageId: null },
+            }),
+          ],
+        }),
+      )
+      const create = vi
+        .spyOn(itemsApi, 'createItem')
+        .mockResolvedValue({} as unknown as itemsApi.Item)
+      renderAt('/dashboard/day?item=id-item')
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Duplicate' }))
+
+      // The list's own form, from the list's own configuration - the agenda's
+      // payload carries neither.
+      expect(await screen.findByRole('heading', { name: 'Duplicate item' })).toBeVisible()
+      expect(screen.getByRole('textbox', { name: 'Description' })).toHaveValue(
+        'Take the bins out',
+      )
+
+      await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+      await waitFor(() =>
+        // The copy carries the writing and starts without a date or an
+        // assignee (R155), and lands on the list it came from (R157).
+        expect(create).toHaveBeenCalledWith('id-list', {
+          description: 'Take the bins out',
+          detailHtml: '<p>Blue bin</p>',
+          assigneeId: null,
+          dueAt: null,
+          costValues: [],
+        }),
+      )
+      expect(
+        await screen.findByText('Added \u201cTake the bins out\u201d to Chores.'),
+      ).toBeVisible()
+    })
+
+    it('does not ask for a description alone while the list is still loading', async () => {
+      // Three states, not two: a form drawn from `fields ?? []` would ask for
+      // a description while the request was in flight, and whatever the list
+      // actually insists on would appear under a member already typing.
+      vi.spyOn(dashboardApi, 'fetchScheduled').mockResolvedValue(payload({ items: [item()] }))
+      vi.spyOn(listsApi, 'fetchListFields').mockReturnValue(
+        new Promise(() => {}) as Promise<listsApi.ListField[]>,
+      )
+      renderAt('/dashboard/day?item=id-item')
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Duplicate' }))
+
+      expect(await screen.findByRole('heading', { name: 'Duplicate item' })).toBeVisible()
+      expect(screen.queryByRole('textbox', { name: 'Description' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    })
+  })
 })

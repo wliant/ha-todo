@@ -16,7 +16,9 @@ from playwright.sync_api import Page, expect
 import struct
 import zlib
 
-from conftest import DemoMember, TestData, show_status, ui_sign_in
+from datetime import datetime, timedelta
+
+from conftest import DemoMember, TestData, fill_due, show_status, ui_sign_in
 
 
 def tiny_png() -> bytes:
@@ -103,6 +105,77 @@ def test_a_member_lapses_an_item_and_puts_it_back(
     page.get_by_role("button", name="Reopen Paint the shed", exact=True).click()
     show_status(page, "Lapsed")
     expect(page.get_by_role("button", name="Paint the shed", exact=True)).to_be_visible()
+
+
+@pytest.mark.items
+def test_a_member_duplicates_an_item_and_the_original_is_untouched(
+    page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
+) -> None:
+    """
+    0018 R153-R155: the writing comes over, the dating does not, and the item
+    that was copied is still exactly what it was.
+    """
+    name = test_data.name("Duplicating")
+    cleanup_lists(name)
+    ui_sign_in(page, base_url, demo_member)
+    create_list(page, name)
+
+    # Dated, so the copy can be shown not to carry the date. A list declares a
+    # description and a due date and nothing else until its owner says
+    # otherwise, so the date is what there is to copy or drop.
+    open_add_form(page)
+    page.get_by_role("textbox", name="Description").fill("Change the bed linen")
+    fill_due(page, datetime.now() + timedelta(days=1))
+    page.get_by_role("button", name="Save").click()
+    expect(page.get_by_role("button", name="Change the bed linen", exact=True)).to_be_visible()
+
+    page.get_by_role("button", name="Duplicate Change the bed linen", exact=True).click()
+
+    dialog = page.get_by_role("dialog")
+    expect(dialog.get_by_role("heading", name="Duplicate item")).to_be_visible()
+    expect(dialog.get_by_role("textbox", name="Description")).to_have_value(
+        "Change the bed linen"
+    )
+    # Not a copy of the occurrence: the date did not come over (R155). The
+    # form opens expanded after a duplicate, so the date box is on screen
+    # without reaching for "More fields".
+    expect(dialog.get_by_label(re.compile(r"^Date"))).to_have_value("")
+    # Renamed before saving, so the two rows are tellable apart - the product
+    # allows two items with one description, but a test cannot assert on one.
+    dialog.get_by_role("textbox", name="Description").fill("Change the bed linen again")
+    dialog.get_by_role("button", name="Save").click()
+
+    expect(page.get_by_role("button", name="Change the bed linen again", exact=True)).to_be_visible()
+    # A create, not an edit (R154).
+    expect(page.get_by_role("button", name="Change the bed linen", exact=True)).to_be_visible()
+
+
+@pytest.mark.items
+def test_a_finished_item_can_still_be_duplicated(
+    page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
+) -> None:
+    """R153: the chore somebody just ticked off is the one most often wanted again."""
+    name = test_data.name("Duplicating done")
+    cleanup_lists(name)
+    ui_sign_in(page, base_url, demo_member)
+    create_list(page, name)
+
+    add_item(page, "Pay the fees")
+    page.get_by_role("button", name="Complete Pay the fees", exact=True).click()
+    # The row left the default To do view, so Done is ticked on beside it - the
+    # chips are independently selectable (0013 R108).
+    show_status(page, "Done")
+
+    page.get_by_role("button", name="Duplicate Pay the fees", exact=True).click()
+    dialog = page.get_by_role("dialog")
+    dialog.get_by_role("textbox", name="Description").fill("Pay the fees next term")
+    dialog.get_by_role("button", name="Save").click()
+
+    # Open, whatever the item it was copied from had become (R155).
+    expect(page.get_by_role("button", name="Pay the fees next term", exact=True)).to_be_visible()
+    expect(
+        page.get_by_role("button", name="Complete Pay the fees next term", exact=True)
+    ).to_be_visible()
 
 
 @pytest.mark.items

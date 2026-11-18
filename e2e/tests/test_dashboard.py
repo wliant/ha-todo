@@ -177,6 +177,54 @@ def test_opening_an_item_is_a_url_the_back_button_closes(
 
 
 @pytest.mark.dashboard
+def test_a_member_duplicates_a_chore_from_the_agenda(
+    page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
+) -> None:
+    """
+    0018 R156, R157: the one create the agenda can offer, because the list is
+    the one the chore came from and nobody has to be asked which.
+    """
+    # Deliberately not "Agenda" anything: the name rides the list's sidebar
+    # link, and `get_by_role(name=...)` is a case-insensitive substring match -
+    # so a list called "…-Agenda" makes every other test's
+    # `get_by_role("link", name="Agenda")` a strict-mode violation for the rest
+    # of the session.
+    name = test_data.name("Copying")
+    cleanup_lists(name)
+    ui_sign_in(page, base_url, demo_member)
+    create_list(page, name)
+
+    later_today = datetime.now().replace(hour=23, minute=0, second=0, microsecond=0)
+    add_dated_item(page, "Collect the parcel", later_today)
+
+    page.get_by_role("link", name="Agenda").click()
+    page.get_by_role("button", name=f"Collect the parcel, on {name}").click()
+    page.get_by_role("dialog").get_by_role("button", name="Duplicate").click()
+
+    # The list's own form, from the list's own configuration - the agenda's
+    # payload carries neither its fields nor its members.
+    dialog = page.get_by_role("dialog")
+    expect(dialog.get_by_role("heading", name="Duplicate item")).to_be_visible()
+    expect(dialog.get_by_role("textbox", name="Description")).to_have_value(
+        "Collect the parcel"
+    )
+    dialog.get_by_role("textbox", name="Description").fill("Collect the other parcel")
+    fill_due(page, later_today)
+    dialog.get_by_role("button", name="Save").click()
+
+    # Both key trees were invalidated, so it is on the agenda at once (R158).
+    expect(page.get_by_text("Added “Collect the other parcel”")).to_be_visible()
+    expect(
+        page.get_by_role("button", name=f"Collect the other parcel, on {name}")
+    ).to_be_visible()
+
+    # And on the list it came from, which is the half that fails silently.
+    page.get_by_role("link", name="Lists").first.click()
+    page.get_by_role("link", name=name).first.click()
+    expect(page.get_by_role("button", name="Collect the other parcel", exact=True)).to_be_visible()
+
+
+@pytest.mark.dashboard
 def test_mine_narrows_the_dashboard_without_hiding_it_from_the_url(
     page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
 ) -> None:
