@@ -9,7 +9,7 @@ import {
   type Scheduled,
   type Undated,
 } from '../api/dashboard'
-import { conflictingItem, setItemState, type ItemState } from '../api/items'
+import { conflictingItem, createItem, setItemState, type ItemState, type SaveItem } from '../api/items'
 import { errorMessage, isConflict } from '../api/http'
 import { listKeys } from '../lists/queries'
 
@@ -163,4 +163,30 @@ function withoutItem<T extends { items: DashboardItem[]; total: number }>(
   const kept = data.items.filter((row) => row.id !== itemId)
   const removed = data.items.length - kept.length
   return { ...data, items: kept, total: Math.max(kept.length, data.total - removed) }
+}
+
+/**
+ * Adding an item to one of its lists, from the agenda (0018 R156).
+ *
+ * <p>Not optimistic: where a new chore lands depends on the date just typed
+ * and on the window each cached payload asked for, so guessing which of them
+ * it belongs in is work the refetch does correctly for free. A create has no
+ * row to move under a finger either - the dialog is still open when it
+ * returns.
+ *
+ * <p>**Both key trees**, as every write from here must: `['dashboard']` so the
+ * grid shows the new chore, and `['lists']` so the list it was added to is not
+ * left one item short with nothing to make it refetch. The two prefixes are
+ * siblings and neither reaches the other (adr/0039).
+ */
+export function useCreateItemFromAgenda(listId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (item: SaveItem) => createItem(listId, item),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: dashboardKeys.all })
+      void queryClient.invalidateQueries({ queryKey: listKeys.all })
+    },
+  })
 }

@@ -388,6 +388,62 @@ describe('ItemsSection', () => {
     )
   })
 
+  it('duplicates an item, carrying the writing and nothing else', async () => {
+    // 0018 R153-R155. The description and the detail are the work; the date,
+    // the assignee and the costs are what made the original *that* occurrence,
+    // so a copy must start without them.
+    vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([
+      item({
+        description: 'Water plants',
+        detailHtml: '<p>Only the ferns</p>',
+        dueAt: '2026-11-20T15:59:00Z',
+        assignee: { id: 'id-ben', displayName: 'Ben', avatarImageId: null },
+        costValues: [{ fieldId: 'id-cost', choiceId: 'id-light', amount: null }],
+      }),
+    ])
+    const create = vi.spyOn(itemsApi, 'createItem').mockResolvedValue(item())
+    renderItems([description, assigneeField(), field({ id: 'id-due', kind: 'DUE_AT' })])
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Duplicate Water plants' }))
+
+    // A create, not an edit: the dialog says so, and there is no Delete.
+    expect(screen.getByRole('heading', { name: 'Duplicate item' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Description' })).toHaveValue('Water plants')
+    // Expanded, because what is left to answer is exactly what a collapsed
+    // form would hide.
+    expect(screen.getByLabelText(/^Date/)).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Nobody' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith('id-list', {
+        description: 'Water plants',
+        detailHtml: '<p>Only the ferns</p>',
+        assigneeId: null,
+        dueAt: null,
+        costValues: [],
+      }),
+    )
+  })
+
+  it('duplicates a finished item too', async () => {
+    // The one somebody most often wants again (R153): a chore done last week
+    // is the reason this button exists.
+    vi.spyOn(itemsApi, 'fetchItems').mockResolvedValue([
+      item({ state: 'COMPLETED', completedAt: '2026-11-16T02:00:00Z' }),
+    ])
+    renderItems([description], BOTH)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Duplicate Buy milk' }))
+
+    expect(screen.getByRole('textbox', { name: 'Description' })).toHaveValue('Buy milk')
+  })
+
   it('names the row checkbox for selecting, never for completing', async () => {
     // The checkbox used to complete the item. If its name still contained
     // "Complete", every one of the old queries would keep matching and the

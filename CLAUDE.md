@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status
 
 **Everything specified so far is built, as of 2026-11-11.** Build, local stack, deploy scripts and all
-three test harnesses are real and passing: 255 backend unit tests, 253 integration tests, 350 frontend
-tests, 98 end-to-end (13 skip without `E2E_ADMIN_PASSWORD`).
+three test harnesses are real and passing: 255 backend unit tests, 253 integration tests, 354 frontend
+tests, 102 end-to-end (13 skip without `E2E_ADMIN_PASSWORD`).
 
 Implemented: **accounts and administration (R8-R12)** — username identity, optional per-user passwords, a
 pick-a-user sign-in screen, and a single admin who adds and deletes users. **The PWA (R13, R14)** —
@@ -461,6 +461,31 @@ second control: the emit path, `instantOf` and the 23:59 default are shared, so 
 collapsed chips is the same household-zone instant as one set from the picker (`adr/0036`). The
 recurrence form's assignee is deliberately left a dropdown - a standing instruction is written once and
 read for months.
+
+**R153-R158 are implemented.** `docs/requirements/0018` and `docs/design/0018` add **Duplicate**: an
+item row offers it beside Edit, and the agenda's item popup offers it too, opening the add form prefilled
+with the original's **description and detail and nothing else**. Frontend only - a duplicate is an
+ordinary create, and `SaveItem` already carried every component it needs. What it refuses to copy is the
+point: a due date, an assignee or a cost carried over produces a chore already dated for a day that has
+gone and assigned to whoever did the last one (R155). It is offered on a **finished** item too, which is
+the one most often wanted again.
+
+**Four things in there are easy to break.** `items/duplicate.ts`'s `duplicateOf` is the **one**
+definition of what a copy carries, called by both surfaces over an `Item | DashboardItem` union - a
+second copy is how the list and the agenda come to disagree, and neither would fail. The duplicate form
+opens **expanded**, which is the opposite of adding (0017): what is left to answer after a copy is
+exactly the date, assignee and costs R155 dropped, so a collapsed form hides the whole remaining task.
+`dashboard/DuplicateItemDialog` must keep its **three** load states - a form drawn from `fields ?? []`
+asks for a description alone while the configuration is in flight and is indistinguishable from a failed
+request, which is `NavGroup`'s 0012 bug exactly. And **`useCreateItemFromAgenda` is a third writer that
+must name both key trees** (`['dashboard']` *and* `['lists']`, `adr/0039`): reusing `items/queries`'
+`useCreateItem` there compiles, passes, and leaves the list one item short with nothing to refetch it.
+
+The agenda now creates items, widening `adr/0039`'s "writable in exactly one way" a second time, bounded
+by R157: the only create reachable from there is one whose list is already decided - so there is no list
+picker, and the form is the **list's** form, fetched through `useList`/`useListFields` under the list's
+own cache keys. Duplicate is deliberately **not** on `AgendaItemRow`: that row has two write controls
+already and a third icon is a mis-tap, while the popup is one tap from every view.
 
 Keep this file true: when a decision here turns out wrong, update it in the same change.
 

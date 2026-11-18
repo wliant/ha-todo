@@ -29,6 +29,7 @@ import {
   writeFilter,
   type ItemFilter,
 } from './filters'
+import { duplicateOf } from './duplicate'
 import { ItemForm } from './ItemForm'
 import { ItemRow } from './ItemRow'
 import {
@@ -75,6 +76,11 @@ export function ItemsSection({ list, fields }: { list: ListDetail; fields: ListF
   // Expanded while adding, so the collapsed form can show only what the list
   // insists on (R39).
   const [showAllFields, setShowAllFields] = useState(false)
+  // Whether the open form started as a copy of another item (0018 R154). Only
+  // the title reads it: a duplicate is a create in every other respect, and
+  // `editing.id` is still what decides create from update. Set on every path
+  // that opens the form, so it cannot survive into the next one.
+  const [duplicating, setDuplicating] = useState(false)
 
   const { data: me } = useCurrentUser()
   const { data: items, isPending } = useItems(list.id)
@@ -196,7 +202,22 @@ export function ItemsSection({ list, fields }: { list: ListDetail; fields: ListF
 
   function startAdding() {
     setShowAllFields(false)
+    setDuplicating(false)
     setEditing(blank())
+  }
+
+  /**
+   * Add another one like this (0018 R153).
+   *
+   * <p>Opens the form **expanded**, unlike adding: the member has the writing
+   * already and what is left is the date, the assignee and the costs - exactly
+   * the answers a duplicate deliberately does not copy (R155), so a collapsed
+   * form would hide the only questions there are left to answer.
+   */
+  function startDuplicating(item: Item) {
+    setShowAllFields(true)
+    setDuplicating(true)
+    setEditing(duplicateOf(item))
   }
 
   return (
@@ -282,8 +303,10 @@ export function ItemsSection({ list, fields }: { list: ListDetail; fields: ListF
             onReopen={() => toggle.mutate({ item, state: 'OPEN' })}
             onEdit={() => {
               setShowAllFields(true)
+              setDuplicating(false)
               setEditing(fromItem(item))
             }}
+            onDuplicate={() => startDuplicating(item)}
           />
         ))}
       </Stack>
@@ -304,7 +327,9 @@ export function ItemsSection({ list, fields }: { list: ListDetail; fields: ListF
       )}
 
       <Dialog open={editing !== null} onClose={() => setEditing(null)} fullWidth maxWidth="sm">
-        <DialogTitle>{editing?.id ? 'Edit item' : 'Add an item'}</DialogTitle>
+        <DialogTitle>
+          {editing?.id ? 'Edit item' : duplicating ? 'Duplicate item' : 'Add an item'}
+        </DialogTitle>
         <DialogContent>
           {editing && (
             <Stack spacing={2} sx={{ pt: 1 }}>
