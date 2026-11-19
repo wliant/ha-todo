@@ -51,6 +51,25 @@ app:
     # feeds from localhost. A member-supplied URL fetched by this server is a
     # request-forgery primitive otherwise - see docs/adr/0035.
     allow-private-hosts: ${CALENDAR_ALLOW_PRIVATE_HOSTS:false}
+  # New work reaching an open agenda (requirements/0021). One server-sent
+  # stream per open agenda, routed by grant: see docs/adr/0054 and 0055.
+  live:
+    # Off, /api/live/stream is absent. The client cannot tell that 404 from any
+    # other failure to connect, so it falls back to refreshing periodically
+    # rather than breaking the landing page - see docs/adr/0056.
+    enabled: ${LIVE_ENABLED:true}
+    # Under nginx's 60s proxy_read_timeout default AND under the typical idle
+    # timeout of a front door we cannot inspect. It is also the only thing that
+    # notices a peer that vanished - a slept phone, a closed lid.
+    heartbeat: ${LIVE_HEARTBEAT:PT20S}
+    # A deliberate recycle. Nothing re-checks authorization on an emitter that
+    # is already open, so this bounds how long a stream authenticated at
+    # subscribe time can outlive its session. It must also stay under nginx's
+    # proxy_read_timeout for this location, or nginx cuts first and the client
+    # reconnects on nginx's clock instead of ours.
+    stream-timeout: ${LIVE_STREAM_TIMEOUT:PT30M}
+    # So a reconnect bug in one tab cannot accumulate emitters.
+    max-streams-per-member: ${LIVE_MAX_STREAMS:5}
 
 spring:
   application:

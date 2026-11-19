@@ -40,6 +40,8 @@ import {
   type Range,
 } from './calendar'
 import { PeriodControls } from './PeriodControls'
+import { useAnnouncer } from './useAnnouncer'
+import { useLiveUpdates } from './useLiveUpdates'
 
 /**
  * What a member needs to do, across every list they can see (R44, R45).
@@ -72,7 +74,9 @@ export function DashboardPage() {
   // reason the duplicate is: a half-edited form is not something a link can
   // restore.
   const [editing, setEditing] = useState<DashboardItem | null>(null)
-  const [said, setSaid] = useState<string | null>(null)
+  // One message slot with a queue behind it (R180, R185). What the member just
+  // did pre-empts and clears whatever arrived; see dashboard/announcements.
+  const { message, say, announce, dismiss } = useAnnouncer()
   const scope: DashboardScope = params.get('scope') === 'mine' ? 'mine' : 'all'
   // The lists this member can see. The same query the chip draws its menu
   // from and the same cache entry, so asking here costs nothing - and this is
@@ -99,7 +103,11 @@ export function DashboardPage() {
   // The agenda's two writes (adr/0039, widened by adr/0048). Their messages go
   // to the same snackbar: both are things that happened to a row the member
   // can no longer see.
-  const completion = useSetStateFromAgenda(setSaid)
+  const completion = useSetStateFromAgenda(say)
+
+  // What the rest of the household is doing (R179). Mounted here and nowhere
+  // else; it refreshes both key trees and announces what it did not cause.
+  useLiveUpdates(announce)
 
   /** Today drops the param rather than writing it, as scope=all does. */
   function moveTo(day: Civil) {
@@ -139,7 +147,7 @@ export function DashboardPage() {
       { item, state, noteHtml },
       {
         onSuccess: () =>
-          setSaid(
+          say(
             state === 'LAPSED'
               ? `${item.description} has lapsed.`
               : `${item.description} is done.`,
@@ -315,7 +323,7 @@ export function DashboardPage() {
           key={duplicating.id}
           item={duplicating}
           onClose={() => setDuplicating(null)}
-          onCreated={setSaid}
+          onCreated={say}
         />
       )}
 
@@ -327,7 +335,7 @@ export function DashboardPage() {
           key={editing.id}
           item={editing}
           onClose={() => setEditing(null)}
-          onSaved={setSaid}
+          onSaved={say}
         />
       )}
 
@@ -347,11 +355,13 @@ export function DashboardPage() {
 
       {/* The row has gone by the time this appears, so this is what says what
           happened - and, on a 409, whose chore it turned out to be (R87). */}
+      {/* The dwell is the announcer's, not the snackbar's: a queued message
+          replacing the current one without this component closing in between
+          would inherit the previous message's timer. */}
       <Snackbar
-        open={said !== null}
-        message={said ?? ''}
-        autoHideDuration={6000}
-        onClose={() => setSaid(null)}
+        open={message !== null}
+        message={message ?? ''}
+        onClose={dismiss}
       />
     </ViewContext.Provider>
   )

@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -51,12 +52,14 @@ public class TodoItemService {
     private final StoredImageRepository storedImages;
     private final ImageService images;
     private final DetailImages detailImages;
+    private final ApplicationEventPublisher events;
 
     public TodoItemService(TodoItemRepository items, ListFieldRepository fields,
                            ListAccessRepository access, AppUserRepository users,
                            TodoListService lists, CurrentUserProvider currentUser,
                            HtmlSanitizer sanitizer, StoredImageRepository storedImages,
-                           ImageService images, DetailImages detailImages) {
+                           ImageService images, DetailImages detailImages,
+                           ApplicationEventPublisher events) {
         this.items = items;
         this.fields = fields;
         this.access = access;
@@ -67,6 +70,7 @@ public class TodoItemService {
         this.storedImages = storedImages;
         this.images = images;
         this.detailImages = detailImages;
+        this.events = events;
     }
 
     @Transactional(readOnly = true)
@@ -94,6 +98,7 @@ public class TodoItemService {
         claimImages(saved, me.getId());
 
         lists.recordInteraction(list, me);
+        announce(saved, list, me, ItemCreatedEvent.Source.MEMBER);
         return ItemResponse.of(saved);
     }
 
@@ -127,7 +132,24 @@ public class TodoItemService {
         // an occurrence claiming them would mean deleting that one item takes
         // the bytes away from every future occurrence. And no recordInteraction
         // either - nobody interacted with anything.
-        return items.save(item);
+        TodoItem saved = items.save(item);
+        // RECURRENCE rather than MEMBER even though `actor` is a real person:
+        // the rule's author did not add this, the job did. See ItemCreatedEvent.
+        announce(saved, list, actor, ItemCreatedEvent.Source.RECURRENCE);
+        return saved;
+    }
+
+    /**
+     * Tells whoever is watching that a chore arrived (0021 R179).
+     *
+     * <p>Values, not entities, and read here while the transaction is still
+     * open - the handler runs after the commit, where a lazy association is a
+     * {@code LazyInitializationException}.
+     */
+    private void announce(TodoItem item, TodoList list, AppUser actor,
+                          ItemCreatedEvent.Source source) {
+        events.publishEvent(new ItemCreatedEvent(item.getId(), list.getId(), list.getName(),
+                item.getDescription(), actor.getId(), actor.getDisplayName(), source));
     }
 
     @Transactional

@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status
 
 **Everything specified so far is built, as of 2026-11-19.** Build, local stack, deploy scripts and all
-three test harnesses are real and passing: 296 backend unit tests, 276 integration tests, 409 frontend
-tests, 110 end-to-end (13 skip without `E2E_ADMIN_PASSWORD`).
+three test harnesses are real and passing: 316 backend unit tests, 282 integration tests, 433 frontend
+tests, 112 end-to-end (13 skip without `E2E_ADMIN_PASSWORD`).
 
 Implemented: **accounts and administration (R8-R12)** — username identity, optional per-user passwords, a
 pick-a-user sign-in screen, and a single admin who adds and deletes users. **The PWA (R13, R14)** —
@@ -563,6 +563,90 @@ the one surface that does **not** distinguish its three load states: a nudge is 
 "could not check whether you weighed yourself" is noise on the landing page. A tracker write must **not**
 invalidate `['lists']` or `['dashboard']` - `useCreateItemFromAgenda` trains the opposite reflex, and a
 reading is not work.
+
+**R179-R187 are implemented.** `docs/requirements/0021` and `docs/design/0021` make the agenda **live**,
+with `docs/adr/0054`-`0056` recording the decisions. A member with the agenda open sees a chore somebody
+else added **without doing anything**, and a snackbar names it. Until now the only freshness mechanism in
+the product was `refetchOnWindowFocus: true` in `main.tsx`, so an agenda open in a foregrounded PWA was
+the household as it stood when the page loaded.
+
+It is **server-sent events**, not polling and not a WebSocket (`adr/0054`): `GET /api/live/stream`, one
+per open agenda, in a new `com.hatodo.live` package. The deciding argument is that **the HTTPS front door
+is configured outside this repository** - a WebSocket upgrade it refuses to proxy is a dead feature with
+no fix available in a PR, where a buffered SSE stream merely degrades. **The stream is a doorbell, not a
+second read API**: the client's whole response is to invalidate and refetch through the guarded
+endpoints, and `LiveNotification` carries no detail HTML, no assignee, no costs, no due date and **no
+version** (`adr/0055`). The day it carries enough to render from is the day it has acquired a second copy
+of the access guard - reopen `adr/0055` rather than extending it.
+
+**Seven things in there are easy to break, and every one of them fails silently.** The listener is
+`@TransactionalEventListener(AFTER_COMMIT)`; a plain `@EventListener` tells a browser to refetch a row
+Postgres has not made visible, **self-heals on the next refetch**, and fails no test - which is why
+`ItemCreatedListenerTest` asserts the annotation reflectively. `ItemCreatedEvent` carries **values, never
+entities** (`open-in-view` is false, and in the `createFromRule` path a `LazyInitializationException`
+lands inside the recurrence runner's catch and reads as a recurrence bug). Recipients are
+**`list_access` rows alone**, resolved per event - not the owner unioned in, because this must stay the
+*same predicate* as the read it triggers, and not cached on the emitter, because that is what makes a
+revoked grant take effect. `byYou` is computed **per recipient on the server**, and `Source.RECURRENCE`
+forces it false even for the rule's author - otherwise the one member never told about the 01:05 run is
+the one who wrote the standing instruction (R182, exactly backwards). **One thread writes every
+emitter**: `SseEmitter` is not safe for concurrent sends and an interleaved frame is a dropped event with
+no exception on either side. The emitter carries an **explicit timeout** - without one Spring falls back
+to Tomcat's 30 seconds and every tab reconnects 120 times an hour while working perfectly. And
+deregistration goes through `compute`, never `get().remove()` then `if (isEmpty()) map.remove()`, which
+races into a member who is connected, heartbeating and receiving nothing.
+
+**The heartbeat is on the broker's own executor, not `@Scheduled`** - `@EnableScheduling` sits on
+`RecurrenceSchedulingConfiguration`, which `application-itest.yml` switches off, so a `@Scheduled`
+heartbeat would not exist in integration tests and disabling recurrence would disable liveness.
+`app.live.enabled: false` makes the endpoint **404**, which the client cannot tell from any other failure
+to connect - so the kill switch degrades rather than breaks.
+
+**The client falls back to polling** (`adr/0056`): no `open` within 10s, an `error` with `readyState ===
+CLOSED`, or no `EventSource` at all, and `useLiveUpdates` invalidates `['dashboard']` every 60s while the
+tab is visible. It names the **key tree**, so no query hook changes and a fourth dashboard query is
+covered for free. R179 survives a buffering proxy; R180 does not, and that is written into the
+requirement. Note `EventSource` does **not** retry a non-2xx - it fires `error`, sets `CLOSED` and stops -
+so an expired session ends the stream rather than hammering, and the hazard is a tab that is silently no
+longer live; the hook answers by invalidating `currentUserKey` once and letting `ProtectedRoute` redirect.
+`STREAM_CLOSED` is a module constant rather than `EventSource.CLOSED`, because that global is absent in
+exactly the browser the feature-detection exists for.
+
+**Two things outside the app code are load-bearing.** nginx **consumes** `X-Accel-Buffering` from an
+upstream response and does not forward it, so `web/nginx.conf` sets it **back** on the way out with
+`add_header` - without that line the header the controller sets stops at our own nginx and the front door
+never sees it (found with `curl`, not reasoning). And in that location **every `X-Forwarded-*` header is
+repeated**: nginx inherits `proxy_set_header` only when a level sets none of its own, so adding
+`Connection ""` silently drops `X-Forwarded-Proto` and Spring sees plain http on an https site.
+
+**The agenda's snackbar is now a queue** (`dashboard/useAnnouncer`), because it has a second, unsolicited
+writer. A message from the member's **own act pre-empts and clears** what arrived (R185) - otherwise a
+chore arriving a frame after Complete overwrites "Milk is done." before it is read, with both code paths
+individually correct and nothing failing. It is deliberately **not** the app's first shared snackbar
+provider: four surfaces own a local one and exactly one needed a queue, so **the threshold for a provider
+is a second surface that needs a queue**. Announcements name up to five and then count the rest, which is
+the 01:05 burst.
+
+**`useLiveUpdates` invalidates both `['dashboard']` and `['lists']`.** It is a reader rather than one of
+`adr/0039`'s writers, so that rule does not formally bind it - but its reason does, and forgetting
+`['lists']` leaves the list screen one chore short with nothing to refetch it. Reaching a **second**
+surface is the threshold for moving the hook out of `dashboard/`; it is mounted by `DashboardPage` and
+nowhere else.
+
+**Deliberately not pushed**: items deleted, completed, lapsed or edited by somebody else.
+`LiveNotification.type` exists so that is additive. And the toast does not promise the chore is on the
+period, scope or list filter on screen - filtering the notice by the view means a chore added for next
+month arrives with no sign at all.
+
+**A second backend instance is now more expensive, in a new way.** Recurrence's double-run is noisy and
+harmless; this would deliver to whichever half of the household held a stream on the instance that did
+the write, with nothing failing anywhere. Sessions still break first, so it is still not what blocks a
+second instance.
+
+**`e2e/tests/test_live.py` keeps a 15-second timeout on purpose.** A timeout past 60 seconds is satisfied
+by the fallback poll, so it would certify a build where the stream never works. Both its tests were
+checked against `LIVE_ENABLED=false` and **fail** there, which is what says they test the push rather
+than `refetchOnWindowFocus`.
 
 Keep this file true: when a decision here turns out wrong, update it in the same change.
 

@@ -42,6 +42,11 @@ services:
       # prod leave it false, which is what stops a pasted address reaching the
       # registry on the LAN - see docs/adr/0035.
       CALENDAR_ALLOW_PRIVATE_HOSTS: ${CALENDAR_ALLOW_PRIVATE_HOSTS:-true}
+      # A live agenda (docs/adr/0054). The heartbeat is faster locally so a
+      # developer watching `curl -N` does not wait twenty seconds to see the
+      # stream is actually streaming.
+      LIVE_ENABLED: ${LIVE_ENABLED:-true}
+      LIVE_HEARTBEAT: ${LIVE_HEARTBEAT:-PT5S}
     # Bound to loopback, not the LAN. The browser always talks to the web
     # service (same-origin /api); this port exists only so `pnpm dev` can proxy
     # to it and so you can curl the API directly while debugging.
