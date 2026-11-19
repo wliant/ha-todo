@@ -12,6 +12,7 @@ import { Link as RouterLink } from 'react-router-dom'
 import type { DashboardItem } from '../api/dashboard'
 import { MemberAvatar } from '../app/MemberAvatar'
 import ContentCopyRounded from '@mui/icons-material/ContentCopyRounded'
+import EditRounded from '@mui/icons-material/EditRounded'
 import EventBusyRounded from '@mui/icons-material/EventBusyRounded'
 import { CompleteControl } from '../items/CompleteControl'
 import { ListIcon } from '../lists/listIcons'
@@ -24,7 +25,9 @@ import { ListIcon } from '../lists/listIcons'
  *
  * <p>It also adds another one like it (0018 R156) - the one create the agenda
  * can offer, because the list is the one the chore came from and nobody has to
- * be asked which.
+ * be asked which - and changes the chore itself (0020 R173), which is the
+ * other half of the same reasoning: the list is already decided, so the
+ * list's form is the one to open.
  *
  * <p>It completes the chore (0010 R85), which is what makes ticking something
  * off reachable from the week view, the month view and the undated panel at
@@ -38,6 +41,7 @@ export function DashboardItemDialog({
   onComplete,
   onWriteNote,
   onLapse,
+  onEdit,
   onDuplicate,
 }: {
   item: DashboardItem
@@ -45,6 +49,7 @@ export function DashboardItemDialog({
   onComplete: () => void
   onWriteNote: () => void
   onLapse: () => void
+  onEdit: () => void
   onDuplicate: () => void
 }) {
   return (
@@ -143,8 +148,11 @@ export function DashboardItemDialog({
         >
           Lapse
         </Button>
-        {/* Spelled out for the same reason Lapse is, and last: this one opens
-            a form rather than writing anything. */}
+        {/* The two form-openers last, after everything that writes: a
+            mis-tap on either costs a Cancel rather than a chore (0020 R175). */}
+        <Button startIcon={<EditRounded fontSize="small" />} onClick={onEdit} color="inherit">
+          Edit
+        </Button>
         <Button
           startIcon={<ContentCopyRounded fontSize="small" />}
           onClick={onDuplicate}

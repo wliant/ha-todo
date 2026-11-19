@@ -9,7 +9,14 @@ import {
   type Scheduled,
   type Undated,
 } from '../api/dashboard'
-import { conflictingItem, createItem, setItemState, type ItemState, type SaveItem } from '../api/items'
+import {
+  conflictingItem,
+  createItem,
+  setItemState,
+  updateItem,
+  type ItemState,
+  type SaveItem,
+} from '../api/items'
 import { errorMessage, isConflict } from '../api/http'
 import { listKeys } from '../lists/queries'
 
@@ -184,6 +191,32 @@ export function useCreateItemFromAgenda(listId: string) {
 
   return useMutation({
     mutationFn: (item: SaveItem) => createItem(listId, item),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: dashboardKeys.all })
+      void queryClient.invalidateQueries({ queryKey: listKeys.all })
+    },
+  })
+}
+
+/**
+ * Changing an item from the agenda (0020 R173).
+ *
+ * <p>The item's own endpoint, which checks the caller's grant and the version
+ * the form was drawn from; the agenda adds no authorization of its own and
+ * could not be trusted with any (adr/0039).
+ *
+ * <p>Not optimistic, for `useCreateItemFromAgenda`'s reason and one more: an
+ * edit can move the chore's date, so which cached payload it belongs in is
+ * exactly what changed. Guessing is work the refetch does correctly for free,
+ * and the dialog is still open when the server answers.
+ *
+ * <p>**Both key trees**, as every write from here must (adr/0039).
+ */
+export function useUpdateItemFromAgenda() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ id, ...item }: SaveItem & { id: string }) => updateItem(id, item),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: dashboardKeys.all })
       void queryClient.invalidateQueries({ queryKey: listKeys.all })

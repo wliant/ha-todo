@@ -1048,4 +1048,103 @@ describe('DashboardPage', () => {
       expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
     })
   })
+  describe('editing a chore', () => {
+    // 0020 R173: the agenda is where a member finds out the date is wrong, and
+    // until now the only answer was to go and open the list.
+    const detail: listsApi.ListDetail = {
+      id: 'id-list',
+      name: 'Chores',
+      description: null,
+      icon: 'CHECKLIST',
+      owned: true,
+      pinned: false,
+      version: 1,
+      members: [{ id: 'id-ana', displayName: 'Ana', owner: true, avatarImageId: null }],
+      createdAt: '2026-11-05T00:00:00Z',
+    }
+
+    function listField(overrides: Partial<listsApi.ListField>): listsApi.ListField {
+      return {
+        id: 'id-field',
+        kind: 'DESCRIPTION',
+        label: null,
+        required: true,
+        costMode: null,
+        costUnitLabel: null,
+        pointsPerUnit: null,
+        choices: [],
+        ...overrides,
+      }
+    }
+
+    beforeEach(() => {
+      vi.spyOn(listsApi, 'fetchList').mockResolvedValue(detail)
+      vi.spyOn(listsApi, 'fetchListFields').mockResolvedValue([
+        listField({ id: 'id-desc' }),
+        listField({ id: 'id-due', kind: 'DUE_AT', required: false }),
+      ])
+    })
+
+    it('opens the list\u2019s form holding everything the item already is', async () => {
+      const due = new Date().toISOString()
+      vi.spyOn(dashboardApi, 'fetchScheduled').mockResolvedValue(
+        payload({
+          items: [
+            item({
+              dueAt: due,
+              version: 7,
+              detailHtml: '<p>Blue bin</p>',
+              assignee: { id: 'id-ana', displayName: 'Ana', avatarImageId: null },
+              costValues: [{ fieldId: 'id-cost', choiceId: 'id-choice', amount: null }],
+            }),
+          ],
+        }),
+      )
+      const update = vi
+        .spyOn(itemsApi, 'updateItem')
+        .mockResolvedValue({} as unknown as itemsApi.Item)
+      renderAt('/dashboard/day?item=id-item')
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+
+      expect(await screen.findByRole('heading', { name: 'Edit item' })).toBeVisible()
+      const description = screen.getByRole('textbox', { name: 'Description' })
+      expect(description).toHaveValue('Take the bins out')
+
+      await userEvent.clear(description)
+      await userEvent.type(description, 'Take the green bin out')
+      await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+      await waitFor(() =>
+        // Everything the item already was, the version included: an edit that
+        // dropped a field would write the blank back over it, and one that
+        // dropped the version would overwrite whoever got there first.
+        expect(update).toHaveBeenCalledWith('id-item', {
+          version: 7,
+          description: 'Take the green bin out',
+          detailHtml: '<p>Blue bin</p>',
+          assigneeId: 'id-ana',
+          dueAt: due,
+          costValues: [{ fieldId: 'id-cost', choiceId: 'id-choice', amount: null }],
+        }),
+      )
+      expect(await screen.findByText('Saved \u201cTake the green bin out\u201d.')).toBeVisible()
+    })
+
+    it('does not ask for a description alone while the list is still loading', async () => {
+      // NavGroup's 0012 bug, which this dialog must not reproduce: a form
+      // drawn from `fields ?? []` is indistinguishable from a failed request.
+      vi.spyOn(dashboardApi, 'fetchScheduled').mockResolvedValue(payload({ items: [item()] }))
+      vi.spyOn(listsApi, 'fetchListFields').mockReturnValue(
+        new Promise(() => {}) as Promise<listsApi.ListField[]>,
+      )
+      renderAt('/dashboard/day?item=id-item')
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+
+      expect(await screen.findByRole('heading', { name: 'Edit item' })).toBeVisible()
+      expect(screen.queryByRole('textbox', { name: 'Description' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    })
+  })
 })

@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-**Everything specified so far is built, as of 2026-11-11.** Build, local stack, deploy scripts and all
-three test harnesses are real and passing: 296 backend unit tests, 276 integration tests, 407 frontend
-tests, 109 end-to-end (13 skip without `E2E_ADMIN_PASSWORD`).
+**Everything specified so far is built, as of 2026-11-19.** Build, local stack, deploy scripts and all
+three test harnesses are real and passing: 296 backend unit tests, 276 integration tests, 409 frontend
+tests, 110 end-to-end (13 skip without `E2E_ADMIN_PASSWORD`).
 
 Implemented: **accounts and administration (R8-R12)** — username identity, optional per-user passwords, a
 pick-a-user sign-in screen, and a single admin who adds and deletes users. **The PWA (R13, R14)** —
@@ -486,6 +486,27 @@ by R157: the only create reachable from there is one whose list is already decid
 picker, and the form is the **list's** form, fetched through `useList`/`useListFields` under the list's
 own cache keys. Duplicate is deliberately **not** on `AgendaItemRow`: that row has two write controls
 already and a third icon is a mis-tap, while the popup is one tap from every view.
+
+**R173-R178 are implemented.** `docs/requirements/0020` and `docs/design/0020` put **Edit** on the
+agenda's item popup, beside the Duplicate 0018 put there - so a chore on the wrong day is corrected on
+the surface that showed it wrong, rather than three steps away on its list. Frontend only and no new
+ADR: an edit is an ordinary `PATCH /items/{id}`, `DashboardItem` already carried every component
+`SaveItem` needs including the **version**, and the decisions are 0018's applied to an update.
+
+**Three things in there are easy to break.** `items/edit.ts`'s `editableOf` is the **one** definition of
+what a form holding an existing item starts from - moved out of `ItemsSection`, not copied - and it is
+`duplicateOf`'s deliberate opposite: a duplicate carries two components, an edit carries **all** of them,
+because a form that opened missing one writes the blank back over it on the next save. The version rides
+along for the same reason, so a lost race is a 409 rather than a silent overwrite. `useUpdateItemFromAgenda`
+is the **fourth** writer that must name both key trees (`['dashboard']` *and* `['lists']`, `adr/0039`),
+and it is deliberately **not optimistic**: an edit can move the due date, so which cached payload the
+chore belongs in is exactly what changed. And `dashboard/EditItemDialog` keeps the **three** load states
+for the third time - `NavGroup`'s 0012 bug has now had to be got right in three dialogs.
+
+Deleting is deliberately **not** on the agenda (it destroys a record and has no undo, unlike completing,
+lapsing and reopening), nor is Edit on `AgendaItemRow`, for 0018's reason: that row has two write
+controls already. Both form-openers sit **after** everything that writes in the popup's actions, because
+a mis-tap on a form costs a Cancel.
 
 **R159-R172 are implemented.** `docs/requirements/0019` and `docs/design/0019` add **Trackers**, a
 **third kind** beside lists and collections: a number a household records over and over - what somebody
