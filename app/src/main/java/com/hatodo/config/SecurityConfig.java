@@ -1,5 +1,6 @@
 package com.hatodo.config;
 
+import com.hatodo.live.LiveLogoutHandler;
 import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -56,7 +57,8 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
-                                                   SecurityContextRepository securityContextRepository)
+                                                   SecurityContextRepository securityContextRepository,
+                                                   LiveLogoutHandler liveLogoutHandler)
             throws Exception {
         // Session cookie auth means CSRF protection stays on. The token goes in a
         // readable cookie so the SPA can echo it back in X-XSRF-TOKEN, which is
@@ -88,6 +90,11 @@ public class SecurityConfig {
                 .anyRequest().authenticated())
             .logout(logout -> logout
                 .logoutUrl("/api/auth/logout")
+                // Closes this member's live streams. Nothing re-checks
+                // authorization on an emitter that is already open, so without
+                // this a signed-out tab keeps receiving until its stream times
+                // out. See adr/0054.
+                .addLogoutHandler(liveLogoutHandler)
                 .deleteCookies("JSESSIONID")
                 .logoutSuccessHandler((request, response, authentication) ->
                     response.setStatus(HttpStatus.NO_CONTENT.value())))

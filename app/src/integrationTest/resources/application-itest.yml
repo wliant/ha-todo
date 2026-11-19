@@ -32,3 +32,15 @@ app:
     # The fixture feed is served from this machine, which the guard refuses in
     # any deployment. See docs/adr/0035.
     allow-private-hosts: true
+  # Deliberately NOT disabled, unlike recurrence and calendar above: this
+  # feature has no cron that could fire mid-assertion. It acts only when an
+  # item is created, which is what the tests are doing on purpose.
+  #
+  # The fast heartbeat is load-bearing for LiveStreamApiIntegrationTest: a
+  # stream that receives nothing because it never opened looks exactly like one
+  # that correctly received nothing, so the un-granted member has to prove the
+  # connection is alive by reading a heartbeat before the absence means
+  # anything.
+  live:
+    heartbeat: PT1S
+    stream-timeout: PT2M

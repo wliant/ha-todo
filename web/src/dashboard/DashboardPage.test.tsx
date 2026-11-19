@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ThemeProvider } from '@mui/material/styles'
 import { MemoryRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
@@ -9,6 +9,8 @@ import { MonthView } from './MonthView'
 import { MyDayView } from './MyDayView'
 import { WeekView } from './WeekView'
 import * as dashboardApi from '../api/dashboard'
+import * as liveApi from '../api/live'
+import type { LiveNotification } from '../api/live'
 import * as itemsApi from '../api/items'
 import * as listsApi from '../api/lists'
 import type { ListSummary } from '../api/lists'
@@ -19,6 +21,65 @@ import { addDays, civilIn, dayKey, instantOf, startOfDay } from './calendar'
 /** The household's zone in these fixtures, as /api/me reports it. */
 const ZONE = 'Asia/Singapore'
 import { theme } from '../theme/theme'
+
+/**
+ * A controllable stand-in for the stream the page now holds.
+ *
+ * Installed per file, here, and never globally in `src/test/setup.ts`: jsdom
+ * has no `EventSource`, and a global fake would mean nothing anywhere ever
+ * exercises the degraded path the production code feature-detects for.
+ */
+class FakeEventSource {
+  static opened: FakeEventSource[] = []
+  readyState = 1
+  private readonly listeners = new Map<string, ((event: Event) => void)[]>()
+
+  constructor() {
+    FakeEventSource.opened.push(this)
+  }
+
+  addEventListener(type: string, listener: (event: Event) => void) {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener])
+  }
+
+  close() {
+    this.readyState = 2
+  }
+
+  push(notification: Partial<LiveNotification> = {}) {
+    const event = new MessageEvent('item.created', {
+      data: JSON.stringify({
+        type: 'item.created',
+        itemId: 'id-arrived',
+        listId: 'id-list',
+        listName: 'Chores',
+        description: 'Collect the parcel',
+        actorDisplayName: 'Ben',
+        byYou: false,
+        ...notification,
+      }),
+    })
+    this.listeners.get('item.created')?.forEach((listener) => listener(event))
+  }
+}
+
+/** The stream the page opened, once live updates are turned on for a test. */
+function liveStream(): FakeEventSource {
+  const opened = FakeEventSource.opened.at(-1)
+  expect(opened).toBeDefined()
+  return opened!
+}
+
+/**
+ * Turns the connection on for one test. Off by default, so every other test in
+ * this file exercises the no-EventSource path the real jsdom environment has.
+ */
+function withLiveStream() {
+  FakeEventSource.opened = []
+  vi.spyOn(liveApi, 'liveStreamSupported').mockReturnValue(true)
+  vi.spyOn(liveApi, 'openLiveStream')
+    .mockImplementation(() => new FakeEventSource() as unknown as EventSource)
+}
 
 function item(overrides: Partial<DashboardItem> = {}): DashboardItem {
   return {
@@ -500,6 +561,33 @@ describe('DashboardPage', () => {
         expect(screen.queryByText('Take the bins out')).not.toBeInTheDocument(),
       )
       expect(await screen.findByText('Take the bins out is done.')).toBeVisible()
+    })
+
+    /*
+     * R185, and the reason the page has a queue rather than a second state
+     * slot. Both code paths are individually correct and individually tested,
+     * so the failure this prevents - the member never learning whether their
+     * own completion landed, because somebody else's chore arrived a frame
+     * later - would show up nowhere else.
+     */
+    it('does not let an arriving chore stomp the completion message', async () => {
+      withLiveStream()
+      thenEmpty()
+      vi.spyOn(itemsApi, 'setItemState').mockResolvedValue({} as unknown as itemsApi.Item)
+      renderAt('/dashboard/day')
+
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'Complete Take the bins out' }),
+      )
+      expect(await screen.findByText('Take the bins out is done.')).toBeVisible()
+
+      await act(async () => {
+        liveStream().push()
+      })
+
+      expect(screen.getByText('Take the bins out is done.')).toBeVisible()
+      expect(screen.queryByText('Ben added Collect the parcel to Chores.'))
+        .not.toBeInTheDocument()
     })
 
     it('carries the note on the same request', async () => {

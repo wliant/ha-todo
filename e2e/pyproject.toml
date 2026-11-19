@@ -26,4 +26,5 @@ markers = [
     "dashboard: what a member needs to do, read across every list they can see",
     "collections: reference collections and the search that makes them worth keeping",
     "trackers: numbers a household keeps over time, and the shape they make",
+    "live: work appearing on an open agenda without anybody asking for it",
 ]
