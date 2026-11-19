@@ -225,6 +225,49 @@ def test_a_member_duplicates_a_chore_from_the_agenda(
 
 
 @pytest.mark.dashboard
+def test_a_member_edits_a_chore_from_the_agenda(
+    page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
+) -> None:
+    """
+    0020 R173-R177: the agenda is where a member finds out a chore is wrong,
+    and the list is already decided - so the correction belongs here.
+    """
+    name = test_data.name("Correcting")
+    cleanup_lists(name)
+    ui_sign_in(page, base_url, demo_member)
+    create_list(page, name)
+
+    later_today = datetime.now().replace(hour=23, minute=0, second=0, microsecond=0)
+    add_dated_item(page, "Collect the parcle", later_today)
+
+    page.get_by_role("link", name="Agenda").click()
+    page.get_by_role("button", name=f"Collect the parcle, on {name}").click()
+    page.get_by_role("dialog").get_by_role("button", name="Edit").click()
+
+    # The list's own form, holding what the item already is (R174, R175).
+    dialog = page.get_by_role("dialog")
+    expect(dialog.get_by_role("heading", name="Edit item")).to_be_visible()
+    expect(dialog.get_by_role("textbox", name="Description")).to_have_value(
+        "Collect the parcle"
+    )
+    dialog.get_by_role("textbox", name="Description").fill("Collect the parcel")
+    dialog.get_by_role("button", name="Save").click()
+
+    # The same item, corrected - not a second one.
+    expect(page.get_by_text("Saved “Collect the parcel”")).to_be_visible()
+    expect(page.get_by_role("button", name=f"Collect the parcel, on {name}")).to_be_visible()
+    expect(
+        page.get_by_role("button", name=f"Collect the parcle, on {name}")
+    ).to_have_count(0)
+
+    # And on the list it belongs to, which is the half that fails silently
+    # (R177): the two key trees are siblings and neither reaches the other.
+    page.get_by_role("link", name="Lists").first.click()
+    page.get_by_role("link", name=name).first.click()
+    expect(page.get_by_role("button", name="Collect the parcel", exact=True)).to_be_visible()
+
+
+@pytest.mark.dashboard
 def test_mine_narrows_the_dashboard_without_hiding_it_from_the_url(
     page: Page, base_url: str, demo_member: DemoMember, test_data: TestData, cleanup_lists
 ) -> None:

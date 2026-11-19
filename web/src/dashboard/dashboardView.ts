@@ -55,6 +55,14 @@ export interface DashboardView {
    */
   duplicate: (item: DashboardItem) => void
   /**
+   * Change this chore, on the list it belongs to (0020 R173).
+   *
+   * <p>The item rather than an id, as every other verb here: the form is
+   * seeded from the payload the row was drawn from, version included, so the
+   * save is refused rather than overwriting somebody else's change.
+   */
+  edit: (item: DashboardItem) => void
+  /**
    * The event itself rather than an id: a collapsed event has no single row
    * behind it, and the payload is already in hand - so there is nothing to look
    * up and nothing to fetch.

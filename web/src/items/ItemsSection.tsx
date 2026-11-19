@@ -30,6 +30,7 @@ import {
   type ItemFilter,
 } from './filters'
 import { duplicateOf } from './duplicate'
+import { editableOf } from './edit'
 import { ItemForm } from './ItemForm'
 import { ItemRow } from './ItemRow'
 import {
@@ -43,18 +44,6 @@ import {
 
 function blank(): SaveItem {
   return { description: '', detailHtml: null, assigneeId: null, dueAt: null, costValues: [] }
-}
-
-function fromItem(item: Item): SaveItem & { id: string } {
-  return {
-    id: item.id,
-    version: item.version,
-    description: item.description,
-    detailHtml: item.detailHtml,
-    assigneeId: item.assignee?.id ?? null,
-    dueAt: item.dueAt,
-    costValues: item.costValues,
-  }
 }
 
 export function ItemsSection({ list, fields }: { list: ListDetail; fields: ListField[] }) {
@@ -304,7 +293,7 @@ export function ItemsSection({ list, fields }: { list: ListDetail; fields: ListF
             onEdit={() => {
               setShowAllFields(true)
               setDuplicating(false)
-              setEditing(fromItem(item))
+              setEditing(editableOf(item))
             }}
             onDuplicate={() => startDuplicating(item)}
           />
