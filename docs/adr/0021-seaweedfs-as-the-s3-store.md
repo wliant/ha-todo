@@ -88,7 +88,7 @@ now be describing something that is not MinIO.
 - **Bitnami's archived MinIO image.** Works, pulls anonymously. Rejected because
   it is explicitly archived - choosing a dependency that is already announced as
   unmaintained is choosing a future migration.
-- **Mirror a pinned `minio/minio` into the registry at `192.168.1.248:5000`.**
+- **Mirror a pinned `minio/minio` into the registry at `192.168.9.9:5000`.**
   Restores pinning and the official image, and the registry already exists.
   Rejected as making a developer's local stack depend on being on that LAN,
   which is the one thing the throwaway compose file is meant to avoid.

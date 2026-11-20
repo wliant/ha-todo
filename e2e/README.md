@@ -31,7 +31,7 @@ uv run pytest --headed --slowmo 300          # watch it run
 ## Credentials
 
 Demo accounts come from the `db/seed` Flyway location, which is active in the
-local and dev profiles only. Override with `E2E_EMAIL` / `E2E_PASSWORD`.
+local and dev profiles only. Override with `E2E_USERNAME` / `E2E_PASSWORD`.
 
 ## Test data
 

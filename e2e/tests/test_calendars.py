@@ -122,7 +122,7 @@ def test_an_address_that_is_not_a_web_address_is_refused_outright(
     open_calendars(page, base_url)
     open_add_dialog(page)
 
-    page.get_by_label("Calendar address").fill("ftp://192.168.1.248:5000/v2/_catalog")
+    page.get_by_label("Calendar address").fill("ftp://192.168.9.9:5000/v2/_catalog")
     page.get_by_role("button", name="Look at it").click()
 
     expect(page.get_by_role("alert")).to_be_visible()

@@ -37,7 +37,7 @@ This is enforced by what is published, not just by convention:
 | dev / prod | **none** (`expose` only) | `WEB_PORT` | nginx `/api` |
 
 In dev and prod an external TLS terminator fronts that published port
-(`https://todo-dev.wliant.org` → 5987, `https://todo.wliant.org` → 5986). The
+(`https://todo-dev.example.org` → 5987, `https://todo.example.org` → 5986). The
 session and CSRF cookies are `Secure` there, so Spring must see the browser's
 real scheme: `server.forward-headers-strategy: framework` reads
 `X-Forwarded-Proto`, and nginx passes the incoming value through rather than

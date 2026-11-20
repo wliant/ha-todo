@@ -40,7 +40,7 @@ class FeedUrlGuardTest {
             "https://127.0.0.1/basic.ics",
             "https://localhost/basic.ics",
             "https://10.1.2.3/basic.ics",
-            "https://192.168.1.248/basic.ics",
+            "https://192.168.9.9/basic.ics",
             "https://172.16.4.4/basic.ics",
             "https://169.254.169.254/latest/meta-data",
             "https://100.100.1.1/basic.ics",
@@ -56,9 +56,9 @@ class FeedUrlGuardTest {
 
     @Test
     void refusesTheRegistryThisDeploymentActuallyRuns() {
-        // 192.168.1.248:5000 is an insecure registry with no authentication,
+        // 192.168.9.9:5000 is an insecure registry with no authentication,
         // reachable from the app container. This is the case adr/0035 is about.
-        assertThatThrownBy(() -> closed.check(URI.create("https://192.168.1.248:5000/v2/_catalog")))
+        assertThatThrownBy(() -> closed.check(URI.create("https://192.168.9.9:5000/v2/_catalog")))
                 .isInstanceOf(FeedUrlNotAllowedException.class);
     }
 

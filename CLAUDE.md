@@ -87,7 +87,7 @@ guarantee than remembering not to populate one, and `CalendarFeedServiceTest` as
 components so adding one fails a test rather than leaks a calendar (`docs/adr/0035`). Every fetch passes
 `FeedUrlGuard`: https, no credentials, no port, every resolved address public, **re-checked on each
 redirect** — a public host redirecting to `127.0.0.1` is the whole trick, and the app container can
-otherwise be made to GET the unauthenticated registry on `192.168.1.248:5000` and hand the response back
+otherwise be made to GET the unauthenticated registry on `192.168.9.9:5000` and hand the response back
 in the preview. `app.calendar.allow-private-hosts` relaxes scheme, port *and* host together (a fixture
 `.ics` is plain HTTP on an ephemeral port) and is true only in `local` and `itest`. And **biweekly
 resolves `DTSTART;VALUE=DATE` against `TimeZone.getDefault()`**, ignoring both the parser's
@@ -1015,15 +1015,17 @@ Rules:
 - `ADMIN_PASSWORD` is required in every environment's env file. `scripts/deploy.sh` refuses without it,
   rather than letting the app fail its health check after the images are already built and pushed.
 - Targets live in uncommitted `deployment/.env.dev` / `.env.prod`; `deployment/.env.example` documents
-  every variable. Both environments run on **`wliant@192.168.1.248`**, sharing
-  `/home/wliant/myapps/ha-todo` — the compose/env filenames and the project names (`ha-todo-dev`,
-  `ha-todo-prod`) keep them apart. **dev is port 5987, prod is 5986.**
-- The registry is `192.168.1.248:5000` over **insecure HTTP**; both this machine and the target already
+  every variable. **Every host, user, path and hostname written down here and in `docs/` is a
+  placeholder** — `deploy@192.168.9.9`, `/srv/ha-todo`, `todo.example.org` — because this repo is
+  public; the real ones are only ever in those two uncommitted env files, and the scripts read them
+  from there. Both environments run on one host, sharing one directory: the compose/env filenames and
+  the project names (`ha-todo-dev`, `ha-todo-prod`) keep them apart. **dev is port 5987, prod is 5986.**
+- The registry is `192.168.9.9:5000` over **insecure HTTP**; both this machine and the target already
   list it under `insecure-registries`.
-- Each environment has its own Postgres role and database on `192.168.1.248:5432`: `hatodo_dev` and
+- Each environment has its own Postgres role and database on `192.168.9.9:5432`: `hatodo_dev` and
   `hatodo_prod`. Flyway creates every table, so the role only needs to own its database.
-- Both environments are fronted by HTTPS: dev at **https://todo-dev.wliant.org**, prod at
-  **https://todo.wliant.org**, terminating TLS upstream and proxying to ports 5987 / 5986. So
+- Both environments are fronted by HTTPS: dev at **https://todo-dev.example.org**, prod at
+  **https://todo.example.org**, terminating TLS upstream and proxying to ports 5987 / 5986. So
   `SESSION_COOKIE_SECURE=true` in both, and the app sets `server.forward-headers-strategy: framework`
   while nginx forwards the browser's original scheme (`$http_x_forwarded_proto`, not `$scheme`, which is
   always plain http inside the container).
@@ -1073,7 +1075,7 @@ Rules:
 - **Then deploy to dev and run `e2e/` against it — before opening the PR, and before handing the work
   back.** In order: `E2E_BASE_URL=http://localhost:5173 uv run pytest` against the local stack,
   `./scripts/dev-down.sh`, `./scripts/deploy.sh dev`, then
-  `E2E_BASE_URL=https://todo-dev.wliant.org uv run pytest`. The suite exists to be run against a real
+  `E2E_BASE_URL=https://todo-dev.example.org uv run pytest`. The suite exists to be run against a real
   deployment (see Testing strategy): the local stack shares a machine, a scheme and a hostname with the
   browser, so it cannot catch what the HTTPS front door, `X-Forwarded-Proto` and the `Secure` cookie do.
   Export `E2E_ADMIN_PASSWORD` from `deployment/.env.dev`'s `ADMIN_PASSWORD`, or the admin tests skip

@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
  * <p>A member pastes the URL this server then fetches, so the destination is
  * typo-chosen in the common case and attacker-chosen in the general one - and
  * this deployment makes the general case concrete. The app container can reach
- * a Docker registry on {@code 192.168.1.248:5000} over plain HTTP with no
+ * a Docker registry on {@code 192.168.9.9:5000} over plain HTTP with no
  * authentication, its own {@code app:8080/actuator}, Postgres, and the object
  * store. A feed pointed at any of those turns "add a calendar" into a
  * request-forgery primitive whose response the member reads in the preview that

@@ -17,7 +17,7 @@ binary data that does not belong in Postgres rows or in the image build.
 The deferral's condition is met and its mechanism is ready: a commented service in
 `deployment/docker-compose.infra.yml`, commented `MINIO_*` variables in
 `deployment/.env.example`, both pointing here. MinIO is also already running on
-`192.168.1.248` alongside the provided Postgres, so dev and prod need a bucket
+`192.168.9.9` alongside the provided Postgres, so dev and prod need a bucket
 each, not an installation.
 
 The non-obvious question is not whether to use MinIO. It is how bytes reach the
@@ -43,8 +43,8 @@ alongside its existing `ADMIN_PASSWORD` check.
 are not used.** Three reasons, in order of how hard they are to work around:
 
 1. MinIO is not published through either HTTPS front door. A presigned URL would be
-   `http://192.168.1.248:9000/...` - unreachable from a phone off the LAN, and
-   blocked as mixed content on `https://todo.wliant.org`.
+   `http://192.168.9.9:9000/...` - unreachable from a phone off the LAN, and
+   blocked as mixed content on `https://todo.example.org`.
 2. It violates the standing rule that the SPA only ever uses relative `/api` paths
    (design/0001). That rule is why cookies, `SameSite` and CSRF behave identically
    in every environment and CORS is never needed.

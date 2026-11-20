@@ -214,7 +214,7 @@ class CalendarFeedApiIntegrationTest extends ApiIntegrationTest {
         // the *deployment* gives: FeedUrlGuardTest owns the decision table.
         Member ana = givenMember("cal-ssrf");
 
-        ResponseEntity<Map> refused = subscribe(ana, "Registry", "ftp://192.168.1.248:5000/v2/");
+        ResponseEntity<Map> refused = subscribe(ana, "Registry", "ftp://192.168.9.9:5000/v2/");
 
         assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(myFeeds(ana)).isEmpty();

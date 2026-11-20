@@ -17,8 +17,8 @@ hooks carry no `staleTime` and no `refetchInterval`, deliberately.
 Two constraints shaped this more than anything about the browser:
 
 - **The front door is not ours.** Both environments terminate TLS on a reverse
-  proxy configured outside this repository (dev at `todo-dev.wliant.org` -> 5987,
-  prod at `todo.wliant.org` -> 5986). Whatever we build has to survive a proxy
+  proxy configured outside this repository (dev at `todo-dev.example.org` -> 5987,
+  prod at `todo.example.org` -> 5986). Whatever we build has to survive a proxy
   whose behaviour we cannot test from here and cannot change in a pull request.
 - **One backend instance.** Sessions are in memory
   ([adr/0003](0003-defer-redis-and-minio.md)) and the recurrence job takes no

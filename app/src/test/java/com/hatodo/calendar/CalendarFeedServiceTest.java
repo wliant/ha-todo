@@ -142,12 +142,12 @@ class CalendarFeedServiceTest {
     @Test
     void refusesAnAddressThisServerMustNotFetch() {
         // Configured as a deployment is, which is the only configuration where
-        // this matters: the registry on 192.168.1.248:5000 has no
+        // this matters: the registry on 192.168.9.9:5000 has no
         // authentication and the app container can reach it (adr/0035).
         CalendarFeedService deployed = serviceWith(false);
 
         assertThatThrownBy(() -> deployed.create(new SaveCalendarFeedRequest(
-                "Registry", "http://192.168.1.248:5000/v2/_catalog", List.of())))
+                "Registry", "http://192.168.9.9:5000/v2/_catalog", List.of())))
                 .isInstanceOf(FeedUrlNotAllowedException.class);
         verify(feeds, never()).save(any());
     }

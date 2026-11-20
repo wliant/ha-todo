@@ -19,7 +19,7 @@ member can invalidate it, by regenerating it at the provider.
 outbound HTTP call the product makes, and the destination is attacker-chosen in
 the general case and typo-chosen in the common one. The deployment makes the
 general case concrete: the app container can reach a Docker registry on
-`192.168.1.248:5000` over plain HTTP with no authentication, its own
+`192.168.9.9:5000` over plain HTTP with no authentication, its own
 `app:8080/actuator`, Postgres and the SeaweedFS store on the same LAN. A feed
 pointed at any of those turns "add a calendar" into a request-forgery primitive
 whose response the member can read in the preview that `requirements/0007` R65
@@ -82,7 +82,7 @@ always refused, and the scheme must still be `http` or `https`.
   `http://`, a hostname resolving to a private address, a redirect to loopback,
   and an oversized body are tested directly; without them this decision is an
   aspiration. `FeedUrlGuardTest` includes
-  `https://192.168.1.248:5000/v2/_catalog` by name, because that registry is
+  `https://192.168.9.9:5000/v2/_catalog` by name, because that registry is
   the concrete thing this closes.
 - **The escape hatch is one property and it is wide.** With it on, this server
   will fetch any `http` address on any port, including its own. That is the

@@ -6,7 +6,7 @@ Date: 2026-11-04
 ## Context
 
 Two self-hosted environments, a private Docker registry on the LAN
-(`192.168.1.248`), and Docker Compose on each target host. No CI runners are set
+(`192.168.9.9`), and Docker Compose on each target host. No CI runners are set
 up. The failure mode to avoid is the familiar one: a deploy that lives only in
 someone's shell history, where the server drifts from the repo and nobody can say
 what is actually running.
@@ -45,10 +45,10 @@ Rules this encodes:
 
 Confirmed 2026-11-04:
 
-- Registry is `192.168.1.248:5000`, plain HTTP (`registry:3`). Both the developer
+- Registry is `192.168.9.9:5000`, plain HTTP (`registry:3`). Both the developer
   machine and the target already list it under `insecure-registries`.
-- Both environments deploy to `wliant@192.168.1.248` and **share**
-  `/home/wliant/myapps/ha-todo`. They stay separate because the compose files,
+- Both environments deploy to `deploy@192.168.9.9` and **share**
+  `/srv/ha-todo`. They stay separate because the compose files,
   env files, project names (`ha-todo-dev` / `ha-todo-prod`) and published ports
   all differ: dev `5987`, prod `5986`.
 - Compose must be invoked on the target with `--env-file .env.<env>`. The
