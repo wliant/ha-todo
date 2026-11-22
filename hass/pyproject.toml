@@ -1,0 +1,45 @@
+[project]
+name = "ha-todo-hass"
+version = "0.1.0"
+description = "Standalone Home Assistant custom integration for ha-todo. Talks to a deployed system over HTTP only."
+requires-python = ">=3.14.2"
+dependencies = []
+
+[dependency-groups]
+# The framework-free half: api.py, mapping.py and models.py, tested with
+# aiohttp alone. See adr/0058.
+dev = [
+    "pytest==8.4.2",
+    "pytest-asyncio==1.2.0",
+    "aiohttp==3.13.2",
+    "pytest-aiohttp==1.1.0",
+]
+# The Home Assistant half. Its harness pins pytest, pytest-asyncio and much
+# else exactly, and moves roughly monthly - which is the whole reason adr/0058
+# keeps the three modules above out of its reach.
+#
+# Kept close to the **production** instance's Home Assistant rather than to
+# whatever was current when this was written: 0.13.375 pins 2026.10.4 and prod
+# runs 2026.11.1, so the suite rehearses one minor behind rather than eleven
+# months behind. The harness is the thing that decides `requires-python` too -
+# Home Assistant 2026.11 needs Python 3.14.2.
+ha = [
+    "pytest-homeassistant-custom-component==0.13.375",
+]
+
+[tool.uv]
+# Declared as conflicting rather than reconciled: the two groups genuinely
+# cannot share one resolution, because the Home Assistant harness pins
+# pytest-asyncio to a version the pure suite does not. Two environments is the
+# honest model, and it is what keeps the pure suite runnable on the day the
+# harness pins a Home Assistant that has moved on.
+conflicts = [[{ group = "dev" }, { group = "ha" }]]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+asyncio_mode = "auto"
+markers = [
+    "mapping: the two conversions a household day and a third item state depend on",
+    "api: signing in, staying signed in, and what each refusal means",
+]

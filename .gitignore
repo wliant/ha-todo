@@ -13,8 +13,10 @@ dist/
 coverage/
 *.tsbuildinfo
 
-# ---- python / e2e ----
+# ---- python / e2e + hass ----
 .venv/
+.venv-pure/
+.venv-ha/
 __pycache__/
 .pytest_cache/
 *.pyc

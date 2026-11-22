@@ -13,8 +13,9 @@ for layout, commands, environments, deployment and workflow.
 | `app/`        | Spring Boot backend (Gradle, Java 21) |
 | `web/`        | React + TypeScript frontend (Vite, pnpm) |
 | `e2e/`        | Standalone pytest + Playwright suite, run against a deployed environment |
+| `hass/`       | Standalone Home Assistant custom integration, talking to a deployment over HTTP |
 | `deployment/` | Compose files and environment templates |
-| `scripts/`    | Build and deploy entrypoints; the only supported deploy path |
+| `scripts/`    | Build and deploy entrypoints; the only supported deploy path (`deploy-hass.sh` for `hass/`) |
 | `docs/`       | Requirements, designs, architecture decision records |
 
 ## Quick start
@@ -34,7 +35,9 @@ Per-module commands live in [CLAUDE.md](CLAUDE.md#commands).
 Built and running on dev. Accounts, the installable shell, lists with per-list
 access, items with the fields each list declares, completion with points and a
 note about how the work went, standing instructions that make their own items,
-and a dashboard that reads across every list a member can see.
+and a dashboard that reads across every list a member can see. The household's
+automation reaches it too: `hass/` is a Home Assistant integration that signs in
+as an ordinary member and sees only what has been shared with it.
 
 See [CLAUDE.md](CLAUDE.md#status) for what that means in detail, and `docs/` for
 the requirements, designs and decisions behind it.

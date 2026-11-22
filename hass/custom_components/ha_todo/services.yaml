@@ -1,0 +1,98 @@
+add_item:
+  target:
+    entity:
+      integration: ha_todo
+      domain: sensor
+  fields:
+    description:
+      required: true
+      example: Milk
+      selector:
+        text:
+    due_date:
+      example: "2026-11-25"
+      selector:
+        date:
+    due_datetime:
+      selector:
+        datetime:
+
+complete_item:
+  target:
+    entity:
+      integration: ha_todo
+      domain: sensor
+  fields:
+    item:
+      required: true
+      example: Take the bins out
+      selector:
+        text:
+
+lapse_item:
+  target:
+    entity:
+      integration: ha_todo
+      domain: sensor
+  fields:
+    item:
+      required: true
+      example: Take the bins out
+      selector:
+        text:
+
+reopen_item:
+  target:
+    entity:
+      integration: ha_todo
+      domain: sensor
+  fields:
+    item:
+      required: true
+      example: Take the bins out
+      selector:
+        text:
+
+add_collection_entry:
+  fields:
+    collection:
+      required: true
+      example: Recipes
+      selector:
+        text:
+    name:
+      required: true
+      example: Hainanese chicken rice
+      selector:
+        text:
+    description:
+      selector:
+        text:
+    tags:
+      example: '["dinner", "chicken"]'
+      selector:
+        select:
+          multiple: true
+          custom_value: true
+          options: []
+
+record_tracker_reading:
+  fields:
+    tracker:
+      required: true
+      example: Weight
+      selector:
+        text:
+    amount:
+      required: true
+      example: 64.2
+      selector:
+        number:
+          mode: box
+          step: 0.01
+    note:
+      selector:
+        text:
+    period_start:
+      selector:
+        date:

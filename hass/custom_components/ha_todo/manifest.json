@@ -1,0 +1,12 @@
+{
+  "domain": "ha_todo",
+  "name": "ha-todo",
+  "version": "0.1.0",
+  "codeowners": ["@wliant"],
+  "config_flow": true,
+  "documentation": "https://github.com/wliant/ha-todo/blob/main/hass/README.md",
+  "issue_tracker": "https://github.com/wliant/ha-todo/issues",
+  "integration_type": "service",
+  "iot_class": "local_polling",
+  "requirements": []
+}
