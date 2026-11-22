@@ -1,0 +1,151 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to ha-todo",
+        "description": "Sign in as a household member. Ask the admin to create an account for Home Assistant, then share each list, collection and tracker with it.",
+        "data": {
+          "url": "Address",
+          "username": "Username",
+          "password": "Password",
+          "verify_ssl": "Verify the certificate"
+        },
+        "data_description": {
+          "url": "For example https://todo.example.org. Use https - the session cookie is marked Secure and will be dropped over plain http."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Sign in again",
+        "description": "The password for this account was refused.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach that address.",
+      "invalid_auth": "That username and password were refused.",
+      "no_session": "Signed in, but the session cookie cannot be used with that address. It is marked Secure, so it is only ever sent over https - use the https:// address rather than http://."
+    },
+    "abort": {
+      "already_configured": "That account is already connected."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "How often to check",
+        "data": {
+          "scan_interval": "Seconds between checks"
+        },
+        "data_description": {
+          "scan_interval": "Each check is one request per shared list and tracker, plus five."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "overdue": {
+        "name": "Overdue"
+      },
+      "pending_trackers": {
+        "name": "Trackers pending today"
+      }
+    }
+  },
+  "services": {
+    "add_item": {
+      "name": "Add chore",
+      "description": "Adds a chore to a list shared with this account. Pick the list's sensor as the target.",
+      "fields": {
+        "description": {
+          "name": "Description",
+          "description": "What needs doing."
+        },
+        "due_date": {
+          "name": "Due date",
+          "description": "A whole day. Stored as the end of that day in the household's timezone, because midnight belongs to the day before."
+        },
+        "due_datetime": {
+          "name": "Due date and time",
+          "description": "A specific time, read as the household's clock."
+        }
+      }
+    },
+    "complete_item": {
+      "name": "Complete chore",
+      "description": "Marks a chore done. The points go to this account, because that is who did it. Pick the list's sensor as the target.",
+      "fields": {
+        "item": {
+          "name": "Chore",
+          "description": "The chore, by description - or by its id, from this sensor's items attribute if two chores share a description."
+        }
+      }
+    },
+    "lapse_item": {
+      "name": "Lapse chore",
+      "description": "Records that nobody got to a chore. It earns nothing and is not a completion. Pick the list's sensor as the target.",
+      "fields": {
+        "item": {
+          "name": "Chore",
+          "description": "The chore, by description - or by its id, from this sensor's items attribute if two chores share a description."
+        }
+      }
+    },
+    "reopen_item": {
+      "name": "Reopen chore",
+      "description": "Puts a finished or lapsed chore back. The record is kept and any points are returned. Pick the list's sensor as the target.",
+      "fields": {
+        "item": {
+          "name": "Chore",
+          "description": "The chore, by description - or by its id, from this sensor's items attribute if two chores share a description."
+        }
+      }
+    },
+    "add_collection_entry": {
+      "name": "Add collection entry",
+      "description": "Adds an entry to a collection shared with this account.",
+      "fields": {
+        "collection": {
+          "name": "Collection",
+          "description": "Its name, or its id."
+        },
+        "name": {
+          "name": "Name",
+          "description": "What the entry is called."
+        },
+        "description": {
+          "name": "Description",
+          "description": "A line about it."
+        },
+        "tags": {
+          "name": "Tags",
+          "description": "Free-form tags, which the collection's search reads."
+        }
+      }
+    },
+    "record_tracker_reading": {
+      "name": "Record tracker reading",
+      "description": "Records a number on a tracker shared with this account. On a tracker kept per member this writes Home Assistant's own series - use a shared tracker per person to record somebody else's numbers.",
+      "fields": {
+        "tracker": {
+          "name": "Tracker",
+          "description": "Its name, or its id."
+        },
+        "amount": {
+          "name": "Amount",
+          "description": "The number to record."
+        },
+        "note": {
+          "name": "Note",
+          "description": "A short note about this reading."
+        },
+        "period_start": {
+          "name": "Date",
+          "description": "Which day the reading belongs to. Defaults to today in the household's timezone; the server decides which week or month that falls in."
+        }
+      }
+    }
+  }
+}

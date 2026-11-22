@@ -1,0 +1,128 @@
+# Example automations over the ha-todo integration.
+#
+# Copied from a working dev instance. **The entity ids are per-deployment** -
+# `sensor.ha_todo_dev_*` here comes from a config entry titled "ha-todo dev", so
+# substitute your own before using these.
+#
+# Only one of these writes anything (the button), and only one creates a chore.
+# The other three read and notify.
+#
+# Every one of them reads the list sensors rather than a `todo` entity, because
+# a list is a rich sensor here (adr/0062).
+#
+# Note `attributes['items']` and never `attributes.items`: the attribute is
+# called `items`, which collides with a dict's own `.items()` method, and dot
+# access silently returns the method instead of the chores.
+
+- id: ha_todo_overdue_nudge
+  alias: "Chores: say so when something goes overdue"
+  description: >-
+    Fires when the household-wide overdue count rises above zero and names the
+    chores. It reads each chore's own `overdue` flag rather than comparing dates
+    in a template: the boundary is the start of today in the household's
+    timezone, and a template doing `due_at < now()` would disagree with the
+    product's own agenda every morning.
+  mode: single
+  triggers:
+    - trigger: numeric_state
+      entity_id: sensor.ha_todo_dev_overdue
+      above: 0
+  actions:
+    - action: persistent_notification.create
+      data:
+        notification_id: ha_todo_overdue
+        title: >-
+          {{ states('sensor.ha_todo_dev_overdue') }} chore(s) overdue
+        message: >-
+          {%- for l in states.sensor | selectattr('attributes.list_id', 'defined') %}
+          {%- set late = l.attributes['items'] | selectattr('overdue') | list %}
+          {%- if late %}
+          **{{ l.attributes.list_name }}**
+          {%- for i in late %}
+          - {{ i.description }}{% if i.assignee %} - {{ i.assignee }}{% endif %}
+          {%- endfor %}
+          {%- endif %}
+          {%- endfor %}
+
+- id: ha_todo_morning_digest
+  alias: "Chores: morning digest"
+  description: >-
+    A notification at 07:00 listing every open chore on every list shared with
+    Home Assistant, grouped by list and showing who it is for. Unassigned
+    chores are called out, because those are the ones nobody has picked up.
+  mode: single
+  triggers:
+    - trigger: time
+      at: "07:00:00"
+  conditions:
+    - condition: template
+      value_template: >-
+        {{ states.sensor | selectattr('attributes.list_id', 'defined')
+           | map(attribute='state') | map('int', 0) | sum > 0 }}
+  actions:
+    - action: persistent_notification.create
+      data:
+        notification_id: ha_todo_digest
+        title: Today's chores
+        message: >-
+          {%- for l in states.sensor | selectattr('attributes.list_id', 'defined') %}
+          {%- set open = l.attributes['items'] | selectattr('state', 'eq', 'OPEN') | list %}
+          {%- if open %}
+          **{{ l.attributes.list_name }}** ({{ open | count }})
+          {%- for i in open %}
+          - {{ i.description }} - {{ i.assignee or 'nobody yet' }}
+          {%- if i.overdue %} **(late)**{% endif %}
+          {%- endfor %}
+          {%- endif %}
+          {%- endfor %}
+
+- id: ha_todo_tracker_reminder
+  alias: "Trackers: remind what was not recorded today"
+  description: >-
+    At 21:00, if a daily tracker has nothing recorded today, say which. The
+    count and the names both come from the integration, which asks the server -
+    the server owns the definition of "today".
+  mode: single
+  triggers:
+    - trigger: time
+      at: "21:00:00"
+  conditions:
+    - condition: numeric_state
+      entity_id: sensor.ha_todo_dev_trackers_pending_today
+      above: 0
+  actions:
+    - action: persistent_notification.create
+      data:
+        notification_id: ha_todo_trackers
+        title: Nothing recorded today
+        message: >-
+          {{ state_attr('sensor.ha_todo_dev_trackers_pending_today', 'trackers')
+             | join(', ') }}
+
+- id: ha_todo_add_milk
+  alias: "Chores: add milk when the button is pressed"
+  description: >-
+    The write path, as small as it gets - a dash button for the one thing the
+    household always needs. The action targets the list's own sensor, which is
+    why the list is a picker in the UI rather than a name typed from memory.
+  mode: single
+  triggers:
+    - trigger: state
+      entity_id: input_button.ha_todo_add_milk
+  actions:
+    - action: ha_todo.add_item
+      target:
+        entity_id: sensor.ha_todo_dev_home_assistant
+      data:
+        description: Milk
+        # A bare date becomes 23:59 in the household's timezone, never
+        # midnight - midnight belongs to the day before the one meant.
+        due_date: "{{ now().date() }}"
+      response_variable: added
+    - action: persistent_notification.create
+      data:
+        notification_id: ha_todo_added
+        title: Added to the list
+        message: >-
+          {{ added[ 'sensor.ha_todo_dev_home_assistant' ].item.description }}
+          is on {{ state_attr('sensor.ha_todo_dev_home_assistant', 'list_name') }}.

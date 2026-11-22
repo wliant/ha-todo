@@ -1,0 +1,41 @@
+# Example scripts over the ha-todo integration.
+#
+# Copied from a working instance. **The entity id is per-deployment** -
+# substitute your own list sensor before using this.
+#
+# The due-date template was checked against Home Assistant's own template
+# engine at 09:00, 16:59, 17:00, 23:30, a month end and a year end. It depends
+# on Home Assistant's timezone matching the household's; if they differ, the
+# 5pm decision and "today" are answered by two different clocks.
+
+add_to_grocery:
+  alias: Add to grocery
+  description: >-
+    Adds an item to the shared Grocery list, unassigned, due today if it is
+    before 5pm and tomorrow otherwise - so something remembered in the evening
+    lands on the day somebody will actually be shopping.
+  icon: mdi:cart-plus
+  # parallel, because the default (single) silently drops a second call while
+  # the first is still running - and items get added three in a row.
+  mode: parallel
+  max: 10
+  fields:
+    item:
+      name: Item
+      description: What to add to the Grocery list.
+      required: true
+      example: Milk
+      selector:
+        text:
+  sequence:
+  - action: ha_todo.add_item
+    target:
+      entity_id: sensor.ha_todo_grocery
+    data:
+      description: '{{ item }}'
+      # Nothing assigns it: ha_todo.add_item takes no assignee at all, so the
+      # chore is unassigned by construction rather than by omission.
+      #
+      # A bare date is stored as 23:59 in the household's timezone, never
+      # midnight - midnight belongs to the day before the one meant.
+      due_date: '{{ (now() + timedelta(days=1)).date() if now().hour >= 17 else now().date() }}'

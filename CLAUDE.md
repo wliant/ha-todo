@@ -4,9 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-**Everything specified so far is built, as of 2026-11-19.** Build, local stack, deploy scripts and all
-three test harnesses are real and passing: 316 backend unit tests, 282 integration tests, 433 frontend
-tests, 112 end-to-end (13 skip without `E2E_ADMIN_PASSWORD`).
+**Everything specified so far is built, as of 2026-11-20.** Build, local stack, deploy scripts and all
+four test harnesses are real and passing: 316 backend unit tests, 282 integration tests, 433 frontend
+tests, 112 end-to-end (13 skip without `E2E_ADMIN_PASSWORD`), and 62 in `hass/` across its two
+environments (36 and 52 reported — the conversions and the boundary check run in both).
 
 Implemented: **accounts and administration (R8-R12)** — username identity, optional per-user passwords, a
 pick-a-user sign-in screen, and a single admin who adds and deletes users. **The PWA (R13, R14)** —
@@ -648,6 +649,153 @@ by the fallback poll, so it would certify a build where the stream never works. 
 checked against `LIVE_ENABLED=false` and **fail** there, which is what says they test the push rather
 than `refetchOnWindowFocus`.
 
+**R188-R201 are implemented.** `docs/requirements/0022` and `docs/design/0022` add **`hass/`**, a Home
+Assistant custom integration, with `docs/adr/0057`-`0061` recording the decisions. It is **the first client
+of this product that is not a browser**, and it is *only* a client: **no backend change at all** — no
+migration, no endpoint, no DTO, not one line in `app/` or `web/`. Home Assistant signs in as an **ordinary
+member** (`adr/0057`) over the SPA's own flow — `GET /api/auth/csrf`, `POST /api/auth/login`, keep
+`JSESSIONID` — so "what may the automation touch" is already answered by `adr/0010`'s per-list grant. The
+admin creates a `homeassistant` user; each owner shares their own thing with it. A shared list becomes a
+`todo` entity, a shared tracker becomes a sensor, and collections and trackers get one service each
+(`adr/0059`).
+
+**Seven things in there are easy to break, and most of them fail silently.** The client needs
+`aiohttp.CookieJar(unsafe=True)`: the default jar **silently refuses to store cookies for a bare
+IP-address host**, and a household's deployment is often `http://192.168.x.x:5987` — login returns 200, no
+cookie is kept, every call 401s, and it presents as a wrong password that is correct. So `login()`
+**asserts the session cookie is in the jar**, which also catches `http://` against a `Secure` cookie; both
+otherwise look identical. A **401 is a normal event** (R200), because sessions are in memory — an
+integration that raises produces a repair card on every deploy. `to_instant` reads the zone from
+`/api/me` and **never `hass.config.time_zone`**, and a bare date is **23:59** household time, not midnight
+(`adr/0036`, and `DueAtField`'s rule). `is_shown`/`is_completed` are an explicit **three-way** match: a
+lapse is **omitted entirely** (`adr/0060`), and `state != "OPEN"` collapsing to completed would report
+work nobody did as done. A tracker sensor's empty bucket is **`None`, never `0`** — `or 0` there invents a
+crash on somebody's chart — and it carries **no `device_class`**, since a unit is a label and never a
+conversion (`adr/0051`), so nothing may rescale it. Overdue reads `total`, **never `len(items)`**: that
+page is capped. And nothing reimplements `TrackerPeriod.startOf` — `periodStart` goes up as the
+household's civil date and the **server** buckets it.
+
+**The detail field is deliberately not round-tripped** (`adr/0061`). `detailHtml` is sanitized rich HTML
+with `/api/images/{uuid}` pictures in it; Home Assistant's `description` is plain text. Exposing one as
+the other would flatten a member's writing and drop their pictures **as a side effect of an automation
+touching a due date**, because Home Assistant's update path sends the whole item. So
+`SET_DESCRIPTION_ON_ITEM` is not declared and the field is **not exposed at all** — not even read-only,
+because a read-only field is one line from being writable and that line looks like a fix.
+`DELETE_TODO_ITEM` is refused for 0020's reason, and `MOVE_TODO_ITEM` is **unimplementable**:
+manual order *is* the fetched array's order (`adr/0044`) and `ItemResponse` carries no `position`.
+
+**Two limitations go on the label rather than being hidden.** A `PER_MEMBER` tracker can only ever be
+written as **Home Assistant's own** series, because `SaveReadingRequest` carries no member id by design
+(`adr/0052`) — a scale cannot file a number under Ana, and the arrangement that works is a **`SHARED`
+tracker per person**. And a list insisting on `DETAIL`, `ASSIGNEE` or a `COST` cannot have items
+**created** on it from here; the create is refused **in the product's own words** (R193), since every error
+body is `{"error": "<prose>"}`. The integration therefore **never reads `/api/lists/{id}/fields`** — a
+client-side copy of `required` is a second copy of a rule the server enforces anyway.
+
+**Deploying it is `scripts/deploy-hass.sh <env>`**, which streams the component as a **tarball** and
+swaps it into place. All SSH goes through `ssh_run`, like every other script. There is **no image and no
+registry push** — it is Python imported from a directory, which is why it is its own script rather than a
+step in `scripts/deploy.sh`. HACS packaging is still out of scope.
+
+**The two environments' Home Assistants are nothing alike, so the script has two flavours**, chosen by
+`HASS_FLAVOUR` in `deployment/.env.<env>`. **dev is `compose`**: Docker Compose with a bind-mounted
+config dir, restarted with `docker compose restart`, then polled on `HASS_PORT` and checked by grepping
+the log — because a custom component that fails to import **says so once, at startup** and is otherwise
+simply absent from the integration list, with no second symptom. **prod is `haos`**: Home Assistant OS on
+a Raspberry Pi, where ssh lands in the `core-ssh` add-on, which has `/config` but **no `rsync`, no
+`python3` and no `docker`**; it validates with `ha core check` (which the compose flavour has no
+equivalent of) and restarts through the Supervisor with `ha core restart` — taking every automation,
+alarm and camera in the house down for the better part of a minute, which is why prod demands a typed
+confirmation.
+
+**`HASS_HOST` exists because Home Assistant does not necessarily run on the host the application is
+deployed to.** On dev it does (both on `.248`); on prod it does not (HA on `.252`, the application on
+`.248`), and the first cut of this script defaulted to `DEPLOY_HOST` and was right on dev **by accident**.
+A deploy that silently ships to the wrong machine fails by succeeding.
+
+**Transfer is `tar` over ssh rather than `rsync`** — not available on core-ssh — and it **stages then
+swaps** (`.ha_todo_staging` → `ha_todo`) rather than extracting in place, because tar alone leaves behind
+files a newer version no longer ships, and a half-written integration is one Home Assistant may try to
+import. `/api/live/stream` already exists and would
+make this `local_push` instead of `local_polling`; that is a recorded open question, not an oversight.
+
+**The test harness is pinned to the *production* instance's Home Assistant, not to whatever is current.**
+`pytest-homeassistant-custom-component==0.13.375` pins HA 2026.10.4 while prod runs 2026.11.1, so the
+suite rehearses one minor behind rather than drifting; that harness is also what forces
+`requires-python = ">=3.14.2"`, since HA 2026.11 requires it. The dev container is pinned with
+`HA_VERSION` in its own `.env` to prod's **exact** version — left on the floating `stable` tag it silently
+drifts, and a rehearsal on a different build is not a rehearsal.
+
+**The first real deployment taught two things, and the first one was a shipped bug.** The cookie check
+asked whether `JSESSIONID` was **stored** rather than whether it could be **sent** — aiohttp keeps a
+`Secure` cookie received over http and then refuses to send it, so the guard passed and every call 401'd
+against a correct password. It is now
+`cookie_jar.filter_cookies(URL(base_url))`, the same question the next request asks, and `test_api.py`
+serves a `Secure` cookie over http to pin it. Both deployed environments set `SESSION_COOKIE_SECURE=true`,
+so **the address must be the https hostname** — `http://<host>:5987` lets the login succeed and nothing
+else. And the front door's DNS record may be **internal-only**, so the machine Home Assistant runs on can
+reach the terminator by address while being unable to resolve the name; that belongs in the Home Assistant
+checkout's `extra_hosts`, never as an IP in the config entry, because the front door routes by `Host`.
+
+**R202-R209 reverse 0022's R190**, which is the biggest in-flight change this feature has had.
+`docs/requirements/0023` and `docs/design/0023` make a shared list a **rich `sensor`** rather than a native
+`todo` entity, with `docs/adr/0062` recording it — superseding `adr/0059` for the list half and `adr/0060`
+entirely. The reason is that a `TodoItem` holds **four** fields and a chore here has a dozen, so the native
+entity published a description and a due date and silently dropped the assignee, the costs, the points, the
+completion record and — worst — **a whole third state**, which is why `adr/0060` had to make a lapse vanish.
+`todo.py` is **deleted**, not left behind a flag.
+
+The sensor's **state is the open-chore count**; its attributes carry per-state counts, an `overdue` count,
+the declared `fields` so a form can be drawn without a second request, and `items` with state, due date,
+assignee, points and **costs resolved to the labels the list declared**. Writing is four explicit actions —
+`add_item`, `complete_item`, `lapse_item`, `reopen_item` — registered in `sensor.py` as **entity services
+targeting the list's own sensor**, because `services.yaml` is static and cannot enumerate a household's
+lists but *can* declare a target: that is what makes the list a picker instead of a typed name. A chore is
+named by description within the target list, or by id when two share one. Each returns what it wrote.
+Lapsing and reopening are newly possible, because the state is finally representable.
+
+**`required_features=[ListFeature.ITEMS]` is load-bearing**: entity services are shared by every platform
+in a domain, so these are offered to the tracker and count sensors too, and without it targeting the
+overdue sensor is an `AttributeError` from inside Home Assistant rather than "does not support this
+service". It is checked against the **live entity** (`helpers/service.py`), never the entity registry — a
+registry row written before the flag existed stays `0` and is cosmetic, and HA does not publish
+`supported_features` in a sensor's state attributes at all. The picker cannot be narrowed to list sensors:
+`services.yaml` filters on domain, integration, device class and supported features, and a sensor device
+class would be a lie (`adr/0051`) while a custom integration's feature enum is not resolvable by the
+frontend.
+
+**The price is Assist voice for lists, and it is real.** Home Assistant's built-in list intent speaks only
+to `todo.*`, so "add milk to the shopping list" needs custom sentences over `ha_todo.add_item`. That was
+`adr/0059`'s main argument and it was given up knowingly (R209); keeping the entity alongside the sensor was
+recommended and **declined**, because the entity's existence was itself the objection — a stock To-do card
+can tick off real chores.
+
+**`design/0022`'s "never reads `/api/lists/{id}/fields`" is overridden**, not quietly broken: R205 needs a
+field's **label** to publish a cost legibly, and no amount of server-side validation supplies that. It is
+fetched once per list, cached for the entry's life, and **dropped when a list stops being visible** — or the
+labels outlive the grant.
+
+**Seven things in there fail silently.** `available` must be false when a list is **absent** from the
+payload rather than `0` — a revoked grant otherwise reads as a household that finished everything.
+`version` is held but **never published**: one read from an attribute a minute ago is exactly the stale
+write the server exists to refuse, so it comes from the coordinator's cache. `is_overdue` is **day-granular
+in the household's zone** (`adr/0040`), or the count disagrees with the product's own agenda rather than
+failing. `items` is **capped at 200 and reports `truncated`**, because the whole payload is pushed to every
+connected browser on every change. **Each chore publishes its own `overdue` flag** so no template has to
+recompute the day boundary — the one in `design/0023`'s silent-failure list that is now structurally
+unnecessary — and the pending-trackers sensor names them in a `trackers` attribute.
+Four worked automations live in `hass/examples/automations.yaml`. **The payload is kept out of the recorder by the entity itself** —
+`_unrecorded_attributes = {"items", "fields"}` — because past 16384 bytes of attributes it logs a warning
+and stores `{}`, so history empties while the live state looks right (verified in
+`recorder/db_schema.py`, not assumed). At ~400 bytes a chore that breaks at about **forty**. This was
+first a `recorder: exclude` instruction in the README and that was the wrong shape: an instruction that is
+not followed fails silently and blames the reader. Only the recorder is affected; the counts stay
+recorded. `mapping`'s
+`is_shown` and `wanted_state` are **gone**: the first only hid a lapse, the second turned a boolean into a
+state when there were two — and anything that reduces `state` to done/not-done re-introduces the defect
+`adr/0048` created a third state to prevent. And **removing a platform orphans its entity**: Home Assistant
+keeps the registry row, so the upgrade left an unavailable `todo.*` entity that had to be deleted by hand.
+
 Keep this file true: when a decision here turns out wrong, update it in the same change.
 
 ## What this product is
@@ -683,6 +831,7 @@ which of the **three** kinds it means.
 app/           Spring Boot 4.1.2 backend (Gradle, Groovy DSL, Java 21)
 web/           React 19 + TypeScript frontend (Vite, pnpm, oxlint)
 e2e/           Standalone pytest + Playwright end-to-end suite — runs against dev, not local mocks
+hass/          Standalone Home Assistant custom integration — a client, over HTTP only
 deployment/    docker-compose files + env templates per environment
 scripts/       Shell entrypoints for build/deploy; the only supported deploy path
 docs/          Specs, designs, ADRs (see Spec-driven workflow)
@@ -690,6 +839,8 @@ docs/          Specs, designs, ADRs (see Spec-driven workflow)
 
 `app/` and `web/` own their own unit and integration tests. `e2e/` is deliberately a separate project with
 its own dependency set and no imports from the other two — it talks to a deployed system over HTTP only.
+`hass/` is separate for the same reason plus one more (`docs/adr/0058`): it imports `homeassistant`, which
+pins its own test harness, so it must not be able to drag that cadence into anything else.
 
 Each module is self-contained: `app/` has its own Gradle wrapper, `web/` its own lockfile. There is no root
 pnpm workspace — one JS package does not need one, and it would move the lockfile out of the image build
@@ -738,6 +889,17 @@ uv run pytest tests/test_smoke.py::test_passwordless_member_signs_in_with_one_cl
 uv run pytest -m smoke
 uv run pytest --headed --slowmo 300   # watch it run while debugging
 ```
+
+Home Assistant integration (`hass/`) — two halves in **two** environments, because the Home Assistant
+test harness pins `pytest`, `pytest-asyncio` and much else exactly:
+```bash
+UV_PROJECT_ENVIRONMENT=.venv-pure uv run --group dev --no-group ha pytest   # the client + conversions
+UV_PROJECT_ENVIRONMENT=.venv-ha   uv run --group ha --no-group dev pytest   # loading it in Home Assistant
+```
+Each command runs the half that can run in its environment and ignores the other (`tests/conftest.py`);
+the conversions run in both, which is what proves they are framework-free. They report 36 and 52. One venv for
+both groups does **not** work: `pytest-socket` arrives with the harness and blocks the real-socket tests,
+and `pyproject.toml` declares the two groups `conflicts` because they cannot share a resolution.
 
 Local stack:
 ```bash
